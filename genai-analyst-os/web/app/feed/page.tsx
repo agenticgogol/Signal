@@ -220,6 +220,7 @@ export default function FeedPage() {
 
   const [triggering, setTriggering] = useState(false)
   const [pipelineStarted, setPipelineStarted] = useState(false)
+  const [triggerError, setTriggerError] = useState<string | null>(null)
   const [showAdminGate, setShowAdminGate] = useState(false)
 
   // ── data fetching ─────────────────────────────────────────────────────────
@@ -295,6 +296,7 @@ export default function FeedPage() {
   const doTrigger = async () => {
     setTriggering(true)
     setPipelineStarted(false)
+    setTriggerError(null)
     try {
       const res = await fetch('/api/pipeline/trigger', { method: 'POST' })
       const json = await res.json()
@@ -319,8 +321,12 @@ export default function FeedPage() {
             }
           } catch {}
         }, 20000)
+      } else {
+        setTriggerError(json.error ?? 'Pipeline trigger failed')
       }
-    } catch {}
+    } catch (err) {
+      setTriggerError(String(err))
+    }
     setTriggering(false)
   }
 
@@ -492,6 +498,13 @@ export default function FeedPage() {
                   ⭐ Save Preference
                 </button>
               )}
+            </div>
+          )}
+
+          {triggerError && (
+            <div className="mb-4 px-4 py-2.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-700 dark:text-red-300 flex items-start gap-2">
+              <span>⚠️</span>
+              <span><strong>Pipeline error:</strong> {triggerError}</span>
             </div>
           )}
 
