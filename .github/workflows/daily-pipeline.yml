@@ -1,8 +1,6 @@
 name: Daily Feed Pipeline
 on:
-  schedule:
-    - cron: '0 5 * * *'   # 5am UTC daily
-  workflow_dispatch:        # allows manual trigger from GitHub Actions tab
+  workflow_dispatch:        # manual trigger only — from UI or GitHub Actions tab
 jobs:
   run:
     runs-on: ubuntu-latest
