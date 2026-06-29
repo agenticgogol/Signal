@@ -1,6 +1,15 @@
 name: Daily Feed Pipeline
 on:
-  workflow_dispatch:        # manual trigger only — from UI or GitHub Actions tab
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: 'How many days back to fetch articles'
+        required: false
+        default: '7'
+      max_per_source:
+        description: 'Max articles to pull per source'
+        required: false
+        default: '5'
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -18,3 +27,5 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           MOCK_LLM: false
+          CRAWL_LOOKBACK_DAYS: ${{ inputs.lookback_days }}
+          CRAWL_MAX_PER_SOURCE: ${{ inputs.max_per_source }}

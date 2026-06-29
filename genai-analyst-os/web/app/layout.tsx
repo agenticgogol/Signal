@@ -15,6 +15,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={inter.variable}>
       <head>
         <style>{`* { font-feature-settings: 'cv02', 'cv03'; }`}</style>
+        {/* Apply saved theme class before first paint — prevents flash of wrong theme */}
+        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var t=localStorage.getItem('signal_theme')||'system';var d=t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.add(d?'dark':'light');}catch(e){}})();` }} />
       </head>
       <body className="font-sans bg-zinc-50 dark:bg-zinc-950 text-gray-900 dark:text-gray-100 min-h-screen">
         <AppShell>{children}</AppShell>

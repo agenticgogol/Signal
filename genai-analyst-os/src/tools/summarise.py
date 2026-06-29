@@ -21,6 +21,8 @@ class SummaryResult(TypedDict):
     tldr_bullets: list[str]   # 2–4 items
     topic_tags: list[str]     # subset of TOPIC_TAXONOMY
     depth_score: int          # 1–5
+    why_it_matters: str       # ≤20 words, practitioner implication
+    key_takeaways: list[str]  # exactly 3 actionable bullets
 
 
 # ---------------------------------------------------------------------------
@@ -41,14 +43,20 @@ def summarise_article(article_text: str, title: str) -> SummaryResult | None:
             tldr_bullets=["Mock bullet 1", "Mock bullet 2"],
             topic_tags=["agentic"],
             depth_score=3,
+            why_it_matters="This changes how practitioners build agentic pipelines.",
+            key_takeaways=["Core fact: mock article describes a new technique.", "Impact: reduces latency by an order of magnitude.", "Action: evaluate this approach for your next RAG build."],
         )
 
     from src.llm.provider import call_llm
 
     system = (
         "You are a precise content analyst specialising in the GenAI and Agentic AI space. "
-        "Return ONLY a valid JSON object with keys: tldr_bullets (list of 2-4 strings, each ≤20 words), "
-        "topic_tags (list of 1-4 strings from the allowed taxonomy only), depth_score (integer 1-5). "
+        "Return ONLY a valid JSON object with these keys:\n"
+        "  tldr_bullets: list of 2-4 strings, each ≤20 words\n"
+        "  topic_tags: list of 1-4 strings from the allowed taxonomy only\n"
+        "  depth_score: integer 1-5\n"
+        "  why_it_matters: single string ≤20 words — the practitioner implication (e.g. 'This changes how you architect RAG pipelines going forward')\n"
+        "  key_takeaways: list of exactly 3 strings — bullet 1: core fact/development, bullet 2: specific impact or mechanism, bullet 3: what a practitioner should do or watch\n"
         "Taxonomy (use ONLY these 7 slugs): infra (GenAI Infrastructure), llm (LLM Advancements), finetune (Fine-tuning), rag (RAG & Agentic RAG), agentic (Agentic Systems & Usecases), llmops (LLMOps & Deployment), eval (AI Evaluation). "
         "Return ONLY the JSON object — no markdown fences, no commentary."
     )
@@ -66,12 +74,16 @@ def summarise_article(article_text: str, title: str) -> SummaryResult | None:
             bullets = data.get("tldr_bullets", [])
             tags = [t for t in data.get("topic_tags", []) if t in TOPIC_TAXONOMY]
             depth = max(1, min(5, int(data.get("depth_score", 3))))
+            why = str(data.get("why_it_matters", ""))[:200]
+            takeaways = [str(t) for t in data.get("key_takeaways", [])][:3]
             # Accept 1+ bullets and 1+ tags (relaxed from 2-4 / 1-4)
             if bullets and tags:
                 return SummaryResult(
                     tldr_bullets=bullets[:5],
                     topic_tags=tags[:4],
                     depth_score=depth,
+                    why_it_matters=why,
+                    key_takeaways=takeaways,
                 )
         except (json.JSONDecodeError, KeyError, ValueError):
             if attempt == 0:

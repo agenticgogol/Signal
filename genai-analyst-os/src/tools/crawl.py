@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import TypedDict
@@ -92,7 +92,12 @@ def crawl_sources(user_id: str, sources: list[UserSource]) -> list[RawArticle]:
     except ImportError as e:
         return []  # optional deps not installed in this env
 
-    max_per_source = int(os.getenv("CRAWL_MAX_PER_SOURCE", "20"))
+    max_per_source = int(os.getenv("CRAWL_MAX_PER_SOURCE", "5"))
+    lookback_days = int(os.getenv("CRAWL_LOOKBACK_DAYS", "7"))
+    cutoff_dt = datetime.now(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ) - timedelta(days=lookback_days)
+
     results: list[RawArticle] = []
     for source in sources:
         feed_url = source.get("rss_url") or source["url"]
@@ -104,6 +109,15 @@ def crawl_sources(user_id: str, sources: list[UserSource]) -> list[RawArticle]:
                 url = entry.get("link", "")
                 if not url:
                     continue
+                raw_date = entry.get("published") or entry.get("updated") or ""
+                pub_iso = _parse_date(raw_date)
+                if pub_iso:
+                    try:
+                        pub_dt = datetime.fromisoformat(pub_iso.replace("Z", "+00:00"))
+                        if pub_dt < cutoff_dt:
+                            continue  # older than lookback window
+                    except Exception:
+                        pass
                 content_list = entry.get("content", [])
                 full_text = (
                     content_list[0].get("value", "") if content_list

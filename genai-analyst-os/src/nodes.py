@@ -160,15 +160,17 @@ def summarise(state: PipelineState) -> dict:
             # pgvector expects a string "[x1,x2,...,xn]" from the Python client
             vec_str = "[" + ",".join(f"{x:.8f}" for x in vec) + "]"
             row = {
-                "url":          url,
-                "title":        article.get("title", ""),
-                "full_text":    article.get("full_text", ""),
-                "tldr_bullets": result["tldr_bullets"],
-                "topic_tags":   result["topic_tags"],
-                "depth_score":  result["depth_score"],
-                "embedding":    vec_str,
-                "published_at": article.get("published_at") or None,
-                "source_id":    article.get("source_id") or None,
+                "url":             url,
+                "title":           article.get("title", ""),
+                "full_text":       article.get("full_text", ""),
+                "tldr_bullets":    result["tldr_bullets"],
+                "topic_tags":      result["topic_tags"],
+                "depth_score":     result["depth_score"],
+                "why_it_matters":  result.get("why_it_matters") or None,
+                "key_takeaways":   result.get("key_takeaways") or None,
+                "embedding":       vec_str,
+                "published_at":    article.get("published_at") or None,
+                "source_id":       article.get("source_id") or None,
             }
             try:
                 upsert_resp = db.table("articles").upsert(row, on_conflict="url").execute()

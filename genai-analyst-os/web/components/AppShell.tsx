@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import SidebarNav from './SidebarNav'
+import ThemeToggle from './ThemeToggle'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -24,8 +25,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <nav className="flex-1 overflow-y-auto py-4 px-3">
           <SidebarNav />
         </nav>
-        <div className="px-4 py-3 border-t border-zinc-200/80 dark:border-zinc-800/80">
-          <p className="text-xs text-zinc-400">GenAI Intelligence OS</p>
+        <div className="px-3 py-3 border-t border-zinc-200/80 dark:border-zinc-800/80 space-y-1">
+          <ThemeToggle />
+          <p className="text-xs text-zinc-300 dark:text-zinc-600 px-2">GenAI Intelligence OS</p>
         </div>
       </aside>
       <main className="ml-56 flex-1 min-w-0">

@@ -37,6 +37,7 @@ function formatRelativeTime(iso: string): string {
 }
 
 const PIPELINE_KEY = 'signal_pipeline_started_at'
+const CONFIG_KEY = 'signal_pipeline_config'
 
 const TOPIC_GRADIENTS: Record<string, string> = {
   agentic:  'from-blue-500 to-indigo-500',
@@ -63,17 +64,27 @@ function priorityLabel(score: number): { label: string; cls: string } {
 interface Article {
   id: string; url: string; title: string
   tldr_bullets: string[]; topic_tags: string[]
+  why_it_matters?: string; key_takeaways?: string[]
   depth_score: number; published_at: string; source_id: string
 }
 interface FeedItem { blend_score: number; feed_date: string; articles: Article | Article[] | null }
-interface DigestItem { headline: string; why_it_matters: string; key_takeaways: string[]; url: string; tags: string[] }
+interface WeeklyItem {
+  id: string; url: string; title: string
+  blend_score: number; feed_date: string
+  topic_tags: string[]; tldr_bullets: string[]
+  why_it_matters: string | null; key_takeaways: string[]
+  published_at: string | null
+}
+interface PipelineConfig { lookbackDays: number; maxPerSource: number }
 type DateRange = 'today' | '7d' | '30d'
 type SortBy = 'ranking' | 'recency'
+
+const DEFAULT_CONFIG: PipelineConfig = { lookbackDays: 7, maxPerSource: 5 }
 
 // ── sub-components ────────────────────────────────────────────────────────────
 
 function TagPill({ tag }: { tag: string }) {
-  const cls = TAG_COLORS[tag.toLowerCase()] ?? 'bg-zinc-100 text-zinc-600'
+  const cls = TAG_COLORS[tag.toLowerCase()] ?? 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
   const label = TAG_LABELS[tag.toLowerCase()] ?? tag
   return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${cls}`}>{label}</span>
 }
@@ -81,10 +92,11 @@ function TagPill({ tag }: { tag: string }) {
 function SkeletonCard() {
   return (
     <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 overflow-hidden">
-      <div className="h-44 bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
-      <div className="p-5 space-y-3">
-        <div className="h-4 bg-zinc-100 dark:bg-zinc-800 rounded-lg animate-pulse" />
-        <div className="h-4 w-4/5 bg-zinc-100 dark:bg-zinc-800 rounded-lg animate-pulse" />
+      <div className="h-36 bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
+      <div className="p-4 space-y-2">
+        <div className="h-3 bg-zinc-100 dark:bg-zinc-800 rounded-lg animate-pulse" />
+        <div className="h-3 w-4/5 bg-zinc-100 dark:bg-zinc-800 rounded-lg animate-pulse" />
+        <div className="h-3 w-2/3 bg-zinc-100 dark:bg-zinc-800 rounded-lg animate-pulse" />
       </div>
     </div>
   )
@@ -94,18 +106,14 @@ function FeedInfoTooltip() {
   const [open, setOpen] = useState(false)
   return (
     <div className="relative">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="w-5 h-5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 text-xs font-bold flex items-center justify-center hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-        title="How does the feed work?"
-      >?</button>
+      <button onClick={() => setOpen(o => !o)}
+        className="w-5 h-5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-400 text-xs font-bold flex items-center justify-center hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">?</button>
       {open && (
         <div className="absolute left-0 top-7 z-50 w-80 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-2xl shadow-xl p-4 text-xs text-zinc-600 dark:text-zinc-400 space-y-2">
           <p className="font-semibold text-zinc-900 dark:text-zinc-100 text-sm">How Signal builds your feed</p>
-          <p><span className="font-medium text-zinc-700 dark:text-zinc-300">What it fetches:</span> The latest articles from each of your sources (RSS). Each run picks up new articles published since the last crawl — not a fixed lookback window.</p>
-          <p><span className="font-medium text-zinc-700 dark:text-zinc-300">How it scores:</span> Every article gets a <em>blend score</em> combining: recency, source tier (trusted sources score higher), topic match against your saved preferences, and depth of the content.</p>
-          <p><span className="font-medium text-zinc-700 dark:text-zinc-300">Ranking:</span> Must Read (≥0.8) → Top Pick (≥0.6) → Good Read (≥0.4) → Explore. Articles you've liked boost similar topics in future runs.</p>
-          <p><span className="font-medium text-zinc-700 dark:text-zinc-300">Lookback:</span> The date filter shows articles by when they entered your feed. Use &quot;Last 7 days&quot; to surface older articles from recent pipeline runs.</p>
+          <p><span className="font-medium text-zinc-700 dark:text-zinc-300">What it fetches:</span> Latest articles from each source within your lookback window. Uses the max-per-source limit you set.</p>
+          <p><span className="font-medium text-zinc-700 dark:text-zinc-300">Scoring:</span> Each article gets a blend score combining recency, source tier, topic match, and content depth. Must Read ≥0.8, Top Pick ≥0.6, Good Read ≥0.4.</p>
+          <p><span className="font-medium text-zinc-700 dark:text-zinc-300">Enrichment:</span> The pipeline generates TL;DR bullets, topic tags, &quot;Why it matters&quot;, and 3 key takeaways per article at crawl time — so cards load instantly.</p>
           <button onClick={() => setOpen(false)} className="text-violet-600 dark:text-violet-400 font-medium hover:underline">Close</button>
         </div>
       )}
@@ -113,30 +121,94 @@ function FeedInfoTooltip() {
   )
 }
 
+function PipelineConfigPanel({
+  config, onChange, onClose,
+}: {
+  config: PipelineConfig
+  onChange: (c: PipelineConfig) => void
+  onClose: () => void
+}) {
+  const lookbackOptions = [1, 3, 7, 14]
+  const maxOptions = [1, 3, 5, 10]
+  return (
+    <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-2xl p-4 mb-5 shadow-sm">
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Pipeline settings</p>
+        <button onClick={onClose} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 text-lg leading-none">×</button>
+      </div>
+      <div className="space-y-4">
+        <div>
+          <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Lookback window — how far back to fetch articles</p>
+          <div className="flex gap-2 flex-wrap">
+            {lookbackOptions.map(n => (
+              <button key={n} onClick={() => onChange({ ...config, lookbackDays: n })}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                  config.lookbackDays === n
+                    ? 'bg-violet-600 text-white border-violet-600'
+                    : 'bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-violet-300'
+                }`}>
+                {n} day{n > 1 ? 's' : ''}
+                {n === DEFAULT_CONFIG.lookbackDays ? ' (default)' : ''}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Max articles per source</p>
+          <div className="flex gap-2 flex-wrap">
+            {maxOptions.map(n => (
+              <button key={n} onClick={() => onChange({ ...config, maxPerSource: n })}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                  config.maxPerSource === n
+                    ? 'bg-violet-600 text-white border-violet-600'
+                    : 'bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-violet-300'
+                }`}>
+                {n}{n === DEFAULT_CONFIG.maxPerSource ? ' (default)' : ''}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="text-xs text-zinc-400">Settings saved locally and sent to the next pipeline run.</p>
+      </div>
+    </div>
+  )
+}
+
 function ArticleCard({
-  item, reaction, onReact, selected, onSelect,
+  item, reaction, onReact, selected, onSelect, isFresh,
 }: {
   item: FeedItem
   reaction?: 'like' | 'dislike'
   onReact: (articleId: string, r: 'like' | 'dislike') => void
   selected: boolean
   onSelect: (articleId: string) => void
+  isFresh?: boolean
 }) {
+  const [expanded, setExpanded] = useState(false)
   const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
   if (!article) return null
   const bullets: string[] = Array.isArray(article.tldr_bullets) ? article.tldr_bullets : []
   const tags: string[] = Array.isArray(article.topic_tags) ? article.topic_tags : []
+  const takeaways: string[] = Array.isArray(article.key_takeaways) ? article.key_takeaways : []
+  const whyItMatters = article.why_it_matters ?? ''
   const pubDate = formatPubDate(article.published_at)
   const grad = topicGradient(tags)
   const priority = priorityLabel(item.blend_score)
 
   return (
     <div className={`bg-white dark:bg-zinc-900 rounded-2xl border overflow-hidden hover:shadow-md transition-all flex flex-col group ${
-      selected ? 'border-violet-400 dark:border-violet-600 ring-2 ring-violet-200 dark:ring-violet-900' : 'border-zinc-100 dark:border-zinc-800 hover:border-zinc-200 dark:hover:border-zinc-700'
+      selected ? 'border-violet-400 dark:border-violet-600 ring-2 ring-violet-200 dark:ring-violet-900'
+      : isFresh ? 'border-green-300 dark:border-green-700'
+      : 'border-zinc-100 dark:border-zinc-800 hover:border-zinc-200 dark:hover:border-zinc-700'
     }`}>
       <a href={article.url} target="_blank" rel="noopener noreferrer"
-        className="block relative h-40 flex-shrink-0 overflow-hidden">
+        className="block relative h-36 flex-shrink-0 overflow-hidden">
         <div className={`absolute inset-0 bg-gradient-to-br ${grad} opacity-80 group-hover:opacity-90 transition-opacity`} />
+        {isFresh && (
+          <span className="absolute top-2 left-2 bg-green-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow">
+            ✦ Fresh
+          </span>
+        )}
         {tags[0] && (
           <span className="absolute inset-0 flex items-center justify-center text-white/10 font-black text-4xl uppercase tracking-widest pointer-events-none select-none">
             {TAG_LABELS[tags[0]] ?? tags[0]}
@@ -146,9 +218,7 @@ function ArticleCard({
 
       <div className="p-4 flex-1 flex flex-col gap-2">
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${priority.cls}`}>
-            {priority.label}
-          </span>
+          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${priority.cls}`}>{priority.label}</span>
           {tags.slice(0, 2).map(tag => <TagPill key={tag} tag={tag} />)}
         </div>
 
@@ -157,32 +227,48 @@ function ArticleCard({
           {article.title}
         </a>
 
-        {bullets.length > 0 && (
+        {/* Why it matters — always visible */}
+        {whyItMatters && (
+          <p className="text-xs text-violet-700 dark:text-violet-300 leading-relaxed">
+            {whyItMatters}
+          </p>
+        )}
+
+        {/* Expandable takeaways */}
+        {takeaways.length > 0 ? (
+          <div>
+            {expanded && (
+              <ul className="space-y-1 mb-1.5">
+                {takeaways.map((t, i) => (
+                  <li key={i} className="flex items-start gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                    <span className="flex-shrink-0 w-4 h-4 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-400 flex items-center justify-center text-[10px] font-semibold mt-0.5">{i + 1}</span>
+                    {t}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <button onClick={() => setExpanded(e => !e)}
+              className="text-xs text-zinc-400 hover:text-violet-500 dark:hover:text-violet-400 transition-colors font-medium">
+              {expanded ? '▲ Hide takeaways' : `▼ ${takeaways.length} takeaways`}
+            </button>
+          </div>
+        ) : bullets.length > 0 && !whyItMatters && (
           <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 leading-relaxed">{bullets[0]}</p>
         )}
 
         <div className="mt-auto pt-1 flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="text-xs text-zinc-400 truncate">{getDomain(article.url)}</span>
-            {pubDate && <span className="text-xs text-zinc-300 dark:text-zinc-600">·</span>}
-            {pubDate && <span className="text-xs text-zinc-400 flex-shrink-0">{pubDate}</span>}
+            {pubDate && <><span className="text-xs text-zinc-300 dark:text-zinc-600">·</span>
+            <span className="text-xs text-zinc-400 flex-shrink-0">{pubDate}</span></>}
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
-            <button onClick={() => onSelect(article.id)}
-              title={selected ? 'Remove from Create' : 'Save for Create content'}
-              className={`p-1.5 rounded-lg text-sm transition-all ${selected ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-600' : 'text-zinc-300 dark:text-zinc-600 hover:text-violet-400'}`}>
-              📌
-            </button>
-            <button onClick={() => onReact(article.id, 'like')}
-              title="Helpful — show more like this"
-              className={`p-1.5 rounded-lg text-sm transition-all ${reaction === 'like' ? 'bg-green-100 dark:bg-green-900/40 text-green-600' : 'text-zinc-300 dark:text-zinc-600 hover:text-green-500'}`}>
-              👍
-            </button>
-            <button onClick={() => onReact(article.id, 'dislike')}
-              title="Not relevant — show less"
-              className={`p-1.5 rounded-lg text-sm transition-all ${reaction === 'dislike' ? 'bg-red-100 dark:bg-red-900/40 text-red-600' : 'text-zinc-300 dark:text-zinc-600 hover:text-red-500'}`}>
-              👎
-            </button>
+            <button onClick={() => onSelect(article.id)} title={selected ? 'Remove from Create' : 'Save for Create'}
+              className={`p-1.5 rounded-lg text-sm transition-all ${selected ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-600' : 'text-zinc-300 dark:text-zinc-600 hover:text-violet-400'}`}>📌</button>
+            <button onClick={() => onReact(article.id, 'like')} title="Show more like this"
+              className={`p-1.5 rounded-lg text-sm transition-all ${reaction === 'like' ? 'bg-green-100 dark:bg-green-900/40 text-green-600' : 'text-zinc-300 dark:text-zinc-600 hover:text-green-500'}`}>👍</button>
+            <button onClick={() => onReact(article.id, 'dislike')} title="Show less like this"
+              className={`p-1.5 rounded-lg text-sm transition-all ${reaction === 'dislike' ? 'bg-red-100 dark:bg-red-900/40 text-red-600' : 'text-zinc-300 dark:text-zinc-600 hover:text-red-500'}`}>👎</button>
           </div>
         </div>
       </div>
@@ -195,18 +281,21 @@ function ArticleCard({
 export default function FeedPage() {
   const userId = process.env.NEXT_PUBLIC_USER_ID!
 
-  const [activeTab, setActiveTab] = useState<'all' | 'headlines'>('all')
+  const [activeTab, setActiveTab] = useState<'all' | 'weekly'>('all')
   const [dateRange, setDateRange] = useState<DateRange>('today')
   const [items, setItems] = useState<FeedItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [digest, setDigest] = useState<DigestItem[]>([])
-  const [digestLoading, setDigestLoading] = useState(false)
+  const [weeklyItems, setWeeklyItems] = useState<WeeklyItem[]>([])
+  const [weeklyLoading, setWeeklyLoading] = useState(false)
   const [selectedTopic, setSelectedTopic] = useState<string>('all')
   const [selectedDomain, setSelectedDomain] = useState<string>('all')
   const [sortBy, setSortBy] = useState<SortBy>('ranking')
   const [prefToast, setPrefToast] = useState<string | null>(null)
   const [reactions, setReactions] = useState<Record<string, 'like' | 'dislike'>>({})
   const [lastRefreshed, setLastRefreshed] = useState<string | null>(null)
+  const [freshArticleIds, setFreshArticleIds] = useState<Set<string>>(new Set())
+  const [freshCount, setFreshCount] = useState(0)
+  const [showFreshBanner, setShowFreshBanner] = useState(false)
   const [selectedForCreate, setSelectedForCreate] = useState<Set<string>>(() => {
     if (typeof window === 'undefined') return new Set()
     try {
@@ -218,16 +307,26 @@ export default function FeedPage() {
   const [pipelineStarted, setPipelineStarted] = useState(false)
   const [triggerError, setTriggerError] = useState<string | null>(null)
   const [showAdminGate, setShowAdminGate] = useState(false)
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [showConfig, setShowConfig] = useState(false)
+  const [pipelineConfig, setPipelineConfig] = useState<PipelineConfig>(DEFAULT_CONFIG)
 
-  // ── restore pipeline state from localStorage on mount ─────────────────────
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const prevArticleIdsRef = useRef<Set<string>>(new Set())
+
+  // ── restore state from localStorage ───────────────────────────────────────
 
   useEffect(() => {
+    // Restore pipeline config
+    try {
+      const saved = localStorage.getItem(CONFIG_KEY)
+      if (saved) setPipelineConfig({ ...DEFAULT_CONFIG, ...JSON.parse(saved) })
+    } catch {}
+
+    // Restore pipeline running state
     const startedAt = localStorage.getItem(PIPELINE_KEY)
     if (startedAt) {
       const elapsed = Date.now() - parseInt(startedAt)
       if (elapsed < 5 * 60 * 1000) {
-        // Pipeline was triggered < 5 min ago — resume polling
         setPipelineStarted(true)
         startPolling()
       } else {
@@ -237,10 +336,15 @@ export default function FeedPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const saveConfig = (c: PipelineConfig) => {
+    setPipelineConfig(c)
+    try { localStorage.setItem(CONFIG_KEY, JSON.stringify(c)) } catch {}
+  }
+
   // ── data fetching ─────────────────────────────────────────────────────────
 
-  const fetchFeed = useCallback(async (range: DateRange) => {
-    setLoading(true)
+  const fetchFeed = useCallback(async (range: DateRange, isRefresh = false) => {
+    if (!isRefresh) setLoading(true)
     try {
       const today = isoToday()
       let url: string
@@ -250,24 +354,41 @@ export default function FeedPage() {
       const res = await fetch(url)
       const json = await res.json()
       const newItems: FeedItem[] = json.items ?? []
+
+      if (isRefresh) {
+        // Diff to find fresh articles
+        const prev = prevArticleIdsRef.current
+        const freshIds = new Set<string>()
+        for (const item of newItems) {
+          const a = Array.isArray(item.articles) ? item.articles[0] : item.articles
+          if (a && !prev.has(a.id)) freshIds.add(a.id)
+        }
+        if (freshIds.size > 0) {
+          setFreshArticleIds(freshIds)
+          setFreshCount(freshIds.size)
+          setShowFreshBanner(true)
+          setTimeout(() => setShowFreshBanner(false), 60000)
+        }
+      }
+
       setItems(newItems)
-      // Derive last refreshed from newest feed_date
       if (newItems.length > 0) {
         const dates = newItems.map(i => i.feed_date).filter(Boolean).sort().reverse()
         if (dates[0]) setLastRefreshed(new Date(dates[0] + 'T00:00:00').toISOString())
       }
     } catch { setItems([]) }
-    setLoading(false)
+    if (!isRefresh) setLoading(false)
   }, [userId])
 
-  const fetchDigest = useCallback(async () => {
-    setDigestLoading(true); setDigest([])
+  const fetchWeekly = useCallback(async () => {
+    setWeeklyLoading(true)
+    setWeeklyItems([])
     try {
-      const res = await fetch(`/api/data/digest?userId=${userId}&date=${isoToday()}`)
+      const res = await fetch(`/api/data/digest?userId=${userId}&days=7`)
       const json = await res.json()
-      setDigest(json.items ?? [])
-    } catch { setDigest([]) }
-    setDigestLoading(false)
+      setWeeklyItems(json.items ?? [])
+    } catch {}
+    setWeeklyLoading(false)
   }, [userId])
 
   const fetchReactions = useCallback(async () => {
@@ -297,7 +418,7 @@ export default function FeedPage() {
   }, [userId])
 
   useEffect(() => { fetchFeed(dateRange) }, [dateRange, fetchFeed])
-  useEffect(() => { if (activeTab === 'headlines') fetchDigest() }, [activeTab, fetchDigest])
+  useEffect(() => { if (activeTab === 'weekly') fetchWeekly() }, [activeTab, fetchWeekly])
 
   // ── pipeline trigger ──────────────────────────────────────────────────────
 
@@ -317,7 +438,7 @@ export default function FeedPage() {
           setPipelineStarted(false)
           const range: DateRange = latestDate < today ? '7d' : 'today'
           setDateRange(range)
-          await fetchFeed(range)
+          await fetchFeed(range, true)
           setLastRefreshed(new Date().toISOString())
         }
       } catch {}
@@ -325,11 +446,26 @@ export default function FeedPage() {
   }, [userId, fetchFeed])
 
   const doTrigger = async () => {
+    // Snapshot current article IDs before triggering
+    prevArticleIdsRef.current = new Set(
+      items
+        .map(item => (Array.isArray(item.articles) ? item.articles[0] : item.articles)?.id)
+        .filter(Boolean) as string[]
+    )
+    setFreshArticleIds(new Set())
+    setShowFreshBanner(false)
     setTriggering(true)
     setPipelineStarted(false)
     setTriggerError(null)
     try {
-      const res = await fetch('/api/pipeline/trigger', { method: 'POST' })
+      const res = await fetch('/api/pipeline/trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lookbackDays: pipelineConfig.lookbackDays,
+          maxPerSource: pipelineConfig.maxPerSource,
+        }),
+      })
       const json = await res.json()
       if (json.ok) {
         localStorage.setItem(PIPELINE_KEY, Date.now().toString())
@@ -346,8 +482,8 @@ export default function FeedPage() {
 
   const handleTrigger = () => {
     const token = getAdminToken()
-    if (token) { doTrigger() }
-    else { setShowAdminGate(true) }
+    if (token) doTrigger()
+    else setShowAdminGate(true)
   }
 
   const handleReact = async (articleId: string, r: 'like' | 'dislike') => {
@@ -389,7 +525,6 @@ export default function FeedPage() {
     .map(item => (Array.isArray(item.articles) ? item.articles[0] : item.articles) ? item : null)
     .filter(Boolean) as FeedItem[]
 
-  // Topic counts
   const topicCounts: Record<string, number> = {}
   for (const item of articles) {
     const a = Array.isArray(item.articles) ? item.articles[0] : item.articles
@@ -397,7 +532,6 @@ export default function FeedPage() {
   }
   const allTopics = Object.keys(topicCounts).sort((a, b) => topicCounts[b] - topicCounts[a])
 
-  // Domain counts
   const domainCounts: Record<string, number> = {}
   for (const item of articles) {
     const a = Array.isArray(item.articles) ? item.articles[0] : item.articles
@@ -406,33 +540,32 @@ export default function FeedPage() {
   }
   const allDomains = Object.keys(domainCounts).sort((a, b) => domainCounts[b] - domainCounts[a])
 
-  // Filter
   let filteredArticles = articles
-  if (selectedTopic !== 'all') {
-    filteredArticles = filteredArticles.filter(item => {
-      const a = Array.isArray(item.articles) ? item.articles[0] : item.articles
-      return (a?.topic_tags ?? []).includes(selectedTopic)
-    })
-  }
-  if (selectedDomain !== 'all') {
-    filteredArticles = filteredArticles.filter(item => {
-      const a = Array.isArray(item.articles) ? item.articles[0] : item.articles
-      return a ? getDomain(a.url) === selectedDomain : false
-    })
-  }
+  if (selectedTopic !== 'all') filteredArticles = filteredArticles.filter(item => {
+    const a = Array.isArray(item.articles) ? item.articles[0] : item.articles
+    return (a?.topic_tags ?? []).includes(selectedTopic)
+  })
+  if (selectedDomain !== 'all') filteredArticles = filteredArticles.filter(item => {
+    const a = Array.isArray(item.articles) ? item.articles[0] : item.articles
+    return a ? getDomain(a.url) === selectedDomain : false
+  })
+  if (sortBy === 'recency') filteredArticles = [...filteredArticles].sort((a, b) => {
+    const aA = Array.isArray(a.articles) ? a.articles[0] : a.articles
+    const bA = Array.isArray(b.articles) ? b.articles[0] : b.articles
+    return (new Date(bA?.published_at ?? 0).getTime()) - (new Date(aA?.published_at ?? 0).getTime())
+  })
 
-  // Sort
-  if (sortBy === 'recency') {
-    filteredArticles = [...filteredArticles].sort((a, b) => {
-      const aA = Array.isArray(a.articles) ? a.articles[0] : a.articles
-      const bA = Array.isArray(b.articles) ? b.articles[0] : b.articles
-      const aDate = aA?.published_at ? new Date(aA.published_at).getTime() : 0
-      const bDate = bA?.published_at ? new Date(bA.published_at).getTime() : 0
-      return bDate - aDate
-    })
+  // Weekly digest grouped by topic
+  const weeklyByTopic: Record<string, WeeklyItem[]> = {}
+  for (const item of weeklyItems) {
+    const tag = item.topic_tags[0] ?? 'other'
+    if (!weeklyByTopic[tag]) weeklyByTopic[tag] = []
+    weeklyByTopic[tag].push(item)
   }
+  const weeklyTopics = Object.keys(weeklyByTopic).sort((a, b) => weeklyByTopic[b].length - weeklyByTopic[a].length)
 
   const selectedCount = selectedForCreate.size
+  const isNonDefaultConfig = pipelineConfig.lookbackDays !== DEFAULT_CONFIG.lookbackDays || pipelineConfig.maxPerSource !== DEFAULT_CONFIG.maxPerSource
 
   // ── render ─────────────────────────────────────────────────────────────────
 
@@ -457,9 +590,7 @@ export default function FeedPage() {
           <div className="flex items-center gap-2 mt-0.5">
             <p className="text-xs text-zinc-500 dark:text-zinc-400">GenAI intelligence, curated daily</p>
             {lastRefreshed && (
-              <span className="text-xs text-zinc-400 dark:text-zinc-500">
-                · Last refreshed {formatRelativeTime(lastRefreshed)}
-              </span>
+              <span className="text-xs text-zinc-400 dark:text-zinc-500">· Last refreshed {formatRelativeTime(lastRefreshed)}</span>
             )}
           </div>
         </div>
@@ -467,35 +598,63 @@ export default function FeedPage() {
           {selectedCount > 0 && (
             <a href="/create?source=feed"
               className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-violet-50 dark:bg-violet-950/40 text-violet-600 dark:text-violet-400 border border-violet-200 dark:border-violet-800 rounded-xl hover:bg-violet-100 transition-colors">
-              📌 {selectedCount} saved → Create
+              📌 {selectedCount} → Create
             </a>
           )}
-          <button
-            onClick={handleTrigger}
-            disabled={triggering || pipelineStarted}
-            className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-70 disabled:cursor-not-allowed text-white rounded-xl font-medium text-sm transition-colors shadow-sm"
-          >
+          <button onClick={() => setShowConfig(s => !s)} title="Pipeline settings"
+            className={`p-2 rounded-xl border transition-all ${
+              isNonDefaultConfig
+                ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700 text-amber-600'
+                : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 text-zinc-400 hover:text-zinc-600'
+            }`}>
+            ⚙️
+          </button>
+          <button onClick={handleTrigger} disabled={triggering || pipelineStarted}
+            className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-70 disabled:cursor-not-allowed text-white rounded-xl font-medium text-sm transition-colors shadow-sm">
             {triggering
               ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" /> Starting…</>
               : pipelineStarted
-              ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" /> Running (~2 min)…</>
+              ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" /> Running…</>
               : <>⚡ Get Latest Feed</>}
           </button>
         </div>
       </div>
 
+      {/* Pipeline config panel */}
+      {showConfig && (
+        <PipelineConfigPanel
+          config={pipelineConfig}
+          onChange={saveConfig}
+          onClose={() => setShowConfig(false)}
+        />
+      )}
+
+      {/* Fresh feed banner */}
+      {showFreshBanner && freshCount > 0 && (
+        <div className="mb-5 px-4 py-3 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-xl flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm text-green-700 dark:text-green-300">
+            <span className="text-base">✦</span>
+            <span><strong>{freshCount} fresh article{freshCount !== 1 ? 's' : ''}</strong> just pulled — highlighted in green below</span>
+          </div>
+          <button onClick={() => setShowFreshBanner(false)} className="text-green-500 hover:text-green-700 text-lg leading-none ml-4">×</button>
+        </div>
+      )}
+
       {/* Pipeline running banner */}
       {pipelineStarted && (
         <div className="mb-5 px-4 py-3 bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-800 rounded-xl flex items-center gap-3 text-sm text-violet-700 dark:text-violet-300">
           <span className="w-4 h-4 border-2 border-violet-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
-          <span>Pipeline is running — fetching and scoring your latest articles. Feed will refresh automatically when done (~2 min).</span>
+          <span>
+            Pipeline running — lookback {pipelineConfig.lookbackDays}d · max {pipelineConfig.maxPerSource}/source.
+            Feed refreshes automatically when done (~2 min).
+          </span>
         </div>
       )}
 
       {/* Error banner */}
       {triggerError && (
         <div className="mb-5 px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-700 dark:text-red-300 flex items-start gap-2">
-          <span className="flex-shrink-0">⚠️</span>
+          <span>⚠️</span>
           <span><strong>Pipeline error:</strong> {triggerError}</span>
         </div>
       )}
@@ -521,8 +680,8 @@ export default function FeedPage() {
       {/* Tab bar */}
       <div className="flex gap-5 border-b border-zinc-200 dark:border-zinc-800 mb-5">
         {[
-          { id: 'all'       as const, label: 'All Feeds' },
-          { id: 'headlines' as const, label: 'Headlines Digest' },
+          { id: 'all' as const, label: 'All Articles' },
+          { id: 'weekly' as const, label: 'Weekly Digest' },
         ].map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
             className={`pb-3 text-sm font-medium transition-colors ${
@@ -535,28 +694,25 @@ export default function FeedPage() {
         ))}
       </div>
 
-      {/* ── All Feeds ──────────────────────────────────────────────────────── */}
+      {/* ── All Articles ───────────────────────────────────────────────────────── */}
       {activeTab === 'all' && (
         <div>
-
           {/* Topic filters */}
           {!loading && allTopics.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 mb-3">
-              <span className="text-xs text-zinc-400 font-medium mr-1">Topic</span>
+              <span className="text-xs text-zinc-400 font-medium">Topic</span>
               <button onClick={() => setSelectedTopic('all')}
                 className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
-                  selectedTopic === 'all'
-                    ? 'bg-violet-600 text-white border-violet-600'
-                    : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-violet-300'
+                  selectedTopic === 'all' ? 'bg-violet-600 text-white border-violet-600'
+                  : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-violet-300'
                 }`}>
                 All <span className="opacity-70">({articles.length})</span>
               </button>
               {allTopics.map(topic => (
                 <button key={topic} onClick={() => setSelectedTopic(topic)}
                   className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
-                    selectedTopic === topic
-                      ? 'bg-violet-600 text-white border-violet-600'
-                      : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-violet-300'
+                    selectedTopic === topic ? 'bg-violet-600 text-white border-violet-600'
+                    : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-violet-300'
                   }`}>
                   {TAG_LABELS[topic] ?? topic} <span className="opacity-70">({topicCounts[topic]})</span>
                 </button>
@@ -570,10 +726,9 @@ export default function FeedPage() {
             </div>
           )}
 
-          {/* Source + Sort filters */}
+          {/* Sort + source filters */}
           {!loading && articles.length > 0 && (
             <div className="flex flex-wrap items-center gap-3 mb-5">
-              {/* Sort */}
               <div className="flex items-center gap-1.5">
                 <span className="text-xs text-zinc-400 font-medium">Sort</span>
                 <div className="flex gap-1 bg-zinc-100 dark:bg-zinc-800 p-0.5 rounded-lg">
@@ -583,39 +738,27 @@ export default function FeedPage() {
                   ]).map(opt => (
                     <button key={opt.id} onClick={() => setSortBy(opt.id)}
                       className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
-                        sortBy === opt.id
-                          ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm'
-                          : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+                        sortBy === opt.id ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm'
+                        : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
                       }`}>
                       {opt.label}
                     </button>
                   ))}
                 </div>
               </div>
-
-              {/* Source/domain filter */}
               {allDomains.length > 1 && (
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs text-zinc-400 font-medium">Source</span>
-                  <select
-                    value={selectedDomain}
-                    onChange={e => setSelectedDomain(e.target.value)}
-                    className="text-xs rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                  >
+                  <select value={selectedDomain} onChange={e => setSelectedDomain(e.target.value)}
+                    className="text-xs rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-violet-500">
                     <option value="all">All sources ({articles.length})</option>
-                    {allDomains.map(d => (
-                      <option key={d} value={d}>{d} ({domainCounts[d]})</option>
-                    ))}
+                    {allDomains.map(d => <option key={d} value={d}>{d} ({domainCounts[d]})</option>)}
                   </select>
                 </div>
               )}
-
-              {/* Reset filters */}
               {(selectedTopic !== 'all' || selectedDomain !== 'all' || sortBy !== 'ranking') && (
-                <button
-                  onClick={() => { setSelectedTopic('all'); setSelectedDomain('all'); setSortBy('ranking') }}
-                  className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 underline transition-colors"
-                >
+                <button onClick={() => { setSelectedTopic('all'); setSelectedDomain('all'); setSortBy('ranking') }}
+                  className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 underline transition-colors">
                   Reset filters
                 </button>
               )}
@@ -623,9 +766,7 @@ export default function FeedPage() {
           )}
 
           {prefToast && (
-            <div className="mb-4 px-4 py-2.5 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700">
-              ✓ {prefToast}
-            </div>
+            <div className="mb-4 px-4 py-2.5 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700">✓ {prefToast}</div>
           )}
 
           {loading ? (
@@ -644,19 +785,19 @@ export default function FeedPage() {
                 {filteredArticles.length} article{filteredArticles.length !== 1 ? 's' : ''}
                 {selectedTopic !== 'all' || selectedDomain !== 'all' ? ' (filtered)' : ''}
                 {' '}· sorted by {sortBy === 'ranking' ? 'relevance score' : 'publish date'}
-                {' '}· 📌 pin to save for Create
+                {freshCount > 0 && ` · ✦ ${freshCount} fresh`}
+                {' '}· 📌 pin to Create
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {filteredArticles.map((item, idx) => {
                   const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
                   return (
-                    <ArticleCard
-                      key={idx}
-                      item={item}
+                    <ArticleCard key={idx} item={item}
                       reaction={article ? reactions[article.id] : undefined}
                       onReact={handleReact}
                       selected={article ? selectedForCreate.has(article.id) : false}
                       onSelect={handleSelect}
+                      isFresh={article ? freshArticleIds.has(article.id) : false}
                     />
                   )
                 })}
@@ -666,126 +807,115 @@ export default function FeedPage() {
         </div>
       )}
 
-      {/* ── Headlines Digest ───────────────────────────────────────────────── */}
-      {activeTab === 'headlines' && (
+      {/* ── Weekly Digest ──────────────────────────────────────────────────────── */}
+      {activeTab === 'weekly' && (
         <div>
           <div className="flex items-center justify-between mb-5">
             <div>
-              <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">What you need to know — ranked by importance</p>
-              <p className="text-xs text-zinc-400 mt-0.5">3 key takeaways per story · like/dislike to tune future digests</p>
+              <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Last 7 days — grouped by topic</p>
+              <p className="text-xs text-zinc-400 mt-0.5">Key ideas, research, and developments worth knowing · instant load from DB</p>
             </div>
-            <button onClick={fetchDigest}
-              className="text-xs text-violet-600 dark:text-violet-400 hover:underline font-medium px-3 py-1.5 bg-violet-50 dark:bg-violet-950/30 rounded-lg border border-violet-200 dark:border-violet-800">
-              ↺ Regenerate
+            <button onClick={fetchWeekly}
+              className="text-xs text-violet-600 dark:text-violet-400 px-3 py-1.5 bg-violet-50 dark:bg-violet-950/30 rounded-lg border border-violet-200 dark:border-violet-800 hover:bg-violet-100 transition-colors font-medium">
+              ↺ Refresh
             </button>
           </div>
 
-          {digestLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {[0,1,2,3,4,5,6,7].map(i => (
-                <div key={i} className="h-48 bg-zinc-100 dark:bg-zinc-800 rounded-2xl animate-pulse" />
-              ))}
+          {weeklyLoading ? (
+            <div className="space-y-3">
+              {[0,1,2,3,4].map(i => <div key={i} className="h-28 bg-zinc-100 dark:bg-zinc-800 rounded-2xl animate-pulse" />)}
             </div>
-          ) : digest.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {digest.map((item, i) => {
-                const priorityBand = i < 2 ? 'Must Read' : i < 5 ? 'Top Pick' : 'Good Read'
-                const bandCls = i < 2
-                  ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-800'
-                  : i < 5
-                  ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800'
-                  : 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800'
-                const takeaways: string[] = Array.isArray(item.key_takeaways) ? item.key_takeaways : []
-                return (
-                  <div key={i} className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-4 flex flex-col gap-3 hover:shadow-md hover:border-zinc-200 dark:hover:border-zinc-700 transition-all">
-                    {/* Header */}
-                    <div className="flex items-start gap-3">
-                      <span className={`flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br ${topicGradient(item.tags)} flex items-center justify-center text-white text-xs font-bold`}>
-                        {i + 1}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${bandCls}`}>{priorityBand}</span>
-                          {(item.tags ?? []).slice(0, 2).map(tag => <TagPill key={tag} tag={tag} />)}
-                        </div>
-                        <a href={item.url} target="_blank" rel="noopener noreferrer"
-                          className="font-semibold text-sm text-zinc-900 dark:text-zinc-100 hover:text-violet-600 dark:hover:text-violet-400 transition-colors leading-snug line-clamp-2">
-                          {item.headline}
-                        </a>
-                      </div>
-                    </div>
-
-                    {/* Key takeaways */}
-                    {takeaways.length > 0 && (
-                      <ul className="space-y-1.5 pl-1">
-                        {takeaways.map((t, ti) => (
-                          <li key={ti} className="flex items-start gap-2 text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                            <span className="flex-shrink-0 w-4 h-4 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 flex items-center justify-center text-[10px] font-semibold mt-0.5">
-                              {ti + 1}
-                            </span>
-                            {t}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-
-                    {/* Why it matters */}
-                    {item.why_it_matters && (
-                      <p className="text-xs text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/30 border border-violet-100 dark:border-violet-900 rounded-lg px-3 py-2 leading-relaxed">
-                        <span className="font-semibold">Why it matters: </span>{item.why_it_matters}
-                      </p>
-                    )}
-
-                    {/* Footer: source + like/dislike */}
-                    <div className="flex items-center justify-between pt-1 border-t border-zinc-50 dark:border-zinc-800">
-                      <a href={item.url} target="_blank" rel="noopener noreferrer"
-                        className="text-xs text-zinc-400 hover:text-violet-500 transition-colors">
-                        {getDomain(item.url)} ↗
-                      </a>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => {
-                            const a = articles.find(fi => {
-                              const art = Array.isArray(fi.articles) ? fi.articles[0] : fi.articles
-                              return art && getDomain(art.url) === getDomain(item.url)
-                            })
-                            const art = a && (Array.isArray(a.articles) ? a.articles[0] : a.articles)
-                            if (art) handleReact(art.id, 'like')
-                          }}
-                          className="p-1.5 rounded-lg text-sm text-zinc-300 dark:text-zinc-600 hover:text-green-500 transition-colors"
-                          title="Relevant — show more like this"
-                        >👍</button>
-                        <button
-                          onClick={() => {
-                            const a = articles.find(fi => {
-                              const art = Array.isArray(fi.articles) ? fi.articles[0] : fi.articles
-                              return art && getDomain(art.url) === getDomain(item.url)
-                            })
-                            const art = a && (Array.isArray(a.articles) ? a.articles[0] : a.articles)
-                            if (art) handleReact(art.id, 'dislike')
-                          }}
-                          className="p-1.5 rounded-lg text-sm text-zinc-300 dark:text-zinc-600 hover:text-red-500 transition-colors"
-                          title="Not relevant — show less"
-                        >👎</button>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          ) : articles.length === 0 ? (
+          ) : weeklyItems.length === 0 ? (
             <div className="text-center py-16 text-zinc-400">
               <div className="text-5xl mb-4">📭</div>
-              <p className="font-medium">No articles yet</p>
-              <p className="text-sm mt-1">Switch to All Feeds and click ⚡ Get Latest Feed.</p>
+              <p className="font-medium text-zinc-600 dark:text-zinc-400">No articles in the last 7 days</p>
+              <p className="text-sm mt-1">Run the pipeline first to pull articles.</p>
             </div>
           ) : (
-            <div className="text-center py-8 text-zinc-400 text-sm">
-              Click &ldquo;Regenerate&rdquo; to generate today&apos;s digest.
+            <div className="space-y-8">
+              {weeklyTopics.map(topic => (
+                <div key={topic}>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className={`w-3 h-3 rounded-full bg-gradient-to-br ${topicGradient([topic])}`} />
+                    <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                      {TAG_LABELS[topic] ?? topic}
+                    </h3>
+                    <span className="text-xs text-zinc-400">{weeklyByTopic[topic].length} article{weeklyByTopic[topic].length !== 1 ? 's' : ''}</span>
+                  </div>
+                  <div className="space-y-3">
+                    {weeklyByTopic[topic].map((item, i) => (
+                      <WeeklyArticleRow key={i} item={item} reaction={reactions[item.id]} onReact={handleReact} />
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+function WeeklyArticleRow({
+  item, reaction, onReact,
+}: {
+  item: WeeklyItem
+  reaction?: 'like' | 'dislike'
+  onReact: (articleId: string, r: 'like' | 'dislike') => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const priority = priorityLabel(item.blend_score)
+  const hasEnriched = item.why_it_matters || item.key_takeaways.length > 0
+
+  return (
+    <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-100 dark:border-zinc-800 p-4 hover:border-zinc-200 dark:hover:border-zinc-700 transition-all">
+      <div className="flex items-start gap-3">
+        <div className={`flex-shrink-0 w-1 self-stretch rounded-full bg-gradient-to-b ${topicGradient(item.topic_tags)}`} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${priority.cls}`}>{priority.label}</span>
+            <span className="text-xs text-zinc-400">{getDomain(item.url)}</span>
+            {item.published_at && <span className="text-xs text-zinc-300 dark:text-zinc-600">· {formatPubDate(item.published_at)}</span>}
+          </div>
+          <a href={item.url} target="_blank" rel="noopener noreferrer"
+            className="font-semibold text-sm text-zinc-900 dark:text-zinc-100 hover:text-violet-600 dark:hover:text-violet-400 transition-colors leading-snug block mb-1">
+            {item.title}
+          </a>
+          {item.why_it_matters && (
+            <p className="text-xs text-violet-700 dark:text-violet-300 mb-2">{item.why_it_matters}</p>
+          )}
+          {hasEnriched && (
+            <div>
+              {expanded && item.key_takeaways.length > 0 && (
+                <ul className="space-y-1 mb-2">
+                  {item.key_takeaways.map((t, ti) => (
+                    <li key={ti} className="flex items-start gap-2 text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                      <span className="flex-shrink-0 w-4 h-4 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-400 flex items-center justify-center text-[10px] font-semibold mt-0.5">{ti + 1}</span>
+                      {t}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {item.key_takeaways.length > 0 && (
+                <button onClick={() => setExpanded(e => !e)}
+                  className="text-xs text-zinc-400 hover:text-violet-500 dark:hover:text-violet-400 font-medium transition-colors">
+                  {expanded ? '▲ Hide takeaways' : `▼ ${item.key_takeaways.length} takeaways`}
+                </button>
+              )}
+            </div>
+          )}
+          {!hasEnriched && item.tldr_bullets.length > 0 && (
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2">{item.tldr_bullets[0]}</p>
+          )}
+        </div>
+        <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+          <button onClick={() => onReact(item.id, 'like')}
+            className={`p-1.5 rounded-lg text-sm transition-all ${reaction === 'like' ? 'bg-green-100 dark:bg-green-900/40 text-green-600' : 'text-zinc-300 dark:text-zinc-600 hover:text-green-500'}`}>👍</button>
+          <button onClick={() => onReact(item.id, 'dislike')}
+            className={`p-1.5 rounded-lg text-sm transition-all ${reaction === 'dislike' ? 'bg-red-100 dark:bg-red-900/40 text-red-600' : 'text-zinc-300 dark:text-zinc-600 hover:text-red-500'}`}>👎</button>
+        </div>
+      </div>
     </div>
   )
 }
