@@ -1,0 +1,54 @@
+# GenAI Analyst OS — Utsab's curated source list
+# RSS URLs verified 2026-06-29. Run with:
+#   python scripts/add_source.py --file scripts/my_sources.txt --email utsab.chakraborty@gmail.com
+#
+# Already filtered to AI / GenAI / Agentic / LLM content only.
+# All sources below are free — no paywall, no email subscription required.
+
+# ── Practitioner newsletters (Substack) ─────────────────────────────────────
+https://boringbot.substack.com/feed              # BoringBot — AI practitioner takes
+https://www.newsletter.swirlai.com/feed          # SwirlAI newsletter
+https://magazine.sebastianraschka.com/feed       # Sebastian Raschka — LLM deep-dives
+https://tinahuang.substack.com/feed              # Tina Huang — ML/AI
+https://hamelhusain.substack.com/feed            # Hamel Husain — LLM engineering (also ai.hamel.dev)
+https://theaiengineer.substack.com/feed          # The AI Engineer newsletter
+https://hugobowne.substack.com/feed              # Hugo Bowne-Anderson — data/AI
+
+# ── Practitioner blogs ───────────────────────────────────────────────────────
+https://simonwillison.net/                       # Simon Willison — LLM field notes (high signal)
+https://eugeneyan.com/                           # Eugene Yan — applied ML systems
+https://lilianweng.github.io/                    # Lilian Weng — research deep-dives (RSS: /index.xml)
+https://karpathy.github.io/                      # Andrej Karpathy — infrequent but essential
+https://huyenchip.com/                           # Chip Huyen — ML systems and AI engineering
+https://jxnl.co/                                 # Jason Liu — LLM product engineering
+
+# ── Research lab blogs ───────────────────────────────────────────────────────
+https://huggingface.co/blog                      # Hugging Face blog (RSS: /blog/feed.xml)
+https://deepmind.google/blog/                    # Google DeepMind (RSS: /blog/rss.xml)
+https://blog.google/technology/ai/              # Google AI blog (RSS: /technology/ai/rss/)
+https://engineering.fb.com/                      # Meta Engineering (RSS: /feed/)
+
+# ── Tech company engineering blogs (AI-relevant posts) ──────────────────────
+https://netflixtechblog.com/                     # Netflix Tech Blog — recommendation/ML systems
+https://towardsdatascience.com/                  # Towards Data Science (Medium, free tier)
+https://pub.towardsai.net/                       # Towards AI (Medium, free tier)
+https://www.zenml.io/blog                        # ZenML — MLOps / LLM pipelines (RSS: /blog/rss.xml)
+
+# ── AI news ──────────────────────────────────────────────────────────────────
+https://www.therundown.ai/                       # The Rundown AI — will probe for RSS on add
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SKIPPED — reason noted:
+#
+# https://www.sh-reya.com/                  — no RSS found (Shreya Shankar — follow manually)
+# https://ai.hamel.dev/                     — same content as hamelhusain.substack.com above
+# https://www.dair.ai/                      — no RSS found; posts on Medium instead
+# https://www.anthropic.com/research        — no RSS (follow manually at anthropic.com/news)
+# https://www.anthropic.com/engineering     — no RSS (merged into anthropic.com/news)
+# https://www.linkedin.com/blog/engineering — LinkedIn has no public RSS
+# https://www.uber.com/us/en/blog/engineering/ — RSS probe returns 406 (blocked)
+# https://shopify.engineering/              — no RSS found
+# https://developers.tiktok.com/blogs       — no RSS found
+# https://www.deeplearning.ai/the-batch     — email-only newsletter, no public RSS
+# https://www.langchain.com/state-of-agent-engineering — static report page, not a feed
+# https://cloud.google.com/transform/101-real-world-generative-ai-use-cases-from-industry-leaders — static page

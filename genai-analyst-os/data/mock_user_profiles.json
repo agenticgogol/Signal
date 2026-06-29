@@ -1,0 +1,62 @@
+{
+  "id": "mock-user-01",
+  "plan": "pro",
+  "is_admin": false,
+  "style_seed": "practitioner",
+  "topic_weights": {
+    "agents": 0.80,
+    "evals": 0.70,
+    "fine-tuning": 0.40,
+    "rag": 0.35,
+    "multimodal": 0.20,
+    "reasoning": 0.50,
+    "infrastructure": 0.30,
+    "safety": 0.30,
+    "hardware": 0.15,
+    "products": 0.25,
+    "research": 0.45
+  },
+  "stripe_customer_id": "cus_mock_001",
+  "mock_daily_ideas": [
+    {
+      "angle_title": "Eval harnesses are the unit tests your LLM pipeline is missing",
+      "format": "substack",
+      "hook_sentence": "Most teams find regressions in prod, not in CI — because they never built the CI.",
+      "source_article_ids": ["art-01", "art-08"],
+      "rationale": "Evals are having a moment; this angle grounds the trend in concrete implementation advice.",
+      "position": 1
+    },
+    {
+      "angle_title": "Why agent loops fail: the three patterns I keep seeing",
+      "format": "linkedin",
+      "hook_sentence": "I've reviewed a dozen production agent systems this year. The failure modes are surprisingly consistent.",
+      "source_article_ids": ["art-02", "art-09"],
+      "rationale": "Pattern posts perform well on LinkedIn; practitioners will nod along and share.",
+      "position": 2
+    },
+    {
+      "angle_title": "Fine-tune or prompt-engineer? A decision tree for practitioners",
+      "format": "substack",
+      "hook_sentence": "The wrong answer here costs you three months and a GPU bill.",
+      "source_article_ids": ["art-03"],
+      "rationale": "Perennial question with no canonical practitioner-level guide — strong search and share potential.",
+      "position": 3
+    },
+    {
+      "angle_title": "Structured outputs are the new API design — most teams haven't realised it yet",
+      "format": "linkedin",
+      "hook_sentence": "The best prompt engineers I know stopped thinking about prompts and started thinking about schemas.",
+      "source_article_ids": ["art-06"],
+      "rationale": "Contrarian-adjacent take grounded in a specific technical shift — LinkedIn-native format.",
+      "position": 4
+    },
+    {
+      "angle_title": "What production agentic memory actually looks like (it's not RAG)",
+      "format": "substack",
+      "hook_sentence": "Everyone reaches for a vector store. The teams shipping reliable agents mostly don't.",
+      "source_article_ids": ["art-09", "art-01"],
+      "rationale": "Corrects a common misconception with specificity — high engagement for practitioner audience.",
+      "position": 5
+    }
+  ]
+}

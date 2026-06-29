@@ -1,0 +1,112 @@
+[
+  {
+    "id": "art-01",
+    "url": "https://blog-a.com/post/eval-harness-rag",
+    "title": "Implementing an Eval Harness for RAG Pipelines",
+    "full_text": "Most teams building RAG pipelines skip the eval harness entirely...",
+    "tldr_bullets": ["Most RAG teams have no regression harness — they find bugs in prod", "A minimal eval suite needs: retrieval quality, answer faithfulness, latency p95"],
+    "topic_tags": ["agents", "evals"],
+    "depth_score": 4,
+    "published_at": "2026-06-28T10:00:00Z",
+    "source_id": "src-01"
+  },
+  {
+    "id": "art-02",
+    "url": "https://blog-b.com/post/agent-loops-fail",
+    "title": "Why Most Production Agent Loops Fail",
+    "full_text": "After reviewing a dozen production agent systems, the failure modes are consistent...",
+    "tldr_bullets": ["Tool call errors compound in multi-step loops without explicit recovery logic", "Three most common failure modes: stale context, missing retry, no exit condition"],
+    "topic_tags": ["agents"],
+    "depth_score": 4,
+    "published_at": "2026-06-28T14:00:00Z",
+    "source_id": "src-02"
+  },
+  {
+    "id": "art-03",
+    "url": "https://blog-c.com/post/fine-tune-vs-prompt",
+    "title": "Fine-Tuning vs Prompting: A Practitioner's Guide",
+    "full_text": "The wrong answer to fine-tune vs prompt costs you three months and a GPU bill...",
+    "tldr_bullets": ["Prompting wins for high-variance inputs; fine-tuning for consistent format tasks", "Fine-tune ROI break-even is typically > 10k examples and > 6 months deployment"],
+    "topic_tags": ["fine-tuning"],
+    "depth_score": 3,
+    "published_at": "2026-06-27T09:00:00Z",
+    "source_id": "src-03"
+  },
+  {
+    "id": "art-04",
+    "url": "https://blog-a.com/post/pgvector-at-scale",
+    "title": "pgvector at Scale: Lessons from 100M Embeddings",
+    "full_text": "Running pgvector at 100M rows taught us several hard lessons about index tuning...",
+    "tldr_bullets": ["HNSW outperforms IVFFlat above 1M rows for p95 latency", "Partition by tenant early — retrofitting is painful at scale"],
+    "topic_tags": ["infrastructure", "rag"],
+    "depth_score": 5,
+    "published_at": "2026-06-27T16:00:00Z",
+    "source_id": "src-01"
+  },
+  {
+    "id": "art-05",
+    "url": "https://blog-b.com/post/sonnet-benchmark",
+    "title": "Claude Sonnet Benchmark Deep Dive",
+    "full_text": "We ran Claude Sonnet across 12 internal benchmarks covering reasoning and tool use...",
+    "tldr_bullets": ["Sonnet leads on multi-step tool use; competitive on reasoning", "Latency p95 is 40% lower than GPT-4o for equivalent tasks in our workload"],
+    "topic_tags": ["products", "evals"],
+    "depth_score": 3,
+    "published_at": "2026-06-26T11:00:00Z",
+    "source_id": "src-02"
+  },
+  {
+    "id": "art-06",
+    "url": "https://blog-c.com/post/structured-outputs-api-design",
+    "title": "Structured Outputs Are the New API Design",
+    "full_text": "The best prompt engineers have stopped thinking about prompts and started thinking about schemas...",
+    "tldr_bullets": ["Structured output + Zod schema validation eliminates an entire class of prompt fragility", "Treat LLM output contracts like API contracts: version them, test them, own them"],
+    "topic_tags": ["agents", "reasoning"],
+    "depth_score": 4,
+    "published_at": "2026-06-26T08:00:00Z",
+    "source_id": "src-03"
+  },
+  {
+    "id": "art-07",
+    "url": "https://blog-a.com/post/rag-chunking",
+    "title": "The Hidden Costs of RAG Chunking Strategies",
+    "full_text": "Chunking strategy is the most underspecified decision in most RAG implementations...",
+    "tldr_bullets": ["Fixed-size chunking degrades retrieval quality for long-form technical content", "Semantic chunking adds 20-40ms per document but improves recall@5 by 15-30%"],
+    "topic_tags": ["rag"],
+    "depth_score": 3,
+    "published_at": "2026-06-25T14:00:00Z",
+    "source_id": "src-01"
+  },
+  {
+    "id": "art-08",
+    "url": "https://blog-b.com/post/evals-contracts-not-scores",
+    "title": "LLM Evals: Contracts Not Scores",
+    "full_text": "The mental model shift that changed how my team builds LLM systems...",
+    "tldr_bullets": ["An eval is a contract between your system and its behaviour — not a leaderboard score", "Evals that fail silently are worse than no evals; instrument failure visibility first"],
+    "topic_tags": ["evals"],
+    "depth_score": 5,
+    "published_at": "2026-06-25T09:00:00Z",
+    "source_id": "src-02"
+  },
+  {
+    "id": "art-09",
+    "url": "https://blog-c.com/post/agentic-memory-production",
+    "title": "Agentic Memory: What Works in Production",
+    "full_text": "Everyone reaches for a vector store. The teams shipping reliable agents mostly don't...",
+    "tldr_bullets": ["Short-term context + structured state outperforms naive RAG for agent memory", "Right memory primitive depends on task horizon: < 10 steps = context, > 10 = external store"],
+    "topic_tags": ["agents"],
+    "depth_score": 4,
+    "published_at": "2026-06-24T18:00:00Z",
+    "source_id": "src-03"
+  },
+  {
+    "id": "art-10",
+    "url": "https://blog-a.com/post/multimodal-reasoning-gpt4o",
+    "title": "Multimodal Reasoning with GPT-4o",
+    "full_text": "We tested GPT-4o's multimodal reasoning across 8 document-understanding tasks...",
+    "tldr_bullets": ["GPT-4o chart understanding outperforms OCR+text pipeline by 22% on our benchmark", "Latency doubles vs text-only; acceptable for async document processing, not real-time"],
+    "topic_tags": ["multimodal", "reasoning"],
+    "depth_score": 3,
+    "published_at": "2026-06-24T12:00:00Z",
+    "source_id": "src-01"
+  }
+]

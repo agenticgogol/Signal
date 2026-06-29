@@ -1,0 +1,60 @@
+project:
+  name: "GenAI Analyst OS"
+  slug: "genai-analyst-os"
+  domain: "GenAI Content Intelligence"
+  tagline: "Stay at the GenAI frontier and turn your POV into published content."
+
+user_story:
+  as_a: "GenAI practitioner or content creator following 10–30 blogs and newsletters"
+  i_want: "a ranked daily feed of relevant articles and AI-assisted draft generation"
+  so_that: "I can publish consistently on Substack and LinkedIn without spending hours reading and drafting"
+
+agentic_patterns:
+  - "Scheduled background agent (pg_cron orchestrated crawler at 02:00 UTC)"
+  - "LLM-as-summariser (Claude generates TL;DR bullets + topic tags per article)"
+  - "Preference learning loop (like/dislike updates topic_weights for relevance scoring)"
+  - "Structured output (5 daily idea angle cards returned as JSON from Claude)"
+  - "Streaming content generation (Vercel AI SDK + Claude streaming into TipTap)"
+
+stack:
+  llm_primary: "claude-sonnet-4-6"
+  llm_cheap: "claude-haiku-4-5-20251001"
+  llm_provider: "anthropic"
+  framework: "nextjs"
+  persistence: "supabase"
+  vector_store: "pgvector"
+
+frontend_a:
+  type: "nextjs"
+  file: "app/feed/page.tsx"
+  description: "Main daily feed page with ranked article cards (TL;DR, like/dislike, filter bar), 5 daily angle idea cards with 'Write this' CTA, and sidebar showing topic weight breakdown."
+
+frontend_b:
+  type: "nextjs"
+  file: "app/create/page.tsx"
+  description: "Content creation page with article selector, POV input area, streaming TipTap editor, live LinkedIn character count, drafts history, and settings (sources, topics, billing)."
+
+tools:
+  - name: "crawl_sources"
+    description: "Fetches RSS/HTML for all user sources, deduplicates against seen_articles, returns new article objects"
+  - name: "summarise_article"
+    description: "Calls Claude and returns tldr_bullets[], topic_tags[], and depth_score (1–5)"
+  - name: "score_article"
+    description: "Computes blend score using pgvector cosine similarity for relevance + recency decay + source tier"
+  - name: "generate_daily_ideas"
+    description: "Calls Claude with top articles and returns 5 angle JSON objects with title, format, hook, source_ids, rationale"
+  - name: "generate_draft"
+    description: "Streams Claude response via Vercel AI SDK using format-specific system prompts for Substack vs LinkedIn"
+
+mcp:
+  enabled: false
+  server_name: ""
+  tools_exposed: []
+
+data:
+  type: "real"
+  description: "Supabase Postgres with pgvector + gte-small (pg_embedding). Key tables: user_profiles (+ is_admin bool), user_sources (+ rss_url), articles (with vector(384) embeddings via gte-small), user_feed_items, user_feedback, daily_ideas, drafts."
+
+deploy:
+  target: "vercel"
+  dockerfile: false
