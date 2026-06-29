@@ -2,3 +2,10 @@
 __pycache__/
 .env
 *.pyc
+# Local SQLite dev databases — production uses Supabase
+*.db
+*.db-shm
+*.db-wal
+# Next.js build output
+web/.next/
+web/node_modules/
