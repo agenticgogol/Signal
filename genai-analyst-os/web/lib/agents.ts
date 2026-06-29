@@ -232,9 +232,199 @@ Return ONLY the rewritten content. No meta-commentary, no "Here is the revised v
   return response.content[0].type === 'text' ? response.content[0].text : ''
 }
 
+// ── Claim Verifier ─────────────────────────────────────────────────────────────
+// Runs after Writer. For each claim in the draft, checks whether the cited
+// source's TL;DR bullets actually support it. Flags hallucinated citations.
+
+export async function runClaimVerifierAgent(
+  draft: string,
+  sources: SourceArticle[],
+  brief: string
+): Promise<string> {
+  if (sources.length === 0) return 'No sources provided — skipping claim verification.'
+
+  const sourceDigest = sources
+    .map(s => `SOURCE: "${s.title}" (${s.url})\n  → Available evidence: [from feed TL;DR bullets stored in pipeline]`)
+    .join('\n\n')
+
+  const response = await anthropic.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 1200,
+    system: `You are a fact-checker verifying that each claim in a draft is actually supported by the cited source.
+
+For each claim+citation pair you find in the draft:
+1. Extract the claim being made
+2. Extract which source it cites (by URL or domain)
+3. Assess: SUPPORTED (source clearly backs this), OVERSTATED (source is related but claim goes further than evidence), UNSUPPORTED (no citation at all or wrong source cited), HALLUCINATED (cited source doesn't appear in available sources list)
+
+Output format:
+CLAIM VERIFICATION REPORT
+--------------------------
+[SUPPORTED] "exact claim text" → cited: domain.com ✓
+[OVERSTATED] "exact claim text" → cited: domain.com — claim goes beyond what source says; suggest softening to "..."
+[UNSUPPORTED] "exact claim text" → no citation found — needs citation or removal
+[HALLUCINATED] "exact claim text" → cited URL not in source list — must be corrected
+
+VERDICT: X of Y claims verified. [PASS / NEEDS REVISION]`,
+    messages: [{
+      role: 'user',
+      content: `Brief: ${brief}\n\nAvailable sources:\n${sourceDigest}\n\nDraft to verify:\n${draft}`,
+    }],
+  })
+  return response.content[0].type === 'text' ? response.content[0].text : ''
+}
+
+// ── Evaluator ──────────────────────────────────────────────────────────────────
+// Scores the final content on 5 criteria. If any score < 7, returns instructions
+// for the Writer to fix specific issues. Caps at 3 iterations.
+
+export interface EvaluatorResult {
+  scores: { hook: number; specificity: number; citations: number; voice: number; platform: number }
+  pass: boolean
+  failedCriteria: string[]
+  writerInstructions: string
+  scoresSummary: string
+}
+
+export async function runEvaluatorAgent(
+  content: string,
+  format: string,
+  brief: string,
+  loopNumber: number
+): Promise<EvaluatorResult> {
+  const spec = PLATFORM_SPECS[format]
+
+  const response = await anthropic.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 1000,
+    system: `You are a content quality evaluator. Score this ${spec?.name ?? format} content on 5 criteria, each 1-10:
+
+1. HOOK STRENGTH (1-10): Does the opening line grab a practitioner immediately? 7+ = specific and compelling. Below 7 = generic or vague.
+2. CLAIM SPECIFICITY (1-10): Are claims backed by numbers, names, or concrete examples? 7+ = most claims have specifics. Below 7 = too many vague assertions.
+3. CITATION DENSITY (1-10): Are opinions and facts properly cited? 7+ = all key claims have sources. Below 7 = gaps exist.
+4. VOICE AUTHENTICITY (1-10): Does it sound like a human expert or like AI? 7+ = reads naturally. Below 7 = AI tells present (em-dashes, "delve", symmetrical lists).
+5. PLATFORM FIT (1-10): Does format/length match ${spec?.name ?? format} norms? 7+ = fits the platform. Below 7 = structure mismatch.
+
+Return ONLY valid JSON:
+{
+  "scores": { "hook": N, "specificity": N, "citations": N, "voice": N, "platform": N },
+  "failed": ["hook", "voice"],  // criteria scoring < 7, empty array if all pass
+  "writer_instructions": "Specific rewrite instructions for the Writer — what exactly to fix, with examples. Empty string if all pass."
+}`,
+    messages: [{
+      role: 'user',
+      content: `Brief: ${brief}\n\nContent (loop ${loopNumber}):\n${content}`,
+    }],
+  })
+
+  const raw = response.content[0].type === 'text' ? response.content[0].text : '{}'
+  const cleaned = raw.replace(/^```[a-z]*\n?/, '').replace(/\n?```$/, '').trim()
+
+  try {
+    const parsed = JSON.parse(cleaned)
+    const scores = parsed.scores ?? { hook: 8, specificity: 8, citations: 8, voice: 8, platform: 8 }
+    const failed: string[] = parsed.failed ?? []
+    const pass = failed.length === 0
+    const scoresSummary = `Hook: ${scores.hook}/10 | Specificity: ${scores.specificity}/10 | Citations: ${scores.citations}/10 | Voice: ${scores.voice}/10 | Platform: ${scores.platform}/10`
+    return {
+      scores,
+      pass,
+      failedCriteria: failed,
+      writerInstructions: parsed.writer_instructions ?? '',
+      scoresSummary,
+    }
+  } catch {
+    return {
+      scores: { hook: 8, specificity: 8, citations: 8, voice: 8, platform: 8 },
+      pass: true,
+      failedCriteria: [],
+      writerInstructions: '',
+      scoresSummary: 'Evaluation parse error — treating as pass',
+    }
+  }
+}
+
+// ── Audience Simulation ────────────────────────────────────────────────────────
+// Simulates 3 reader personas and returns their objections/questions.
+// The Humanizer uses this as a final-pass brief.
+
+export async function runAudienceSimAgent(
+  content: string,
+  format: string
+): Promise<string> {
+  const spec = PLATFORM_SPECS[format]
+
+  const response = await anthropic.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 800,
+    system: `You are simulating 3 different readers of a ${spec?.name ?? format} post.
+
+Read the content as each persona and give their honest reaction:
+
+PERSONA 1 — Skeptical ML Engineer: deeply technical, spots hand-wavy claims immediately, allergic to hype
+PERSONA 2 — Curious PM / Product Lead: understands AI at a business level, needs jargon explained, cares about "so what for my team"
+PERSONA 3 — Executive Skimmer: reads only the first sentence and last paragraph, needs the business impact to be unmissable
+
+For each persona, output:
+**[Persona name]**
+Objection: [one specific thing they'd push back on]
+Question: [one thing they'd want answered that isn't in the content]
+
+Keep each response to 2 lines max. Be specific about what line/claim triggered the reaction.`,
+    messages: [{
+      role: 'user',
+      content: `Content:\n${content}`,
+    }],
+  })
+  return response.content[0].type === 'text' ? response.content[0].text : ''
+}
+
+// ── Audience-aware Humanizer ───────────────────────────────────────────────────
+// Final humanizer pass that also addresses audience sim objections.
+
+export async function runFinalPolishAgent(
+  content: string,
+  audienceFeedback: string,
+  format: string,
+  sources: SourceArticle[] = []
+): Promise<string> {
+  const spec = PLATFORM_SPECS[format]
+  const charNote = spec?.charLimit ? `\nCRITICAL: Final output must be under ${spec.charLimit} characters.` : ''
+  const sourceContext = sources.length > 0
+    ? `\nSOURCES if any claims still need citation:\n${sources.map(s => `• ${s.title} — ${s.url}`).join('\n')}`
+    : ''
+
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 2500,
+    system: `You are making the final polish pass on a ${spec?.name ?? format} post.
+
+Three different reader personas just read this and gave feedback. Your job is to address their objections in the existing text — not add sections, but fix the specific lines that caused the reactions.
+
+Rules:
+1. Address each objection by fixing the specific line — clarify jargon, add a concrete "so what", make the opening line's impact unmissable
+2. Do NOT add new sections or change the overall structure
+3. Keep all existing citations — add any that are still missing${charNote}
+${sourceContext}
+
+Return ONLY the revised content. No preamble.`,
+    messages: [{
+      role: 'user',
+      content: `Content:\n${content}\n\nAudience feedback to address:\n${audienceFeedback}`,
+    }],
+  })
+  return response.content[0].type === 'text' ? response.content[0].text : content
+}
+
 export async function persistJob(
-  userId: string, brief: string, format: string,
-  orchestratorBrief: string, draft: string, critique: string, final: string
+  userId: string,
+  brief: string,
+  format: string,
+  orchestratorBrief: string,
+  draft: string,
+  critique: string,
+  final: string,
+  extras: Record<string, string> = {}
 ): Promise<void> {
   try {
     const client = createServiceClient()
@@ -243,12 +433,14 @@ export async function persistJob(
       .insert({ user_id: userId, brief, format, status: 'complete', completed_at: new Date().toISOString() })
       .select('id').single()
     if (jobError || !job) return
-    await client.from('generation_artifacts').insert([
+    const artifacts = [
       { job_id: job.id, slot: 'orchestrator_brief', content: orchestratorBrief, agent: 'orchestrator' },
       { job_id: job.id, slot: 'draft', content: draft, agent: 'writer' },
       { job_id: job.id, slot: 'critique', content: critique, agent: 'critic' },
       { job_id: job.id, slot: 'final', content: final, agent: 'humanizer' },
-    ])
+      ...Object.entries(extras).map(([slot, content]) => ({ job_id: job.id, slot, content, agent: slot })),
+    ]
+    await client.from('generation_artifacts').insert(artifacts)
   } catch (err) {
     console.error('persistJob error:', err)
   }

@@ -66,7 +66,7 @@ interface Article {
   depth_score: number; published_at: string; source_id: string
 }
 interface FeedItem { blend_score: number; feed_date: string; articles: Article | Article[] | null }
-interface DigestItem { headline: string; summary: string; url: string; tags: string[] }
+interface DigestItem { headline: string; why_it_matters: string; key_takeaways: string[]; url: string; tags: string[] }
 type DateRange = 'today' | '7d' | '30d'
 type SortBy = 'ranking' | 'recency'
 
@@ -669,22 +669,25 @@ export default function FeedPage() {
       {/* ── Headlines Digest ───────────────────────────────────────────────── */}
       {activeTab === 'headlines' && (
         <div>
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-sm text-zinc-500">Today&apos;s InShorts-style digest, ranked by importance</p>
+          <div className="flex items-center justify-between mb-5">
+            <div>
+              <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">What you need to know — ranked by importance</p>
+              <p className="text-xs text-zinc-400 mt-0.5">3 key takeaways per story · like/dislike to tune future digests</p>
+            </div>
             <button onClick={fetchDigest}
-              className="text-xs text-violet-600 dark:text-violet-400 hover:underline font-medium">
-              Regenerate
+              className="text-xs text-violet-600 dark:text-violet-400 hover:underline font-medium px-3 py-1.5 bg-violet-50 dark:bg-violet-950/30 rounded-lg border border-violet-200 dark:border-violet-800">
+              ↺ Regenerate
             </button>
           </div>
 
           {digestLoading ? (
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {[0,1,2,3,4,5,6,7].map(i => (
-                <div key={i} className="h-20 bg-zinc-100 dark:bg-zinc-800 rounded-2xl animate-pulse" />
+                <div key={i} className="h-48 bg-zinc-100 dark:bg-zinc-800 rounded-2xl animate-pulse" />
               ))}
             </div>
           ) : digest.length > 0 ? (
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {digest.map((item, i) => {
                 const priorityBand = i < 2 ? 'Must Read' : i < 5 ? 'Top Pick' : 'Good Read'
                 const bandCls = i < 2
@@ -692,24 +695,81 @@ export default function FeedPage() {
                   : i < 5
                   ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800'
                   : 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800'
+                const takeaways: string[] = Array.isArray(item.key_takeaways) ? item.key_takeaways : []
                 return (
-                  <a key={i} href={item.url} target="_blank" rel="noopener noreferrer"
-                    className="flex gap-4 items-start bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-4 hover:shadow-md hover:border-zinc-200 dark:hover:border-zinc-700 transition-all group">
-                    <span className={`flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br ${topicGradient(item.tags)} flex items-center justify-center text-white text-xs font-bold`}>
-                      {i + 1}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${bandCls}`}>{priorityBand}</span>
-                        {(item.tags ?? []).slice(0, 2).map(tag => <TagPill key={tag} tag={tag} />)}
+                  <div key={i} className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-4 flex flex-col gap-3 hover:shadow-md hover:border-zinc-200 dark:hover:border-zinc-700 transition-all">
+                    {/* Header */}
+                    <div className="flex items-start gap-3">
+                      <span className={`flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br ${topicGradient(item.tags)} flex items-center justify-center text-white text-xs font-bold`}>
+                        {i + 1}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${bandCls}`}>{priorityBand}</span>
+                          {(item.tags ?? []).slice(0, 2).map(tag => <TagPill key={tag} tag={tag} />)}
+                        </div>
+                        <a href={item.url} target="_blank" rel="noopener noreferrer"
+                          className="font-semibold text-sm text-zinc-900 dark:text-zinc-100 hover:text-violet-600 dark:hover:text-violet-400 transition-colors leading-snug line-clamp-2">
+                          {item.headline}
+                        </a>
                       </div>
-                      <p className="font-semibold text-sm text-zinc-900 dark:text-zinc-100 mb-1 line-clamp-1 group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">
-                        {item.headline}
-                      </p>
-                      <p className="text-sm text-zinc-500 dark:text-zinc-400 line-clamp-2 leading-relaxed">{item.summary}</p>
-                      <span className="text-xs text-zinc-400 mt-1 block">{getDomain(item.url)}</span>
                     </div>
-                  </a>
+
+                    {/* Key takeaways */}
+                    {takeaways.length > 0 && (
+                      <ul className="space-y-1.5 pl-1">
+                        {takeaways.map((t, ti) => (
+                          <li key={ti} className="flex items-start gap-2 text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                            <span className="flex-shrink-0 w-4 h-4 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 flex items-center justify-center text-[10px] font-semibold mt-0.5">
+                              {ti + 1}
+                            </span>
+                            {t}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    {/* Why it matters */}
+                    {item.why_it_matters && (
+                      <p className="text-xs text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/30 border border-violet-100 dark:border-violet-900 rounded-lg px-3 py-2 leading-relaxed">
+                        <span className="font-semibold">Why it matters: </span>{item.why_it_matters}
+                      </p>
+                    )}
+
+                    {/* Footer: source + like/dislike */}
+                    <div className="flex items-center justify-between pt-1 border-t border-zinc-50 dark:border-zinc-800">
+                      <a href={item.url} target="_blank" rel="noopener noreferrer"
+                        className="text-xs text-zinc-400 hover:text-violet-500 transition-colors">
+                        {getDomain(item.url)} ↗
+                      </a>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            const a = articles.find(fi => {
+                              const art = Array.isArray(fi.articles) ? fi.articles[0] : fi.articles
+                              return art && getDomain(art.url) === getDomain(item.url)
+                            })
+                            const art = a && (Array.isArray(a.articles) ? a.articles[0] : a.articles)
+                            if (art) handleReact(art.id, 'like')
+                          }}
+                          className="p-1.5 rounded-lg text-sm text-zinc-300 dark:text-zinc-600 hover:text-green-500 transition-colors"
+                          title="Relevant — show more like this"
+                        >👍</button>
+                        <button
+                          onClick={() => {
+                            const a = articles.find(fi => {
+                              const art = Array.isArray(fi.articles) ? fi.articles[0] : fi.articles
+                              return art && getDomain(art.url) === getDomain(item.url)
+                            })
+                            const art = a && (Array.isArray(a.articles) ? a.articles[0] : a.articles)
+                            if (art) handleReact(art.id, 'dislike')
+                          }}
+                          className="p-1.5 rounded-lg text-sm text-zinc-300 dark:text-zinc-600 hover:text-red-500 transition-colors"
+                          title="Not relevant — show less"
+                        >👎</button>
+                      </div>
+                    </div>
+                  </div>
                 )
               })}
             </div>

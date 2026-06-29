@@ -43,10 +43,14 @@ const AUDIENCE_OPTIONS = [
 ]
 
 const INITIAL_STEPS: AgentStep[] = [
-  { id: 'orchestrator', label: 'Orchestrator — building content brief',    icon: '🎯', status: 'pending', output: '' },
-  { id: 'writer',       label: 'Writer — drafting content',                icon: '✍️', status: 'pending', output: '' },
-  { id: 'critic',       label: 'Critic — fact-checking & improving',       icon: '🔍', status: 'pending', output: '' },
-  { id: 'humanizer',    label: 'Humanizer — applying voice & style',       icon: '✨', status: 'pending', output: '' },
+  { id: 'orchestrator',  label: 'Orchestrator — building content brief',         icon: '🎯', status: 'pending', output: '' },
+  { id: 'writer',        label: 'Writer — drafting content',                     icon: '✍️', status: 'pending', output: '' },
+  { id: 'verifier',      label: 'Verifier — checking claim accuracy',            icon: '🔬', status: 'pending', output: '' },
+  { id: 'critic',        label: 'Critic — fact-checking & improving',            icon: '🔍', status: 'pending', output: '' },
+  { id: 'humanizer',     label: 'Humanizer — applying voice & style',            icon: '✨', status: 'pending', output: '' },
+  { id: 'evaluator',     label: 'Evaluator — scoring quality (5 criteria)',      icon: '📊', status: 'pending', output: '' },
+  { id: 'audience_sim',  label: 'Audience Sim — 3 reader personas react',        icon: '👥', status: 'pending', output: '' },
+  { id: 'final_polish',  label: 'Final Polish — addressing audience objections', icon: '💎', status: 'pending', output: '' },
 ]
 
 const STEP_LABELS = ['Source', 'Brief', 'Platform', 'Generate', 'Review & Publish']
@@ -278,13 +282,43 @@ function CreatePageInner() {
     else { setPendingGenerate(true); setShowAdminGate(true) }
   }
 
-  const handleSSEEvent = (event: string, payload: Record<string, string>) => {
+  const handleSSEEvent = (event: string, payload: Record<string, unknown>) => {
     if (event === 'agent_start') {
-      setAgentSteps(prev => prev.map(s => s.id === payload.agent ? { ...s, status: 'running' } : s))
+      const agent = payload.agent as string
+      const loop = payload.loop as number | undefined
+      setAgentSteps(prev => prev.map(s => s.id === agent
+        ? { ...s, status: 'running', label: loop && loop > 1 && ['writer','verifier','critic','humanizer'].includes(agent)
+            ? s.label.replace(/ \(loop \d+\)$/, '') + ` (loop ${loop})`
+            : s.label }
+        : s))
     } else if (event === 'agent_complete') {
-      setAgentSteps(prev => prev.map(s => s.id === payload.agent ? { ...s, status: 'complete', output: payload.output } : s))
+      const agent = payload.agent as string
+      const output = payload.output as string
+      // For evaluator, show scores in the label
+      if (agent === 'evaluator') {
+        const scores = payload.scores as Record<string, number> | undefined
+        const pass = payload.pass as boolean
+        const scoreLabel = scores
+          ? `Hook ${scores.hook} · Spec ${scores.specificity} · Cite ${scores.citations} · Voice ${scores.voice} · Platform ${scores.platform} — ${pass ? '✓ PASS' : '✗ re-running'}`
+          : output
+        setAgentSteps(prev => prev.map(s => s.id === 'evaluator'
+          ? { ...s, status: 'complete', output: scoreLabel }
+          : s))
+      } else {
+        setAgentSteps(prev => prev.map(s => s.id === agent
+          ? { ...s, status: 'complete', output }
+          : s))
+      }
+    } else if (event === 'loop_start') {
+      const loop = payload.loop as number
+      // Reset writer-through-evaluator steps for the new loop
+      setAgentSteps(prev => prev.map(s =>
+        ['writer','verifier','critic','humanizer','evaluator'].includes(s.id)
+          ? { ...s, status: 'pending', output: '', label: s.label.replace(/ \(loop \d+\)$/, '') + (loop > 1 ? ` (loop ${loop})` : '') }
+          : s
+      ))
     } else if (event === 'complete') {
-      setFinalOutput(payload.final)
+      setFinalOutput(payload.final as string)
       setStep(5)
     } else if (event === 'error') {
       setAgentSteps(prev => prev.map(s => s.status === 'running' ? { ...s, status: 'error' } : s))
@@ -325,7 +359,7 @@ function CreatePageInner() {
 
       <div className="mb-8">
         <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">Create Content</h1>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">From idea to publish-ready draft via 4-agent pipeline</p>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">8-agent pipeline: write → verify claims → critique → humanize → evaluate → simulate audience → polish</p>
       </div>
 
       <Stepper current={step} />

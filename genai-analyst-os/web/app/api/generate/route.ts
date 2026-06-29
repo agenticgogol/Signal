@@ -3,17 +3,23 @@ import {
   runWriterAgent,
   runCriticAgent,
   runHumanizerAgent,
+  runClaimVerifierAgent,
+  runEvaluatorAgent,
+  runAudienceSimAgent,
+  runFinalPolishAgent,
   persistJob,
 } from '@/lib/agents'
 
-export const maxDuration = 120
+export const maxDuration = 300
+
+const MAX_LOOPS = 3
 
 export async function POST(req: Request) {
   const { brief, sources, format, pov, userId } = await req.json()
 
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (event: string, data: Record<string, string>) => {
+      const send = (event: string, data: Record<string, unknown>) => {
         controller.enqueue(
           new TextEncoder().encode(
             `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
@@ -22,28 +28,87 @@ export async function POST(req: Request) {
       }
 
       try {
-        // Step 1: Orchestrator
+        // ── Step 1: Orchestrator ────────────────────────────────────────────
         send('agent_start', { agent: 'orchestrator' })
         const orchestratorBrief = await runOrchestratorAgent(brief, format, pov, sources)
         send('agent_complete', { agent: 'orchestrator', output: orchestratorBrief })
 
-        // Step 2: Writer
-        send('agent_start', { agent: 'writer' })
-        const draft = await runWriterAgent(orchestratorBrief, format, sources)
-        send('agent_complete', { agent: 'writer', output: draft })
+        let currentDraft = ''
+        let currentCritique = ''
+        let currentHumanized = ''
+        let writerInstructions = ''
+        let claimReport = ''
+        let loopScores = ''
 
-        // Step 3: Critic
-        send('agent_start', { agent: 'critic' })
-        const critique = await runCriticAgent(draft, orchestratorBrief, format, sources)
-        send('agent_complete', { agent: 'critic', output: critique })
+        // ── Steps 2-5: Writer → Verifier → Critic → Humanizer (with loops) ─
+        for (let loop = 1; loop <= MAX_LOOPS; loop++) {
+          if (loop > 1) {
+            send('loop_start', { loop, maxLoops: MAX_LOOPS, reason: writerInstructions })
+          }
 
-        // Step 4: Humanizer
-        send('agent_start', { agent: 'humanizer' })
-        const final = await runHumanizerAgent(draft, critique, format, sources)
-        send('agent_complete', { agent: 'humanizer', output: final })
+          // Step 2: Writer
+          const writerContext = loop > 1
+            ? `${orchestratorBrief}\n\n---\nPREVIOUS DRAFT FEEDBACK (loop ${loop - 1}):\n${writerInstructions}\nRewrite the content addressing ALL of these issues.`
+            : orchestratorBrief
+
+          send('agent_start', { agent: 'writer', loop })
+          currentDraft = await runWriterAgent(writerContext, format, sources)
+          send('agent_complete', { agent: 'writer', output: currentDraft, loop })
+
+          // Step 3: Claim Verifier
+          send('agent_start', { agent: 'verifier', loop })
+          claimReport = await runClaimVerifierAgent(currentDraft, sources, brief)
+          send('agent_complete', { agent: 'verifier', output: claimReport, loop })
+
+          // Step 4: Critic (receives both verifier report and draft)
+          send('agent_start', { agent: 'critic', loop })
+          const criticInput = `${orchestratorBrief}\n\nCLAIM VERIFICATION REPORT:\n${claimReport}`
+          currentCritique = await runCriticAgent(currentDraft, criticInput, format, sources)
+          send('agent_complete', { agent: 'critic', output: currentCritique, loop })
+
+          // Step 5: Humanizer
+          send('agent_start', { agent: 'humanizer', loop })
+          currentHumanized = await runHumanizerAgent(currentDraft, currentCritique, format, sources)
+          send('agent_complete', { agent: 'humanizer', output: currentHumanized, loop })
+
+          // Step 6: Evaluator — score the humanized output
+          send('agent_start', { agent: 'evaluator', loop })
+          const evalResult = await runEvaluatorAgent(currentHumanized, format, brief, loop)
+          loopScores = evalResult.scoresSummary
+          send('agent_complete', {
+            agent: 'evaluator',
+            output: evalResult.scoresSummary,
+            scores: evalResult.scores,
+            pass: evalResult.pass,
+            failedCriteria: evalResult.failedCriteria,
+            loop,
+          })
+
+          if (evalResult.pass || loop === MAX_LOOPS) {
+            // All criteria met (or max loops reached) — proceed to audience sim
+            break
+          }
+
+          // Failed — prepare Writer instructions for next loop
+          writerInstructions = evalResult.writerInstructions
+        }
+
+        // ── Step 7: Audience Simulation ─────────────────────────────────────
+        send('agent_start', { agent: 'audience_sim' })
+        const audienceFeedback = await runAudienceSimAgent(currentHumanized, format)
+        send('agent_complete', { agent: 'audience_sim', output: audienceFeedback })
+
+        // ── Step 8: Final Polish (addresses audience objections) ─────────────
+        send('agent_start', { agent: 'final_polish' })
+        const final = await runFinalPolishAgent(currentHumanized, audienceFeedback, format, sources)
+        send('agent_complete', { agent: 'final_polish', output: final })
 
         // Persist
-        await persistJob(userId, brief, format, orchestratorBrief, draft, critique, final)
+        await persistJob(userId, brief, format, orchestratorBrief, currentDraft, currentCritique, final, {
+          verifier_report: claimReport,
+          audience_feedback: audienceFeedback,
+          evaluator_scores: loopScores,
+        })
 
         send('complete', { final })
       } catch (err) {
