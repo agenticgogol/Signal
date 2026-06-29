@@ -219,6 +219,7 @@ export default function FeedPage() {
   })
 
   const [triggering, setTriggering] = useState(false)
+  const [pipelineStarted, setPipelineStarted] = useState(false)
   const [showAdminGate, setShowAdminGate] = useState(false)
 
   // ── data fetching ─────────────────────────────────────────────────────────
@@ -293,17 +294,32 @@ export default function FeedPage() {
 
   const doTrigger = async () => {
     setTriggering(true)
+    setPipelineStarted(false)
     try {
-      await fetch('/api/pipeline/trigger', { method: 'POST' })
-      // After pipeline completes, re-detect the latest date and show that range
-      const res = await fetch(`/api/data/latest-date?userId=${userId}`)
+      const res = await fetch('/api/pipeline/trigger', { method: 'POST' })
       const json = await res.json()
-      const latestDate: string = json.date ?? isoToday()
-      const today = isoToday()
-      const range: DateRange = latestDate < today ? '7d' : 'today'
-      setDateRange(range)
-      await fetchFeed(range)
-      if (activeTab === 'headlines') fetchDigest()
+      if (json.ok) {
+        setPipelineStarted(true)
+        // Pipeline runs async (~2 min) — poll for new data every 20s, up to 3 min
+        let attempts = 0
+        const poll = setInterval(async () => {
+          attempts++
+          try {
+            const r = await fetch(`/api/data/latest-date?userId=${userId}`)
+            const d = await r.json()
+            const latestDate: string = d.date ?? ''
+            const today = isoToday()
+            if (latestDate === today || attempts >= 9) {
+              clearInterval(poll)
+              const range: DateRange = latestDate < today ? '7d' : 'today'
+              setDateRange(range)
+              await fetchFeed(range)
+              if (activeTab === 'headlines') fetchDigest()
+              setPipelineStarted(false)
+            }
+          } catch {}
+        }, 20000)
+      }
     } catch {}
     setTriggering(false)
   }
@@ -399,11 +415,13 @@ export default function FeedPage() {
           )}
           <button
             onClick={handleTrigger}
-            disabled={triggering}
+            disabled={triggering || pipelineStarted}
             className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white rounded-xl font-medium text-sm transition-colors shadow-sm"
           >
             {triggering
-              ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" /> Running…</>
+              ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" /> Starting…</>
+              : pipelineStarted
+              ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" /> Pipeline running (~2 min)…</>
               : <>⚡ Get Latest Feed</>}
           </button>
         </div>
