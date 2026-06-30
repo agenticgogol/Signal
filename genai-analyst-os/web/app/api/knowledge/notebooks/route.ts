@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
-import { requireSignedInUser } from '@/lib/serverAuth'
+import { resolveSignedInOrAdmin } from '@/lib/serverAuth'
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}))
@@ -12,14 +12,14 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'userId and title are required' }, { status: 400 })
   }
 
-  const signedIn = await requireSignedInUser(req, userId)
-  if (signedIn instanceof Response) return signedIn
+  const access = await resolveSignedInOrAdmin(req, userId)
+  if (access instanceof Response) return access
 
   const db = createServiceClient()
   const { data, error } = await db
     .from('knowledge_notebooks')
     .insert({
-      user_id: userId,
+      user_id: access.userId,
       title,
       description: description || null,
       updated_at: new Date().toISOString(),

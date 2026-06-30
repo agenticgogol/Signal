@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { requirePaidFeature } from '@/lib/featureAccess'
-import { requireSignedInUser } from '@/lib/serverAuth'
+import { resolveSignedInOrAdmin } from '@/lib/serverAuth'
 import { ingestKnowledgeItem } from '@/lib/knowledge'
 
 export async function POST(req: NextRequest) {
@@ -19,8 +19,8 @@ export async function POST(req: NextRequest) {
   const paidGate = await requirePaidFeature(req, userId, 'Knowledge ingestion')
   if (paidGate) return paidGate
 
-  const signedIn = await requireSignedInUser(req, userId)
-  if (signedIn instanceof Response) return signedIn
+  const access = await resolveSignedInOrAdmin(req, userId)
+  if (access instanceof Response) return access
 
   if (sourceType === 'url' && !sourceUrl) {
     return Response.json({ error: 'sourceUrl is required for URL ingestion' }, { status: 400 })
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const item = await ingestKnowledgeItem({
-      userId,
+      userId: access.userId,
       notebookId,
       sourceType,
       sourceUrl,

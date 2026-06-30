@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import type { User } from '@supabase/supabase-js'
+import { verifyAdminToken } from '@/lib/adminAuth'
 
 function createAnonClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -26,4 +27,27 @@ export async function requireSignedInUser(req: Request, expectedUserId?: string)
   }
 
   return data.user
+}
+
+export function getAdminWorkspaceUserId() {
+  return process.env.KNOWLEDGE_ADMIN_USER_ID || process.env.NEXT_PUBLIC_USER_ID || ''
+}
+
+export async function resolveSignedInOrAdmin(req: Request, requestedUserId?: string): Promise<{ userId: string; mode: 'signed_in' | 'admin_guest'; user?: User } | Response> {
+  if (verifyAdminToken(req)) {
+    const adminUserId = requestedUserId || getAdminWorkspaceUserId()
+    if (!adminUserId) {
+      return Response.json({ error: 'Missing KNOWLEDGE_ADMIN_USER_ID or NEXT_PUBLIC_USER_ID for admin knowledge workspace.' }, { status: 500 })
+    }
+    return { userId: adminUserId, mode: 'admin_guest' }
+  }
+
+  const signedIn = await requireSignedInUser(req, requestedUserId)
+  if (signedIn instanceof Response) return signedIn
+
+  return {
+    userId: requestedUserId || signedIn.id,
+    mode: 'signed_in',
+    user: signedIn,
+  }
 }

@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
-import { requireSignedInUser } from '@/lib/serverAuth'
+import { resolveSignedInOrAdmin } from '@/lib/serverAuth'
 
 function daysAgoScore(iso: string | null | undefined) {
   if (!iso) return 0.35
@@ -30,22 +30,22 @@ export async function GET(req: NextRequest) {
   const notebookId = searchParams.get('notebookId') || ''
   if (!userId) return Response.json({ error: 'userId is required' }, { status: 400 })
 
-  const signedIn = await requireSignedInUser(req, userId)
-  if (signedIn instanceof Response) return signedIn
+  const access = await resolveSignedInOrAdmin(req, userId)
+  if (access instanceof Response) return access
 
   try {
     const db = createServiceClient()
     const [{ data: profile, error: profileError }, { data: items, error: itemsError }, { data: notebooks, error: notebooksError }] = await Promise.all([
-      db.from('user_profiles').select('topic_weights').eq('id', userId).maybeSingle(),
+      db.from('user_profiles').select('topic_weights').eq('id', access.userId).maybeSingle(),
       db.from('knowledge_items')
         .select('id, notebook_id, title, source_type, source_url, summary, why_it_matters, topic_tags, cleaned_text, processed_at, created_at')
-        .eq('user_id', userId)
+        .eq('user_id', access.userId)
         .eq('status', 'ready')
         .order('processed_at', { ascending: false })
         .limit(200),
       db.from('knowledge_notebooks')
         .select('id, title')
-        .eq('user_id', userId)
+        .eq('user_id', access.userId)
         .order('updated_at', { ascending: false }),
     ])
 

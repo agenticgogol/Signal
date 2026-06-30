@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useParams, useSearchParams } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
-import { ActionConfirmModal, AdminGateModal } from '@/components/AdminGate'
+import { ActionConfirmModal, AdminGateModal, getAdminToken } from '@/components/AdminGate'
 import { TAG_COLORS, TAG_LABELS } from '@/lib/tagColors'
 import { useAuthSession } from '@/lib/useAuthSession'
 
@@ -32,7 +32,9 @@ export default function NotebookDetailPage() {
   const searchParams = useSearchParams()
   const notebookId = String(params?.id || '')
   const { session, user, loading } = useAuthSession()
-  const userId = user?.id ?? ''
+  const fallbackUserId = process.env.NEXT_PUBLIC_USER_ID || ''
+  const [adminUnlocked, setAdminUnlocked] = useState(false)
+  const userId = user?.id ?? (adminUnlocked ? fallbackUserId : '')
 
   const [plan, setPlan] = useState<'free' | 'pro'>('free')
   const [canUsePaidFeatures, setCanUsePaidFeatures] = useState(false)
@@ -41,13 +43,16 @@ export default function NotebookDetailPage() {
   const [pageError, setPageError] = useState<string | null>(null)
 
   const [urlInput, setUrlInput] = useState('')
+  const [urlTitle, setUrlTitle] = useState('')
+  const [bulkUrls, setBulkUrls] = useState('')
   const [noteTitle, setNoteTitle] = useState('')
   const [noteText, setNoteText] = useState('')
-  const [submitting, setSubmitting] = useState<'url' | 'note' | null>(null)
+  const [submitting, setSubmitting] = useState<'url' | 'note' | 'bulk' | 'file' | null>(null)
+  const [fileStatus, setFileStatus] = useState<string | null>(null)
 
   const [showAdminGate, setShowAdminGate] = useState(false)
   const [showPaidConfirm, setShowPaidConfirm] = useState(false)
-  const [pendingAction, setPendingAction] = useState<'url' | 'note' | 'chat' | null>(null)
+  const [pendingAction, setPendingAction] = useState<'url' | 'note' | 'bulk' | 'chat' | null>(null)
 
   const [question, setQuestion] = useState('')
   const [includeFeed, setIncludeFeed] = useState(false)
@@ -60,15 +65,22 @@ export default function NotebookDetailPage() {
   const readyCount = useMemo(() => items.filter(item => item.status === 'ready').length, [items])
 
   const fetchNotebook = async () => {
-    if (!session?.access_token || !userId || !notebookId) return
+    if (!userId || !notebookId) return
     setPageError(null)
     try {
+      const authHeaders: Record<string, string> = {}
+      if (session?.access_token) authHeaders.Authorization = `Bearer ${session.access_token}`
+      else {
+        const token = getAdminToken()
+        if (!token) return
+        authHeaders['x-admin-token'] = token
+      }
       const [profileRes, notebookRes] = await Promise.all([
         fetch(`/api/data/profile?userId=${encodeURIComponent(userId)}`, {
-          headers: { Authorization: `Bearer ${session.access_token}` },
+          headers: authHeaders,
         }),
         fetch(`/api/data/knowledge-notebook?userId=${encodeURIComponent(userId)}&notebookId=${encodeURIComponent(notebookId)}`, {
-          headers: { Authorization: `Bearer ${session.access_token}` },
+          headers: authHeaders,
         }),
       ])
       const profileJson = await profileRes.json()
@@ -85,9 +97,13 @@ export default function NotebookDetailPage() {
   }
 
   useEffect(() => {
+    if (typeof window !== 'undefined' && getAdminToken()) setAdminUnlocked(true)
+  }, [])
+
+  useEffect(() => {
     if (!loading) fetchNotebook()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, session?.access_token, userId, notebookId])
+  }, [loading, session?.access_token, userId, notebookId, adminUnlocked])
 
   useEffect(() => {
     const q = searchParams.get('q')
@@ -96,8 +112,14 @@ export default function NotebookDetailPage() {
     if (includeFeedParam === '1' || includeFeedParam === 'true') setIncludeFeed(true)
   }, [searchParams])
 
+  const authHeaders = (adminToken?: string): Record<string, string> => {
+    if (session?.access_token) return { Authorization: `Bearer ${session.access_token}` }
+    const token = adminToken || getAdminToken()
+    return token ? { 'x-admin-token': token } : {}
+  }
+
   const submitUrl = async (adminToken?: string) => {
-    if (!session?.access_token || !userId || !urlInput.trim()) return
+    if (!userId || !urlInput.trim()) return
     setSubmitting('url')
     setPageError(null)
     try {
@@ -105,19 +127,20 @@ export default function NotebookDetailPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-          ...(adminToken ? { 'x-admin-token': adminToken } : {}),
+          ...authHeaders(adminToken),
         },
         body: JSON.stringify({
           userId,
           notebookId,
           sourceType: 'url',
           sourceUrl: urlInput.trim(),
+          title: urlTitle.trim(),
         }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Could not ingest URL')
       setUrlInput('')
+      setUrlTitle('')
       await fetchNotebook()
     } catch (e) {
       setPageError(e instanceof Error ? e.message : String(e))
@@ -126,7 +149,7 @@ export default function NotebookDetailPage() {
   }
 
   const submitNote = async (adminToken?: string) => {
-    if (!session?.access_token || !userId || !noteText.trim()) return
+    if (!userId || !noteText.trim()) return
     setSubmitting('note')
     setPageError(null)
     try {
@@ -134,8 +157,7 @@ export default function NotebookDetailPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-          ...(adminToken ? { 'x-admin-token': adminToken } : {}),
+          ...authHeaders(adminToken),
         },
         body: JSON.stringify({
           userId,
@@ -156,8 +178,77 @@ export default function NotebookDetailPage() {
     setSubmitting(null)
   }
 
+  const submitBulkUrls = async (adminToken?: string) => {
+    if (!userId || !bulkUrls.trim()) return
+    const urls = Array.from(new Set(
+      bulkUrls
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(line => /^https?:\/\//i.test(line)),
+    ))
+    if (urls.length === 0) {
+      setPageError('No valid URLs found in the bulk list.')
+      return
+    }
+
+    setSubmitting('bulk')
+    setPageError(null)
+    try {
+      for (const url of urls) {
+        const res = await fetch('/api/knowledge/items', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...authHeaders(adminToken),
+          },
+          body: JSON.stringify({
+            userId,
+            notebookId,
+            sourceType: 'url',
+            sourceUrl: url,
+          }),
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error ?? `Could not ingest ${url}`)
+      }
+      setBulkUrls('')
+      await fetchNotebook()
+    } catch (e) {
+      setPageError(e instanceof Error ? e.message : String(e))
+    }
+    setSubmitting(null)
+  }
+
+  const uploadFiles = async (files: FileList | null) => {
+    if (!userId || !files || files.length === 0) return
+    setSubmitting('file')
+    setPageError(null)
+    setFileStatus(`Uploading ${files.length} file${files.length !== 1 ? 's' : ''}…`)
+    try {
+      for (const file of Array.from(files)) {
+        const form = new FormData()
+        form.set('userId', userId)
+        form.set('notebookId', notebookId)
+        form.set('file', file)
+        const res = await fetch('/api/knowledge/items/upload', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: form,
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error ?? `Could not process ${file.name}`)
+      }
+      setFileStatus(`Processed ${files.length} file${files.length !== 1 ? 's' : ''}.`)
+      await fetchNotebook()
+    } catch (e) {
+      setPageError(e instanceof Error ? e.message : String(e))
+      setFileStatus(null)
+    }
+    setSubmitting(null)
+  }
+
   const askQuestion = async (adminToken?: string) => {
-    if (!session?.access_token || !userId || !question.trim()) return
+    if (!userId || !question.trim()) return
     setChatLoading(true)
     setChatError(null)
     try {
@@ -165,8 +256,7 @@ export default function NotebookDetailPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-          ...(adminToken ? { 'x-admin-token': adminToken } : {}),
+          ...authHeaders(adminToken),
         },
         body: JSON.stringify({ userId, notebookId, question, includeFeed }),
       })
@@ -181,7 +271,14 @@ export default function NotebookDetailPage() {
     setChatLoading(false)
   }
 
-  const requestAction = (action: 'url' | 'note' | 'chat') => {
+  const requestAction = (action: 'url' | 'note' | 'bulk' | 'chat') => {
+    if (getAdminToken()) {
+      if (action === 'url') submitUrl()
+      else if (action === 'note') submitNote()
+      else if (action === 'bulk') submitBulkUrls()
+      else askQuestion()
+      return
+    }
     setPendingAction(action)
     if (canUsePaidFeatures) setShowPaidConfirm(true)
     else setShowAdminGate(true)
@@ -190,6 +287,7 @@ export default function NotebookDetailPage() {
   const runPending = (adminToken?: string) => {
     if (pendingAction === 'url') submitUrl(adminToken)
     else if (pendingAction === 'note') submitNote(adminToken)
+    else if (pendingAction === 'bulk') submitBulkUrls(adminToken)
     else if (pendingAction === 'chat') askQuestion(adminToken)
     setPendingAction(null)
   }
@@ -198,12 +296,30 @@ export default function NotebookDetailPage() {
     return <div className="mx-auto max-w-6xl px-6 py-8"><div className="h-48 animate-pulse rounded-3xl bg-zinc-100 dark:bg-zinc-800" /></div>
   }
 
-  if (!session || !userId) {
+  if (!session && !adminUnlocked) {
     return (
       <div className="mx-auto max-w-6xl px-6 py-8">
+        {showAdminGate && (
+          <AdminGateModal
+            action="open the admin notebook workspace"
+            onSuccess={() => { setShowAdminGate(false); setAdminUnlocked(true) }}
+            onCancel={() => setShowAdminGate(false)}
+          />
+        )}
         <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-8">
           <h1 className="text-3xl font-black tracking-tight text-zinc-950 dark:text-white">Notebook</h1>
-          <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">Sign in first to view your notebook, ingest saved links, and ask grounded questions against your own stored knowledge.</p>
+          <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">Sign in to use your private notebook, or unlock the admin workspace to ingest links, files, and notes without signing in.</p>
+          <div className="mt-5 flex items-center gap-3">
+            <button onClick={() => setShowAdminGate(true)} className="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-violet-700">
+              Unlock admin workspace
+            </button>
+            <button
+              onClick={() => window.dispatchEvent(new Event('signal-auth-popup:open'))}
+              className="rounded-xl border border-zinc-200 dark:border-zinc-700 px-4 py-2.5 text-sm font-medium text-zinc-600 dark:text-zinc-300"
+            >
+              Sign in
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -213,7 +329,6 @@ export default function NotebookDetailPage() {
     <div className="mx-auto max-w-6xl px-6 py-8 pb-20">
       {showAdminGate && (
         <AdminGateModal
-          persistSession={false}
           action={pendingAction === 'chat' ? 'knowledge chat' : 'knowledge ingestion'}
           onSuccess={token => { setShowAdminGate(false); runPending(token) }}
           onCancel={() => { setShowAdminGate(false); setPendingAction(null) }}
@@ -241,7 +356,7 @@ export default function NotebookDetailPage() {
           </div>
           <div className="flex flex-col items-end gap-2">
             <span className={`rounded-full border px-3 py-1 text-[11px] font-bold ${plan === 'pro' ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300' : 'border-zinc-200 bg-white text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400'}`}>
-              {plan === 'pro' ? 'Pro access' : 'Free preview'}
+              {!session && adminUnlocked ? 'Admin guest workspace' : plan === 'pro' ? 'Pro access' : 'Free preview'}
             </span>
             <span className="rounded-full border border-zinc-200 dark:border-zinc-700 px-3 py-1 text-[11px] font-bold text-zinc-500 dark:text-zinc-400">{readyCount}/{items.length} processed</span>
           </div>
@@ -255,14 +370,48 @@ export default function NotebookDetailPage() {
       <div className="mt-6 grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
         <section className="space-y-6">
           <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
-            <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Save a URL</h2>
+            <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Quick add URL</h2>
+            <p className="mt-1 text-xs text-zinc-400">Only the URL is required. Title and source metadata are optional and will auto-fill later if the page provides them.</p>
             <input value={urlInput} onChange={e => setUrlInput(e.target.value)}
               placeholder="https://..."
               className="mt-4 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-500" />
+            <input value={urlTitle} onChange={e => setUrlTitle(e.target.value)}
+              placeholder="Optional headline / label"
+              className="mt-3 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-500" />
             <button onClick={() => requestAction('url')} disabled={submitting === 'url' || !urlInput.trim()}
               className="mt-4 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-violet-700 disabled:opacity-40">
               {submitting === 'url' ? 'Processing…' : canUsePaidFeatures ? 'Save and process URL' : 'Admin: Save and process URL'}
             </button>
+          </div>
+
+          <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
+            <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Bulk URL import</h2>
+            <p className="mt-1 text-xs text-zinc-400">Paste one URL per line, or upload a text file with one URL per line.</p>
+            <textarea value={bulkUrls} onChange={e => setBulkUrls(e.target.value)}
+              placeholder={'https://example.com/post-1\nhttps://example.com/post-2'}
+              rows={6}
+              className="mt-4 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-500 resize-none" />
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button onClick={() => requestAction('bulk')} disabled={submitting === 'bulk' || !bulkUrls.trim()}
+                className="rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-violet-700 disabled:opacity-40">
+                {submitting === 'bulk' ? 'Importing…' : canUsePaidFeatures ? 'Import URLs' : 'Admin: Import URLs'}
+              </button>
+              <label className="rounded-xl border border-zinc-200 dark:border-zinc-700 px-4 py-2.5 text-sm font-medium text-zinc-600 dark:text-zinc-300 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800">
+                Upload .txt
+                <input
+                  type="file"
+                  accept=".txt,text/plain"
+                  className="hidden"
+                  onChange={async e => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    const text = await file.text()
+                    setBulkUrls(text)
+                    e.currentTarget.value = ''
+                  }}
+                />
+              </label>
+            </div>
           </div>
 
           <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
@@ -278,6 +427,26 @@ export default function NotebookDetailPage() {
               className="mt-4 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-violet-700 disabled:opacity-40">
               {submitting === 'note' ? 'Processing…' : canUsePaidFeatures ? 'Save and process note' : 'Admin: Save and process note'}
             </button>
+          </div>
+
+          <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
+            <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Upload files</h2>
+            <p className="mt-1 text-xs text-zinc-400">Supports .pdf, .docx/.doc, .py, .ipynb, .md, and .txt. Files are converted into notebook entries quickly.</p>
+            <label className="mt-4 flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-300 dark:border-zinc-700 px-4 py-8 text-center hover:border-violet-400 dark:hover:border-violet-600">
+              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{submitting === 'file' ? 'Uploading…' : 'Choose files'}</span>
+              <span className="mt-1 text-xs text-zinc-400">You can select multiple files.</span>
+              <input
+                type="file"
+                accept=".pdf,.doc,.docx,.py,.ipynb,.md,.txt"
+                multiple
+                className="hidden"
+                onChange={e => {
+                  uploadFiles(e.target.files)
+                  e.currentTarget.value = ''
+                }}
+              />
+            </label>
+            {fileStatus && <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">{fileStatus}</p>}
           </div>
 
           <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">

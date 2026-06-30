@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { href: '/ideas',   label: 'Ideas',   icon: '💡' },
   { href: '/create',  label: 'Create',  icon: '✍️'  },
   { href: '/knowledge', label: 'Knowledge Base', icon: '📚' },
+  { href: '/memory', label: 'Memory Assistant', icon: '🧠' },
   { href: '/voice',   label: 'My Voice', icon: '🎙️' },
   { href: '/sources', label: 'Sources', icon: '🔗' },
   { href: '/settings', label: 'Settings', icon: '⚙️' },

@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
+import { AdminGateModal, getAdminToken } from '@/components/AdminGate'
 import { useAuthSession } from '@/lib/useAuthSession'
 
 interface Notebook {
@@ -14,19 +15,29 @@ interface Notebook {
 
 export default function KnowledgePage() {
   const { session, user, loading } = useAuthSession()
-  const userId = user?.id ?? ''
+  const fallbackUserId = process.env.NEXT_PUBLIC_USER_ID || ''
+  const [adminUnlocked, setAdminUnlocked] = useState(false)
+  const userId = user?.id ?? (adminUnlocked ? fallbackUserId : '')
   const [notebooks, setNotebooks] = useState<Notebook[]>([])
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showAdminGate, setShowAdminGate] = useState(false)
 
   const fetchNotebooks = async () => {
-    if (!session?.access_token || !userId) return
+    if (!userId) return
     setError(null)
     try {
+      const headers: Record<string, string> = {}
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+      else {
+        const token = getAdminToken()
+        if (!token) return
+        headers['x-admin-token'] = token
+      }
       const res = await fetch(`/api/data/knowledge-notebooks?userId=${encodeURIComponent(userId)}`, {
-        headers: { Authorization: `Bearer ${session.access_token}` },
+        headers,
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Could not load notebooks')
@@ -37,21 +48,31 @@ export default function KnowledgePage() {
   }
 
   useEffect(() => {
+    if (typeof window !== 'undefined' && getAdminToken()) setAdminUnlocked(true)
+  }, [])
+
+  useEffect(() => {
     if (!loading) fetchNotebooks()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, session?.access_token, userId])
+  }, [loading, session?.access_token, userId, adminUnlocked])
 
   const handleCreate = async () => {
-    if (!session?.access_token || !userId || !title.trim()) return
+    if (!userId || !title.trim()) return
     setSaving(true)
     setError(null)
     try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      }
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+      else {
+        const token = getAdminToken()
+        if (!token) throw new Error('Admin confirmation required.')
+        headers['x-admin-token'] = token
+      }
       const res = await fetch('/api/knowledge/notebooks', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
+        headers,
         body: JSON.stringify({ userId, title: title.trim(), description: description.trim() }),
       })
       const json = await res.json()
@@ -69,12 +90,30 @@ export default function KnowledgePage() {
     return <div className="mx-auto max-w-5xl px-6 py-8"><div className="h-48 animate-pulse rounded-3xl bg-zinc-100 dark:bg-zinc-800" /></div>
   }
 
-  if (!session || !userId) {
+  if (!session && !adminUnlocked) {
     return (
       <div className="mx-auto max-w-5xl px-6 py-8">
+        {showAdminGate && (
+          <AdminGateModal
+            action="open the admin knowledge workspace"
+            onSuccess={() => { setShowAdminGate(false); setAdminUnlocked(true) }}
+            onCancel={() => setShowAdminGate(false)}
+          />
+        )}
         <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-8">
           <h1 className="text-3xl font-black tracking-tight text-zinc-950 dark:text-white">Knowledge Base</h1>
-          <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">Sign in first to create personal notebooks, save links and notes, and chat against your own stored knowledge.</p>
+          <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">Sign in to use your private notebooks, or unlock the admin workspace to ingest links, files, and notes without signing in.</p>
+          <div className="mt-5 flex items-center gap-3">
+            <button onClick={() => setShowAdminGate(true)} className="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-violet-700">
+              Unlock admin workspace
+            </button>
+            <button
+              onClick={() => window.dispatchEvent(new Event('signal-auth-popup:open'))}
+              className="rounded-xl border border-zinc-200 dark:border-zinc-700 px-4 py-2.5 text-sm font-medium text-zinc-600 dark:text-zinc-300"
+            >
+              Sign in
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -85,7 +124,12 @@ export default function KnowledgePage() {
       <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-7">
         <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-600 dark:text-violet-400">Personal knowledge base</p>
         <h1 className="mt-2 text-3xl font-black tracking-tight text-zinc-950 dark:text-white">Save links, notes, and ideas into notebooks you can actually use</h1>
-        <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-600 dark:text-zinc-300">This is your private research layer inside Signal. Each notebook can ingest saved URLs and notes, generate Signal summaries and “why it matters”, answer grounded questions, and later feed Create, Ideas, and Outline.</p>
+        <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-600 dark:text-zinc-300">This is your private research layer inside Signal. Each notebook can ingest saved URLs, bulk URL lists, and files, generate Signal summaries and “why it matters”, answer grounded questions, and later feed Create, Ideas, and Outline.</p>
+        {!session && adminUnlocked && (
+          <div className="mt-4 inline-flex rounded-full border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-3 py-1 text-[11px] font-bold text-amber-700 dark:text-amber-300">
+            Admin guest workspace
+          </div>
+        )}
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">

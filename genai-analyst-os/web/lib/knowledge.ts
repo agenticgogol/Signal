@@ -450,3 +450,128 @@ export async function answerNotebookQuestion(params: {
     retrievalMode: chunkRows[0]?.retrieval ?? 'lexical',
   }
 }
+
+export async function answerRecallQuestion(params: {
+  userId: string
+  question: string
+}) {
+  const db = createServiceClient()
+  const from = new Date()
+  from.setUTCDate(from.getUTCDate() - 30)
+
+  const [{ data: knowledgeItems, error: knowledgeError }, { data: feedItems, error: feedError }] = await Promise.all([
+    db.from('knowledge_items')
+      .select('id, notebook_id, title, source_url, summary, why_it_matters, topic_tags, cleaned_text, processed_at')
+      .eq('user_id', params.userId)
+      .eq('status', 'ready')
+      .order('processed_at', { ascending: false })
+      .limit(120),
+    db.from('user_feed_items')
+      .select('feed_date, blend_score, articles(id, title, url, why_it_matters, tldr_bullets, topic_tags, published_at)')
+      .eq('user_id', params.userId)
+      .gte('feed_date', from.toISOString().slice(0, 10))
+      .order('blend_score', { ascending: false })
+      .limit(120),
+  ])
+
+  if (knowledgeError) throw knowledgeError
+  if (feedError) throw feedError
+
+  const rankedKnowledge = (knowledgeItems ?? [])
+    .map((item: Record<string, unknown>) => {
+      const title = String(item.title || '')
+      const summary = String(item.summary || '')
+      const why = String(item.why_it_matters || '')
+      const cleaned = String(item.cleaned_text || '')
+      const score = overlapScore(params.question, `${title}\n${summary}\n${why}\n${cleaned.slice(0, 4000)}`)
+      return {
+        type: 'knowledge' as const,
+        title,
+        url: String(item.source_url || `signal://knowledge/${String(item.id)}`),
+        why,
+        summary,
+        context: cleaned.slice(0, 1200),
+        score,
+      }
+    })
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5)
+
+  const rankedFeed = (feedItems ?? [])
+    .map((item: Record<string, unknown>) => {
+      const article = Array.isArray(item.articles) ? item.articles[0] : item.articles as Record<string, unknown> | null
+      if (!article) return null
+      const title = String(article.title || '')
+      const why = String(article.why_it_matters || '')
+      const bullets = Array.isArray(article.tldr_bullets) ? article.tldr_bullets.map(String).join(' ') : ''
+      const score = overlapScore(params.question, `${title}\n${why}\n${bullets}`)
+      return {
+        type: 'feed' as const,
+        title,
+        url: String(article.url || ''),
+        why,
+        summary: bullets,
+        context: bullets.slice(0, 1200),
+        score,
+      }
+    })
+    .filter((item): item is {
+      type: 'feed'
+      title: string
+      url: string
+      why: string
+      summary: string
+      context: string
+      score: number
+    } => item !== null)
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5)
+
+  if (rankedKnowledge.length === 0 && rankedFeed.length === 0) {
+    throw new Error('I could not find a matching memory in your feed or knowledge base yet.')
+  }
+
+  const memoryContext = [
+    ...rankedKnowledge.map((item, index) => `[K${index + 1}] ${item.title}\nURL: ${item.url}\nSummary: ${item.summary}\nWhy it matters: ${item.why}\nContext: ${item.context}`),
+    ...rankedFeed.map((item, index) => `[F${index + 1}] ${item.title}\nURL: ${item.url}\nSummary: ${item.summary}\nWhy it matters: ${item.why}\nContext: ${item.context}`),
+  ].join('\n\n')
+
+  const answer = await generateJsonForUser<{
+    answer: string
+    citations: { title: string; url: string }[]
+  }>({
+    userId: params.userId,
+    system: 'You are a recall assistant. Answer only from the supplied user feed and notebook memory context. Be concise, help the user remember the concept, and cite sources used.',
+    prompt: `Question: ${params.question}\n\nMEMORY CONTEXT:\n${memoryContext}\n\nReturn a grounded answer and citations.`,
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        answer: { type: 'string' },
+        citations: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              title: { type: 'string' },
+              url: { type: 'string' },
+            },
+            required: ['title', 'url'],
+          },
+        },
+      },
+      required: ['answer', 'citations'],
+    },
+    maxTokens: 1400,
+  })
+
+  return {
+    answer: answer.answer,
+    citations: answer.citations,
+    feedMatches: rankedFeed.length,
+    knowledgeMatches: rankedKnowledge.length,
+  }
+}

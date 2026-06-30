@@ -5,6 +5,7 @@ import { getSupabase } from '@/lib/supabase'
 import { useAuthSession } from '@/lib/useAuthSession'
 
 const DISMISSED_KEY = 'signal_auth_popup_dismissed'
+const EMAIL_KEY = 'signal_auth_email'
 
 type Mode = 'signin' | 'signup'
 
@@ -22,6 +23,8 @@ export default function AuthPopupGate() {
   useEffect(() => {
     if (typeof window === 'undefined') return
     const dismissed = sessionStorage.getItem(DISMISSED_KEY) === '1'
+    const rememberedEmail = localStorage.getItem(EMAIL_KEY) || ''
+    if (rememberedEmail) setEmail(rememberedEmail)
     if (!loading && !session && !dismissed) setOpen(true)
     if (session) sessionStorage.removeItem(DISMISSED_KEY)
   }, [loading, session])
@@ -75,6 +78,7 @@ export default function AuthPopupGate() {
         ? await supabase.auth.signInWithPassword({ email, password })
         : await supabase.auth.signUp({ email, password, options: { emailRedirectTo } })
       if (result.error) throw result.error
+      localStorage.setItem(EMAIL_KEY, email)
       if (result.data.session) {
         setOpen(false)
         sessionStorage.removeItem(DISMISSED_KEY)
@@ -108,8 +112,8 @@ export default function AuthPopupGate() {
             </div>
 
             <form onSubmit={submit} className="mt-5 space-y-3">
-              <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="Email address" className="w-full rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-500 dark:border-zinc-700 dark:bg-zinc-950" />
-              <input value={password} onChange={e => setPassword(e.target.value)} type="password" placeholder="Password" className="w-full rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-500 dark:border-zinc-700 dark:bg-zinc-950" />
+              <input value={email} onChange={e => setEmail(e.target.value)} type="email" autoComplete="email username" placeholder="Email address" className="w-full rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-500 dark:border-zinc-700 dark:bg-zinc-950" />
+              <input value={password} onChange={e => setPassword(e.target.value)} type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} placeholder="Password" className="w-full rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-500 dark:border-zinc-700 dark:bg-zinc-950" />
               {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
               <button disabled={busy || !email || !password} className="w-full rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40">{busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'}</button>
             </form>

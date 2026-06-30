@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { TAG_COLORS, TAG_LABELS } from '@/lib/tagColors'
-import { ActionConfirmModal, AdminGateModal } from '@/components/AdminGate'
+import { ActionConfirmModal, AdminGateModal, getAdminToken } from '@/components/AdminGate'
 import OnboardingChecklist, { type SetupStatus } from '@/components/OnboardingChecklist'
 import { useAuthSession } from '@/lib/useAuthSession'
 
@@ -172,6 +172,13 @@ interface RelatedKnowledgeMatch {
   whyItMatters: string | null
   matchScore: number
   sourceUrl: string | null
+}
+
+interface RecallAnswer {
+  answer: string
+  citations: { title: string; url: string }[]
+  feedMatches: number
+  knowledgeMatches: number
 }
 
 const DEFAULT_CONFIG: PipelineConfig = { lookbackDays: 7, maxPerSource: 5 }
@@ -585,6 +592,25 @@ function ProvenancePanel({
   )
 }
 
+function DigestSignalStats({ items }: { items: Array<{ label: string; value: string; tone?: 'violet' | 'emerald' | 'blue' }> }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-3">
+      {items.map(item => (
+        <div key={item.label} className={`rounded-2xl border p-4 ${
+          item.tone === 'emerald'
+            ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/20'
+            : item.tone === 'blue'
+              ? 'border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/20'
+              : 'border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/20'
+        }`}>
+          <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{item.label}</p>
+          <p className="mt-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{item.value}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function FeedSection({ title, subtitle, items, reactions, onReact, selectedForCreate, onSelect, freshArticleIds, relatedKnowledgeMap }: {
   title: string
   subtitle: string
@@ -652,6 +678,7 @@ export default function FeedPage() {
   const [prefToast, setPrefToast] = useState<string | null>(null)
   const [reactions, setReactions] = useState<Record<string, 'like' | 'dislike'>>({})
   const [lastRefreshed, setLastRefreshed] = useState<string | null>(null)
+  const [yesterdayItems, setYesterdayItems] = useState<FeedItem[]>([])
   const [freshArticleIds, setFreshArticleIds] = useState<Set<string>>(new Set())
   const [freshCount, setFreshCount] = useState(0)
   const [showFreshBanner, setShowFreshBanner] = useState(false)
@@ -688,6 +715,10 @@ export default function FeedPage() {
   const [knowledgeError, setKnowledgeError] = useState<string | null>(null)
   const [knowledgeNotebooks, setKnowledgeNotebooks] = useState<KnowledgeNotebookFilter[]>([])
   const [knowledgeNotebookFilter, setKnowledgeNotebookFilter] = useState<string>('all')
+  const [recallQuestion, setRecallQuestion] = useState('')
+  const [recallLoading, setRecallLoading] = useState(false)
+  const [recallError, setRecallError] = useState<string | null>(null)
+  const [recallAnswer, setRecallAnswer] = useState<RecallAnswer | null>(null)
 
   // Weekly digest tab
   const [weeklyItems, setWeeklyItems] = useState<WeeklyItem[]>([])
@@ -822,6 +853,17 @@ export default function FeedPage() {
     if (!isRefresh) setLoading(false)
   }, [userId])
 
+  const fetchYesterdayFeed = useCallback(async () => {
+    try {
+      const day = daysAgoISO(1)
+      const res = await fetch(`/api/data/feed?userId=${userId}&date=${day}`)
+      const json = await res.json()
+      setYesterdayItems((json.items ?? []).slice(0, 6))
+    } catch {
+      setYesterdayItems([])
+    }
+  }, [userId])
+
   const fetchReactions = useCallback(async () => {
     try {
       const res = await fetch(`/api/articles/react?userId=${userId}`)
@@ -904,6 +946,31 @@ export default function FeedPage() {
     }
     setKnowledgeLoading(false)
   }, [session?.access_token, user?.id, knowledgeNotebookFilter])
+
+  const askRecall = useCallback(async (question?: string) => {
+    const q = (question ?? recallQuestion).trim()
+    if (!q || !userId) return
+    setRecallLoading(true)
+    setRecallError(null)
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+      const token = getAdminToken()
+      if (!session?.access_token && token) headers['x-admin-token'] = token
+      const res = await fetch('/api/knowledge/recall', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ userId, question: q }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Could not answer recall question')
+      setRecallAnswer(json)
+    } catch (e) {
+      setRecallError(e instanceof Error ? e.message : String(e))
+      setRecallAnswer(null)
+    }
+    setRecallLoading(false)
+  }, [recallQuestion, session?.access_token, userId])
 
   const fetchWeekly = useCallback(async () => {
     setWeeklyLoading(true)
@@ -1036,6 +1103,7 @@ export default function FeedPage() {
     autoSelectRange()
     fetchReactions()
     fetchSourceCount()
+    fetchYesterdayFeed()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId])
 
@@ -1522,6 +1590,77 @@ export default function FeedPage() {
       {/* ══ YOUR FEED TAB ═══════════════════════════════════════════════════ */}
       {activeTab === 'feed' && (
         <div>
+          <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr] mb-5">
+            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400">Recall chat</p>
+                  <h3 className="mt-1 text-base font-bold text-zinc-900 dark:text-zinc-100">Ask about something you read here before</h3>
+                  <p className="mt-1 text-xs text-zinc-400">Searches your feed and knowledge base together, then answers with citations.</p>
+                </div>
+                <span className="text-[11px] rounded-full border border-zinc-200 dark:border-zinc-700 px-2.5 py-1 text-zinc-500 dark:text-zinc-400">Feed + Library</span>
+              </div>
+              <div className="mt-4 flex gap-2">
+                <input
+                  value={recallQuestion}
+                  onChange={e => setRecallQuestion(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') askRecall() }}
+                  placeholder="What was that agent reliability concept I saw last week?"
+                  className="flex-1 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-500"
+                />
+                <button
+                  onClick={() => askRecall()}
+                  disabled={recallLoading || !recallQuestion.trim()}
+                  className="rounded-xl bg-zinc-950 dark:bg-white dark:text-zinc-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-50"
+                >
+                  {recallLoading ? 'Searching…' : 'Ask'}
+                </button>
+              </div>
+              {recallError && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{recallError}</p>}
+              {recallAnswer && (
+                <div className="mt-4 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/40 p-4">
+                  <p className="text-sm leading-6 text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap">{recallAnswer.answer}</p>
+                  <p className="mt-3 text-[11px] text-zinc-400">Matches used: {recallAnswer.feedMatches} from feed · {recallAnswer.knowledgeMatches} from knowledge base</p>
+                  {recallAnswer.citations.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {recallAnswer.citations.slice(0, 4).map((citation, idx) => (
+                        <a key={`${citation.url}-${idx}`} href={citation.url} target="_blank" rel="noopener noreferrer" className="text-xs text-violet-600 dark:text-violet-400 hover:underline">
+                          {citation.title}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
+              <p className="text-xs font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">Continue from yesterday</p>
+              <h3 className="mt-1 text-base font-bold text-zinc-900 dark:text-zinc-100">Resume the strongest signals you saw before</h3>
+              <p className="mt-1 text-xs text-zinc-400">Quick summaries from yesterday&apos;s top surfaced articles.</p>
+              <div className="mt-4 space-y-3">
+                {yesterdayItems.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-zinc-200 dark:border-zinc-700 p-4 text-xs text-zinc-400">
+                    No yesterday history yet. Once the feed runs across multiple days, your recent memory rail will appear here.
+                  </div>
+                ) : yesterdayItems.slice(0, 3).map((item, idx) => {
+                  const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
+                  if (!article) return null
+                  return (
+                    <a key={`${article.id}-${idx}`} href={article.url} target="_blank" rel="noopener noreferrer" className="block rounded-xl border border-zinc-100 dark:border-zinc-800 p-3 hover:border-violet-300 dark:hover:border-violet-700 transition-colors">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${priorityLabel(item.blend_score).cls}`}>{priorityLabel(item.blend_score).label}</span>
+                        <span className="text-[11px] text-zinc-400">{formatPubDate(article.published_at)}</span>
+                      </div>
+                      <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 leading-snug">{article.title}</p>
+                      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2">{article.why_it_matters || article.tldr_bullets?.[0] || 'Open to revisit the summary.'}</p>
+                    </a>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+
           {/* Date range */}
           <div className="flex gap-1 bg-zinc-100 dark:bg-zinc-800/60 p-1 rounded-xl mb-5 w-fit">
             {([
@@ -1924,6 +2063,11 @@ export default function FeedPage() {
           ) : dailyDigest ? (
             <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
               <div className="space-y-6">
+                <DigestSignalStats items={[
+                  { label: 'Coverage window', value: dailyDigestMeta?.digest_date ? formatPubDate(dailyDigestMeta.digest_date) : 'Today', tone: 'emerald' },
+                  { label: 'Articles used', value: String(dailyDigestMeta?.article_count ?? 0), tone: 'violet' },
+                  { label: 'Top topics', value: (dailyDigestMeta?.dominant_topics ?? []).slice(0, 2).join(' · ') || 'Mixed signals', tone: 'blue' },
+                ]} />
                 <div className="border-l-4 border-emerald-500 pl-4">
                   <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold uppercase tracking-wide mb-1">The day in one line</p>
                   <p className="text-lg font-bold text-zinc-900 dark:text-zinc-100 leading-snug">{dailyDigest.headline}</p>
@@ -1945,6 +2089,14 @@ export default function FeedPage() {
                   model={dailyDigestProvenance?.modelName}
                   sourceArticles={dailyDigestProvenance?.sourceArticles}
                 />
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-5">
+                  <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">Why read this first</p>
+                  <ul className="space-y-2 text-sm text-zinc-600 dark:text-zinc-300">
+                    <li>• It compresses today&apos;s strongest ranked signals into one connected story.</li>
+                    <li>• It flags what changed in models, tools, and practitioner conversations.</li>
+                    <li>• It ends with a practical takeaway rather than generic market commentary.</li>
+                  </ul>
+                </div>
                 <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-5">
                   <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">Daily highlights</p>
                   <div className="space-y-3">
@@ -2118,6 +2270,11 @@ export default function FeedPage() {
                 </div>
               ) : narrative ? (
                 <div className="space-y-6 max-w-2xl">
+                  <DigestSignalStats items={[
+                    { label: 'Window', value: 'Last 7 days', tone: 'violet' },
+                    { label: 'Articles used', value: String(narrativeMeta?.articleCount ?? 0), tone: 'blue' },
+                    { label: 'Generation', value: narrativeMeta?.cached ? 'Cached brief' : 'Fresh analysis', tone: 'emerald' },
+                  ]} />
                   <ProvenancePanel
                     label="Weekly digest"
                     mode={narrativeMeta?.generationMode}
@@ -2125,6 +2282,14 @@ export default function FeedPage() {
                     model={narrativeMeta?.modelName}
                     sourceArticles={narrativeMeta?.sourceArticles}
                   />
+                  <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-5">
+                    <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">What this briefing is trying to do</p>
+                    <ul className="space-y-2 text-sm text-zinc-600 dark:text-zinc-300">
+                      <li>• connect your strongest ranked articles with broader AI world developments</li>
+                      <li>• explain where the practitioner conversation is moving</li>
+                      <li>• identify the few developments that are actually worth watching next</li>
+                    </ul>
+                  </div>
                   {/* Headline */}
                   <div className="border-l-4 border-violet-600 pl-4">
                     <p className="text-xs text-violet-600 dark:text-violet-400 font-semibold uppercase tracking-wide mb-1">The Week In One Sentence</p>
