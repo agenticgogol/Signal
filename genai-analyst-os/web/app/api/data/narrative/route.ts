@@ -1,117 +1,188 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { createServiceClient } from '@/lib/supabase'
 import { NextRequest } from 'next/server'
-import { TAG_LABELS } from '@/lib/tagColors'
 import { fetchAiNews } from '@/lib/aiNews'
+import { createServiceClient } from '@/lib/supabase'
+import { TAG_LABELS } from '@/lib/tagColors'
 
 export const maxDuration = 60
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
-export async function GET(req: NextRequest) {
+interface Narrative {
+  headline: string
+  signal: string
+  watch: { item: string; why: string }[]
+  takeaway: string
+}
+
+const NARRATIVE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    headline: { type: 'string', description: 'One punchy sentence capturing the biggest theme.' },
+    signal: { type: 'string', description: 'A concise 3-4 paragraph connected narrative.' },
+    watch: {
+      type: 'array',
+      description: 'Exactly three specific developments to watch.',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          item: { type: 'string' },
+          why: { type: 'string' },
+        },
+        required: ['item', 'why'],
+      },
+    },
+    takeaway: { type: 'string', description: 'One practical paragraph for AI builders.' },
+  },
+  required: ['headline', 'signal', 'watch', 'takeaway'],
+} as const
+
+function weekStartISO() {
+  const now = new Date()
+  const day = now.getUTCDay()
+  now.setUTCDate(now.getUTCDate() - (day === 0 ? 6 : day - 1))
+  return now.toISOString().slice(0, 10)
+}
+
+function isNarrative(value: unknown): value is Narrative {
+  if (!value || typeof value !== 'object') return false
+  const item = value as Partial<Narrative>
+  return typeof item.headline === 'string'
+    && typeof item.signal === 'string'
+    && typeof item.takeaway === 'string'
+    && Array.isArray(item.watch)
+    && item.watch.length === 3
+    && item.watch.every(w => typeof w?.item === 'string' && typeof w?.why === 'string')
+}
+
+async function handle(req: NextRequest, force: boolean) {
   const { searchParams } = new URL(req.url)
   const userId = searchParams.get('userId') || process.env.NEXT_PUBLIC_USER_ID!
-  const days = parseInt(searchParams.get('days') || '7', 10)
-
-  const from = new Date()
-  from.setDate(from.getDate() - days)
-  const fromISO = from.toISOString().split('T')[0]
+  const requestedDays = Number.parseInt(searchParams.get('days') || '7', 10)
+  const days = Number.isFinite(requestedDays) ? Math.min(14, Math.max(1, requestedDays)) : 7
+  const weekStart = weekStartISO()
+  const db = createServiceClient()
 
   try {
-    const db = createServiceClient()
-    const { data } = await db
+    if (!force) {
+      const { data: cached } = await db
+        .from('weekly_digests')
+        .select('narrative, article_count, dominant_topics, generated_at')
+        .eq('user_id', userId)
+        .eq('week_start', weekStart)
+        .maybeSingle()
+
+      if (cached && isNarrative(cached.narrative)) {
+        return Response.json({
+          narrative: cached.narrative,
+          articleCount: cached.article_count,
+          dominantTopics: cached.dominant_topics ?? [],
+          generatedAt: cached.generated_at,
+          cached: true,
+          period: `Last ${days} days`,
+        })
+      }
+    }
+
+    const from = new Date()
+    from.setUTCDate(from.getUTCDate() - days)
+    const fromISO = from.toISOString().slice(0, 10)
+    const { data, error } = await db
       .from('user_feed_items')
-      .select('blend_score, articles(url, title, tldr_bullets, topic_tags, why_it_matters, full_text)')
+      .select('blend_score, articles(url, title, tldr_bullets, topic_tags, why_it_matters)')
       .eq('user_id', userId)
       .gte('feed_date', fromISO)
       .order('blend_score', { ascending: false })
-      .limit(20)
+      .limit(40)
 
-    if (!data || data.length === 0) {
-      return Response.json({ narrative: null, error: 'No articles found for the period' })
+    if (error) throw error
+    if (!data?.length) {
+      return Response.json({ narrative: null, error: 'No articles found in this period.' }, { status: 404 })
     }
 
-    const seenArticleIds = new Set<string>()
+    const seen = new Set<string>()
     const uniqueData = data.filter(item => {
-      const art = Array.isArray(item.articles) ? item.articles[0] : item.articles
-      const key = String(art?.url ?? art?.title ?? '')
-      if (!key || seenArticleIds.has(key)) return false
-      seenArticleIds.add(key)
+      const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
+      const key = String(article?.url ?? '')
+      if (!key || seen.has(key)) return false
+      seen.add(key)
       return true
-    })
+    }).slice(0, 12)
 
-    // Build a rich content brief from all articles
-    const articleBriefs = uniqueData
-      .map((item: Record<string, unknown>, i: number) => {
-        const art = Array.isArray(item.articles) ? item.articles[0] : item.articles as Record<string, unknown> | null
-        if (!art) return null
-        const bullets = Array.isArray(art.tldr_bullets) ? (art.tldr_bullets as string[]).join(' ') : ''
-        const why = art.why_it_matters ? `Why it matters: ${art.why_it_matters}` : ''
-        const tags = Array.isArray(art.topic_tags) ? (art.topic_tags as string[]).map(t => TAG_LABELS[t] ?? t).join(', ') : ''
-        return `[${i + 1}] ${art.title} (${tags})\n${bullets}\n${why}\nURL: ${art.url}`
-      })
-      .filter(Boolean)
-      .join('\n\n')
+    const topicCounts = new Map<string, number>()
+    const articleBriefs = uniqueData.map((item, index) => {
+      const article = (Array.isArray(item.articles) ? item.articles[0] : item.articles)!
+      const tags = Array.isArray(article.topic_tags) ? article.topic_tags as string[] : []
+      tags.forEach(tag => topicCounts.set(tag, (topicCounts.get(tag) ?? 0) + 1))
+      const bullets = Array.isArray(article.tldr_bullets)
+        ? (article.tldr_bullets as string[]).slice(0, 3).join(' ')
+        : ''
+      return `[${index + 1}] ${article.title}\nTopics: ${tags.map(tag => TAG_LABELS[tag] ?? tag).join(', ')}\n${bullets}\nWhy it matters: ${article.why_it_matters ?? 'Not supplied'}\nURL: ${article.url}`
+    }).join('\n\n')
 
-    // Group topics to understand the week's themes
-    const topicSet = new Map<string, number>()
-    for (const item of uniqueData) {
-      const art = Array.isArray(item.articles) ? item.articles[0] : item.articles as Record<string, unknown> | null
-      for (const t of (Array.isArray(art?.topic_tags) ? art!.topic_tags as string[] : [])) {
-        topicSet.set(t, (topicSet.get(t) ?? 0) + 1)
-      }
-    }
-    const dominantTopics = [...topicSet.entries()]
+    const dominantTopics = [...topicCounts.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
-      .map(([t]) => TAG_LABELS[t] ?? t)
+      .map(([tag]) => TAG_LABELS[tag] ?? tag)
 
-    // Add current external context so the digest can compare the user's feed
-    // with how the wider AI press is framing the same week.
-    const worldNews = await fetchAiNews(12)
-    const worldBriefs = worldNews.map((item, i) =>
-      `[W${i + 1}] ${item.title} — ${item.source}\n${item.description}\nURL: ${item.url}`
+    const worldNews = await fetchAiNews(8)
+    const worldBriefs = worldNews.map((item, index) =>
+      `[W${index + 1}] ${item.title} — ${item.source}\n${item.description.slice(0, 220)}\nURL: ${item.url}`
     ).join('\n\n')
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 2000,
-      system: `You are a senior AI analyst writing a weekly intelligence newsletter for GenAI practitioners.
-Your newsletter should read like The Pragmatic Engineer or Import AI — analytical, direct, no hype.
-
-Write in sections:
-1. THE WEEK IN ONE SENTENCE — a single punchy sentence capturing the single biggest theme
-2. THE SIGNAL THIS WEEK — 3-4 paragraphs weaving the top stories into a coherent narrative.
-   Do NOT list articles. Write a story: "While [company] announced X, researchers at [place] were showing that Y...".
-   Compare the user's sources with the WORLDWIDE AI NEWS context. Show patterns,
-   disagreements, tensions, and what they mean for practitioners building today.
-3. THE THREE THINGS TO WATCH — 3 specific developments that will matter in the next 30-90 days, with a brief "why"
-4. PRACTITIONER TAKEAWAY — one paragraph on what someone building AI systems should actually do differently this week
-
-Rules:
-- Cite specific articles by title and URL when referencing them
-- Treat RSS headlines/snippets as context, not proof of facts absent from the supplied text
-- Be specific about numbers, papers, companies
-- Avoid: "fascinating", "in conclusion", "it's worth noting", "delve", "leverage"
-- Sound like someone who read everything and is telling a colleague what actually matters
-Return as JSON: { "headline": "...", "signal": "...", "watch": [{"item": "...", "why": "..."}], "takeaway": "..." }`,
+      max_tokens: 4000,
+      output_config: {
+        format: { type: 'json_schema', schema: NARRATIVE_SCHEMA },
+      },
+      system: `You are a senior AI analyst writing a concise weekly intelligence newsletter for GenAI practitioners. Connect stories into a coherent argument; do not list or merely summarize them. Compare the user's sources with worldwide AI coverage, identify agreement and tension, and explain practical implications. Return exactly three items in watch. Cite evidence inline as "Article title (URL)". Treat RSS snippets as context rather than proof. Be analytical, direct, specific, and free of hype.`,
       messages: [{
         role: 'user',
-        content: `Dominant topics this week: ${dominantTopics.join(', ')}\n\nUSER'S TOP ARTICLES (${uniqueData.length}):\n\n${articleBriefs}\n\nWORLDWIDE AI NEWS CONTEXT (live RSS):\n\n${worldBriefs || 'No live external headlines were available.'}\n\nWrite the weekly intelligence briefing as JSON.`,
+        content: `Dominant topics: ${dominantTopics.join(', ')}\n\nUSER'S TOP ARTICLES:\n${articleBriefs}\n\nWORLDWIDE AI NEWS:\n${worldBriefs || 'No external headlines available.'}\n\nProduce the weekly intelligence briefing.`,
       }],
     })
 
-    const raw = response.content[0].type === 'text' ? response.content[0].text : '{}'
-    const cleaned = raw.replace(/^```[a-z]*\n?/, '').replace(/\n?```$/, '').trim()
-    const parsed = JSON.parse(cleaned)
+    if (response.stop_reason === 'max_tokens') throw new Error('Digest exceeded its output budget.')
+    const block = response.content.find(item => item.type === 'text')
+    const parsed: unknown = block?.type === 'text' ? JSON.parse(block.text) : null
+    if (!isNarrative(parsed)) throw new Error('Claude returned an invalid digest structure.')
+
+    const generatedAt = new Date().toISOString()
+    const { error: cacheError } = await db.from('weekly_digests').upsert({
+      user_id: userId,
+      week_start: weekStart,
+      narrative: parsed,
+      article_count: uniqueData.length,
+      dominant_topics: dominantTopics,
+      generated_at: generatedAt,
+    }, { onConflict: 'user_id,week_start' })
+
+    if (cacheError) console.error('weekly_digest_cache_failed', cacheError.message)
 
     return Response.json({
       narrative: parsed,
       articleCount: uniqueData.length,
       dominantTopics,
+      generatedAt,
+      cached: false,
       period: `Last ${days} days`,
     })
-  } catch (err) {
-    return Response.json({ narrative: null, error: String(err) })
+  } catch (error) {
+    console.error('weekly_digest_generation_failed', error)
+    return Response.json({
+      narrative: null,
+      error: 'The briefing could not be generated. Please try Regenerate once more.',
+    }, { status: 500 })
   }
+}
+
+export async function GET(req: NextRequest) {
+  return handle(req, false)
+}
+
+export async function POST(req: NextRequest) {
+  return handle(req, true)
 }
