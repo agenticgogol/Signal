@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createServiceClient } from './supabase'
 import { PLATFORM_SPECS } from './platformSpecs'
+import { buildVoiceConstitution, type VoiceFingerprint } from './voice'
 
 export { PLATFORM_SPECS }
 
@@ -112,13 +113,14 @@ Return only valid JSON, no markdown fences.`,
 export async function runWriterAgent(
   orchestratorBrief: string,
   format: string,
-  sources: SourceArticle[] = []
+  sources: SourceArticle[] = [],
+  voiceFingerprint?: VoiceFingerprint | null
 ): Promise<string> {
   const spec = PLATFORM_SPECS[format]
   const mustDos = spec?.mustDos.map(d => `• ${d}`).join('\n') ?? ''
   const avoid = spec?.avoid.map(d => `• ${d}`).join('\n') ?? ''
 
-  const systemPrompt = spec
+  const baseSystemPrompt = spec
     ? `You are a professional ghostwriter writing a ${spec.name} post for a GenAI practitioner.
 
 PLATFORM RULES for ${spec.name}:
@@ -136,6 +138,7 @@ ${citationGuide(format)}
 
 Write ONLY the final content — no meta-commentary, no "here is your post", no preamble.`
     : `Write a ${format} post about the following topic. Be direct and substantive.\n\n${citationGuide(format)}`
+  const systemPrompt = baseSystemPrompt + buildVoiceConstitution(voiceFingerprint)
 
   const sourceContext = formatSourceList(sources)
 
@@ -196,7 +199,8 @@ export async function runHumanizerAgent(
   draft: string,
   critique: string,
   format: string,
-  sources: SourceArticle[] = []
+  sources: SourceArticle[] = [],
+  voiceFingerprint?: VoiceFingerprint | null
 ): Promise<string> {
   const spec = PLATFORM_SPECS[format]
   const charNote = spec?.charLimit ? `\nCRITICAL: Final output must be under ${spec.charLimit} characters.` : ''
@@ -223,7 +227,7 @@ Apply ALL of:
 
 ${citationGuide(format)}
 
-Return ONLY the rewritten content. No meta-commentary, no "Here is the revised version:", just the content.`,
+Return ONLY the rewritten content. No meta-commentary, no "Here is the revised version:", just the content.${buildVoiceConstitution(voiceFingerprint)}`,
     messages: [{
       role: 'user',
       content: `Draft:\n${draft}\n\nCritique:\n${critique}${sourceContext}\n\nFormat: ${spec?.name ?? format}`,
@@ -386,7 +390,8 @@ export async function runFinalPolishAgent(
   content: string,
   audienceFeedback: string,
   format: string,
-  sources: SourceArticle[] = []
+  sources: SourceArticle[] = [],
+  voiceFingerprint?: VoiceFingerprint | null
 ): Promise<string> {
   const spec = PLATFORM_SPECS[format]
   const charNote = spec?.charLimit ? `\nCRITICAL: Final output must be under ${spec.charLimit} characters.` : ''
@@ -407,7 +412,7 @@ Rules:
 3. Keep all existing citations — add any that are still missing${charNote}
 ${sourceContext}
 
-Return ONLY the revised content. No preamble.`,
+Return ONLY the revised content. No preamble.${buildVoiceConstitution(voiceFingerprint)}`,
     messages: [{
       role: 'user',
       content: `Content:\n${content}\n\nAudience feedback to address:\n${audienceFeedback}`,

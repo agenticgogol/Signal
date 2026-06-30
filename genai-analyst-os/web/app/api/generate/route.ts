@@ -10,6 +10,8 @@ import {
   persistJob,
 } from '@/lib/agents'
 import { verifyAdminToken } from '@/lib/adminAuth'
+import { createServiceClient } from '@/lib/supabase'
+import type { VoiceFingerprint } from '@/lib/voice'
 
 export const maxDuration = 300
 
@@ -21,6 +23,15 @@ export async function POST(req: Request) {
   }
 
   const { brief, sources, format, pov, userId } = await req.json()
+  let voiceFingerprint: VoiceFingerprint | null = null
+  if (userId) {
+    const { data } = await createServiceClient()
+      .from('user_profiles')
+      .select('voice_fingerprint')
+      .eq('id', userId)
+      .maybeSingle()
+    voiceFingerprint = (data?.voice_fingerprint as VoiceFingerprint | null) ?? null
+  }
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -57,7 +68,7 @@ export async function POST(req: Request) {
             : orchestratorBrief
 
           send('agent_start', { agent: 'writer', loop })
-          currentDraft = await runWriterAgent(writerContext, format, sources)
+          currentDraft = await runWriterAgent(writerContext, format, sources, voiceFingerprint)
           send('agent_complete', { agent: 'writer', output: currentDraft, loop })
 
           // Step 3: Claim Verifier
@@ -73,7 +84,7 @@ export async function POST(req: Request) {
 
           // Step 5: Humanizer
           send('agent_start', { agent: 'humanizer', loop })
-          currentHumanized = await runHumanizerAgent(currentDraft, currentCritique, format, sources)
+          currentHumanized = await runHumanizerAgent(currentDraft, currentCritique, format, sources, voiceFingerprint)
           send('agent_complete', { agent: 'humanizer', output: currentHumanized, loop })
 
           // Step 6: Evaluator — score the humanized output
@@ -105,7 +116,7 @@ export async function POST(req: Request) {
 
         // ── Step 8: Final Polish (addresses audience objections) ─────────────
         send('agent_start', { agent: 'final_polish' })
-        const final = await runFinalPolishAgent(currentHumanized, audienceFeedback, format, sources)
+        const final = await runFinalPolishAgent(currentHumanized, audienceFeedback, format, sources, voiceFingerprint)
         send('agent_complete', { agent: 'final_polish', output: final })
 
         // Persist

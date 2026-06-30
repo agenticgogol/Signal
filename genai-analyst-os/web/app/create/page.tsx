@@ -124,12 +124,20 @@ function CreatePageInner() {
   // Admin gate
   const [showAdminGate, setShowAdminGate] = useState(false)
   const [pendingGenerate, setPendingGenerate] = useState(false)
+  const [voiceActive, setVoiceActive] = useState(false)
 
   // ── Load frozen outlines on mount ──────────────────────────────────────────
   useEffect(() => {
     fetch(`/api/data/outlines?userId=${userId}`)
       .then(r => r.json())
       .then(json => setFrozenOutlines(json.outlines ?? []))
+      .catch(() => {})
+  }, [userId])
+
+  useEffect(() => {
+    fetch(`/api/data/voice?userId=${userId}`)
+      .then(response => response.json())
+      .then(json => setVoiceActive(Boolean(json.fingerprint)))
       .catch(() => {})
   }, [userId])
 
@@ -358,7 +366,7 @@ function CreatePageInner() {
       )}
 
       <div className="mb-8">
-        <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">Create Content</h1>
+        <div className="flex flex-wrap items-center gap-2"><h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">Create Content</h1>{voiceActive ? <a href="/voice" className="rounded-full border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/40 px-2.5 py-1 text-[11px] font-bold text-green-700 dark:text-green-300">🎙️ Your voice active</a> : <a href="/voice" className="rounded-full border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1 text-[11px] font-bold text-amber-700 dark:text-amber-300">Set up your voice →</a>}</div>
         <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">8-agent pipeline: write → verify claims → critique → humanize → evaluate → simulate audience → polish</p>
       </div>
 

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900">
+  <rect width="1440" height="900" fill="#fafafa"/>
+  <rect width="224" height="900" fill="#fff" stroke="#e4e4e7"/>
+  <text x="24" y="44" font-family="Arial" font-size="25" font-weight="800" fill="#6d28d9">⚡ Signal</text>
+  <text x="24" y="68" font-family="Arial" font-size="12" fill="#a1a1aa">Your GenAI intelligence OS</text>
+  <g font-family="Arial" font-size="14" fill="#52525b"><text x="28" y="126">📰  Feed</text><text x="28" y="166">💡  Ideas</text><text x="28" y="206">✍️  Create</text></g>
+  <rect x="12" y="226" width="200" height="40" rx="9" fill="#f5f3ff"/>
+  <text x="28" y="251" font-family="Arial" font-size="14" font-weight="700" fill="#6d28d9">🎙️  My Voice</text>
+  <g font-family="Arial" font-size="14" fill="#52525b"><text x="28" y="294">🔗  Sources</text><text x="28" y="346">🧭  User Guide</text><text x="28" y="386">🛠️  Implementation</text></g>
+  <defs><linearGradient id="hero" x1="0" x2="1"><stop stop-color="#f5f3ff"/><stop offset="0.55" stop-color="#fff"/><stop offset="1" stop-color="#eff6ff"/></linearGradient></defs>
+  <rect x="272" y="32" width="1118" height="222" rx="26" fill="url(#hero)" stroke="#ddd6fe"/>
+  <text x="312" y="78" font-family="Arial" font-size="12" font-weight="800" letter-spacing="3" fill="#7c3aed">VOICE FINGERPRINTING</text>
+  <text x="312" y="126" font-family="Arial" font-size="34" font-weight="900" fill="#18181b">Teach Signal how you actually write</text>
+  <text x="312" y="165" font-family="Arial" font-size="16" fill="#52525b">Paste 3–5 posts that sound unmistakably like you.</text>
+  <text x="312" y="190" font-family="Arial" font-size="16" fill="#52525b">Signal turns recurring choices into a style constitution for every draft.</text>
+  <rect x="1160" y="186" width="188" height="34" rx="17" fill="#fff" stroke="#d4d4d8"/>
+  <text x="1180" y="208" font-family="Arial" font-size="12" font-weight="700" fill="#71717a">○ Setup incomplete</text>
+  <rect x="272" y="282" width="1118" height="570" rx="26" fill="#fff" stroke="#e4e4e7"/>
+  <text x="306" y="326" font-family="Arial" font-size="20" font-weight="800" fill="#18181b">Your writing samples</text>
+  <text x="306" y="350" font-family="Arial" font-size="12" fill="#a1a1aa">Use complete, successful posts. Minimum 150 characters each.</text>
+  <text x="1310" y="326" font-family="Arial" font-size="12" font-weight="700" fill="#a1a1aa">0/5 ready</text>
+  <g font-family="Arial">
+    <rect x="306" y="382" width="1050" height="120" rx="16" fill="#fafafa" stroke="#e4e4e7"/><text x="326" y="410" font-size="11" font-weight="800" fill="#71717a">SAMPLE 1</text><text x="326" y="450" font-size="14" fill="#a1a1aa">Paste one of your best-performing posts here…</text><text x="1270" y="486" font-size="11" fill="#a1a1aa">0 characters</text>
+    <rect x="306" y="518" width="1050" height="120" rx="16" fill="#fafafa" stroke="#e4e4e7"/><text x="326" y="546" font-size="11" font-weight="800" fill="#71717a">SAMPLE 2</text><text x="326" y="586" font-size="14" fill="#a1a1aa">Paste another post with your natural voice…</text><text x="1270" y="622" font-size="11" fill="#a1a1aa">0 characters</text>
+    <rect x="306" y="654" width="1050" height="120" rx="16" fill="#fafafa" stroke="#e4e4e7"/><text x="326" y="682" font-size="11" font-weight="800" fill="#71717a">SAMPLE 3</text><text x="326" y="722" font-size="14" fill="#a1a1aa">Use a post that performed well with your audience…</text><text x="1270" y="758" font-size="11" fill="#a1a1aa">0 characters</text>
+  </g>
+  <rect x="306" y="798" width="118" height="40" rx="10" fill="#fff" stroke="#d4d4d8"/><text x="328" y="823" font-family="Arial" font-size="13" font-weight="700" fill="#52525b">+ Add sample</text>
+  <rect x="438" y="798" width="156" height="40" rx="10" fill="#7c3aed" opacity="0.4"/><text x="460" y="823" font-family="Arial" font-size="13" font-weight="800" fill="#fff">Analyze My Voice</text>
+</svg>

@@ -31,6 +31,7 @@ create table if not exists public.user_profiles (
     is_admin            boolean not null default false,
     style_seed          text not null default 'practitioner'
                             check (style_seed in ('practitioner', 'technical', 'business', 'beginner-friendly')),
+    voice_fingerprint   jsonb,
     topic_weights       jsonb not null default '{
         "agents": 0.5, "evals": 0.5, "fine-tuning": 0.5, "rag": 0.5,
         "multimodal": 0.5, "reasoning": 0.5, "infrastructure": 0.5,

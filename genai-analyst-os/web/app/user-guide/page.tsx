@@ -4,7 +4,7 @@ import { Arrow, Callout, FeatureCard, FlowNode, GuideHero, GuideSection, Screens
 const toc = [
   ['quick-start', 'Quick start'], ['feed', 'Your Feed'], ['news', 'AI News'],
   ['digest', 'Weekly Digest'], ['ideas', 'Idea Wizard'], ['content-workflow', 'Content Studio'],
-  ['create', 'Create walkthrough'], ['formats', 'Formats'], ['sources', 'Sources'], ['faq', 'FAQ'],
+  ['voice', 'My Voice'], ['create', 'Create walkthrough'], ['formats', 'Formats'], ['sources', 'Sources'], ['faq', 'FAQ'],
 ]
 
 export default function UserGuidePage() {
@@ -90,9 +90,25 @@ export default function UserGuidePage() {
         </div>
       </GuideSection>
 
+      <GuideSection id="voice" eyebrow="Personalization" title="My Voice: turn your writing into a reusable style constitution" description="Generic tone labels cannot capture how you actually write. Voice Fingerprinting analyzes 3–5 successful posts, stores the recurring patterns, and applies them to every new draft.">
+        <div className="grid gap-5 lg:grid-cols-[1.45fr_1fr]">
+          <ScreenshotFrame src="/guides/voice.svg" alt="Signal Voice Fingerprinting setup page" number={5} caption="Paste complete posts that feel unmistakably yours. Re-analyzing replaces the previous fingerprint; the original samples are not stored by Signal." />
+          <div className="space-y-4">
+            <Callout title="What the Voice Analyst learns"><ul className="list-disc space-y-1.5 pl-4"><li>Sentence-length rhythm and range</li><li>Signature phrases and transitions</li><li>Direct versus qualified topic areas</li><li>Paragraph opening and closing habits</li><li>Words, clichés, and tones to avoid</li></ul></Callout>
+            <Callout title="Where it is used" tone="green"><p>The fingerprint is injected into Writer, every Humanizer rewrite, and Final Polish. Platform rules and factual accuracy still take priority.</p></Callout>
+          </div>
+        </div>
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
+          <StepCard number={1} title="Choose representative work" action="My Voice → paste 3–5 complete posts" result="Use pieces with your real rhythm, opinions, and transitions—not content written by someone else." />
+          <StepCard number={2} title="Analyze" action="Analyze My Voice and pass the admin wall" result="Claude identifies high-level style while Signal computes sentence metrics directly from the text." />
+          <StepCard number={3} title="Generate normally" action="Open Create and look for Your voice active" result="The style constitution automatically follows the brief into all drafting and polishing loops." />
+        </div>
+        <Callout title="What it does not do" tone="amber"><p>Voice Fingerprinting is not model training or fine-tuning, and it does not memorize your posts. It is a structured set of writing constraints injected at generation time.</p></Callout>
+      </GuideSection>
+
       <GuideSection id="create" eyebrow="Click-by-click" title="Create: your POV is the differentiating ingredient" description="The POV field is currently optional, but Signal should not invent your conviction. The strongest results combine selected evidence with a specific author perspective.">
         <div className="grid gap-5 lg:grid-cols-[1.45fr_1fr]">
-          <ScreenshotFrame src="/guides/create.png" alt="Signal Create workspace" number={5} caption="A good POV bullet is specific: what you believe, what changed your mind, and what the reader should do differently." />
+          <ScreenshotFrame src="/guides/create.png" alt="Signal Create workspace" number={6} caption="A good POV bullet is specific: what you believe, what changed your mind, and what the reader should do differently." />
           <Callout title="A strong POV recipe" tone="green"><ol className="list-decimal space-y-2 pl-4"><li>Name the claim you agree or disagree with.</li><li>Add direct experience, a tradeoff, or a counterexample.</li><li>State the practical recommendation.</li><li>Check every factual claim against the pinned sources.</li></ol></Callout>
         </div>
         <div className="mt-6 grid gap-5 md:grid-cols-2 lg:grid-cols-5">
@@ -133,7 +149,7 @@ export default function UserGuidePage() {
       </GuideSection>
 
       <GuideSection id="sources" eyebrow="Coverage" title="Sources: design your information diet" description="Add a homepage or feed URL. Signal resolves RSS where possible and groups sources by quality tier for ranking.">
-        <ScreenshotFrame src="/guides/sources.png" alt="Signal Sources page grouped by quality tier" number={6} caption="Paste a publication homepage or RSS URL. The green RSS badge confirms a feed is ready for the next pipeline run." />
+        <ScreenshotFrame src="/guides/sources.png" alt="Signal Sources page grouped by quality tier" number={7} caption="Paste a publication homepage or RSS URL. The green RSS badge confirms a feed is ready for the next pipeline run." />
         <div className="grid gap-5 md:grid-cols-3">
           <FeatureCard icon="🟣" title="Tier 1" value="Highest trust">Primary labs, major research publications, and consistently authoritative sources.</FeatureCard>
           <FeatureCard icon="🔵" title="Tier 2" value="Practitioner signal">Builders, technical publications, and strong industry analysis.</FeatureCard>
@@ -148,6 +164,7 @@ export default function UserGuidePage() {
           <Callout title="Why do some cards use color banners?">Not every RSS feed supplies artwork. Signal uses the feed image when available and a stable topic gradient otherwise.</Callout>
           <Callout title="Does Signal publish automatically?">No. Publishing is intentionally outside the autonomous pipeline. POV is optional in the current form, but strongly recommended before generating a draft.</Callout>
           <Callout title="Why can content generation take longer?">It is an eight-agent workflow, not one completion. Verification and evaluation can trigger up to three Writer → Verifier → Critic → Humanizer → Evaluator loops before audience simulation and final polish.</Callout>
+          <Callout title="Are my pasted voice samples stored?">No. Signal sends them for one analysis request and stores only the extracted fingerprint on your profile. Re-analyzing replaces that fingerprint.</Callout>
         </div>
       </GuideSection>
 

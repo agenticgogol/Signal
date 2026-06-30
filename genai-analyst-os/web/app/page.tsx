@@ -10,7 +10,7 @@ const VALUE_PROPS = [
   {
     icon: '✍️',
     title: 'From insight to publish-ready content in minutes',
-    body: 'Pick an article, pick a format — LinkedIn post, Substack essay, blog, YouTube script, or Twitter thread. A 4-stage agentic pipeline (Orchestrator → Writer → Critic → Humanizer) turns raw ideas into polished drafts with your voice.',
+    body: 'Pick an article, pick a format — LinkedIn post, Substack essay, blog, YouTube script, or Twitter thread. An 8-agent workflow (Orchestrator, Writer, Verifier, Critic, Humanizer, Evaluator, Audience Sim, Final Polish) turns raw ideas into polished drafts with your voice.',
     accent: 'from-blue-500 to-cyan-500',
   },
   {
@@ -25,13 +25,13 @@ const HOW_IT_WORKS = [
   { step: '01', label: 'Curated Feed', desc: 'Signal pulls from your sources daily. Every article gets TL;DR bullets, topic tags, and a depth score.' },
   { step: '02', label: 'Ranked for You', desc: 'A blend score surfaces the articles that match your interests and reaction history at the top.' },
   { step: '03', label: 'Idea Generation', desc: 'Signal suggests content angles from the week\'s top articles — opinionated takes ready to build on.' },
-  { step: '04', label: 'Agentic Creation', desc: 'Multi-agent pipeline drafts, critiques, and humanizes content. You review, refine, and publish.' },
+  { step: '04', label: 'Agentic Creation', desc: 'The eight-agent loop drafts, checks claims, critiques, humanizes, scores, stress-tests, and polishes. You review, refine, and publish.' },
 ]
 
 const CAPABILITIES = [
   { label: 'Sources monitored', value: '50+' },
   { label: 'Content formats', value: '6' },
-  { label: 'Agent pipeline stages', value: '4' },
+  { label: 'Agent pipeline stages', value: '8' },
   { label: 'Topics tracked', value: '7' },
 ]
 
@@ -206,34 +206,33 @@ export default function LandingPage() {
       <section className="py-24 px-6 bg-zinc-900/40">
         <div className="max-w-4xl mx-auto text-center">
           <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">
-            Four agents. One polished draft.
+            Eight agents. One coordinated draft system.
           </h2>
           <p className="text-zinc-400 text-lg mb-14 max-w-2xl mx-auto">
-            Signal&apos;s content pipeline isn&apos;t a single prompt. It&apos;s a four-stage agent chain — each stage specialized, each with a distinct role.
+            Signal&apos;s content pipeline isn&apos;t a single prompt. The orchestrator sets the brief, Writer drafts, Verifier and Critic catch claim errors, Humanizer applies voice, Evaluator scores quality, Audience Sim stress-tests the piece, and Final Polish resolves objections. When quality slips, the loop runs again.
           </p>
 
-          <div className="flex flex-col sm:flex-row items-stretch gap-0">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {[
               { icon: '🎯', label: 'Orchestrator', desc: 'Builds the content brief — angle, audience, structure' },
               { icon: '✍️', label: 'Writer', desc: 'Drafts the full piece in the target format' },
-              { icon: '🔍', label: 'Critic', desc: 'Fact-checks, sharpens arguments, cuts fluff' },
+              { icon: '🔬', label: 'Verifier', desc: 'Checks claims, citations, and source grounding' },
+              { icon: '🔍', label: 'Critic', desc: 'Sharpens arguments and removes weak or fluffy lines' },
               { icon: '✨', label: 'Humanizer', desc: 'Applies your voice, style, and personality' },
-            ].map(({ icon, label, desc }, i, arr) => (
-              <div key={label} className="flex flex-col sm:flex-row items-stretch flex-1">
-                <div className="flex-1 bg-zinc-950 border border-white/5 p-5 text-left hover:border-violet-800/40 transition-colors first:rounded-t-xl sm:first:rounded-l-xl sm:first:rounded-tr-none last:rounded-b-xl sm:last:rounded-r-xl sm:last:rounded-bl-none">
-                  <div className="text-2xl mb-3">{icon}</div>
-                  <div className="text-xs font-bold text-violet-400 uppercase tracking-widest mb-1">{label}</div>
-                  <div className="text-xs text-zinc-500 leading-relaxed">{desc}</div>
-                </div>
-                {i < arr.length - 1 && (
-                  <div className="flex items-center justify-center py-1 sm:py-0 sm:px-1 text-zinc-700 text-lg font-bold flex-shrink-0">
-                    <span className="hidden sm:block">→</span>
-                    <span className="sm:hidden">↓</span>
-                  </div>
-                )}
+              { icon: '📊', label: 'Evaluator', desc: 'Scores hook, specificity, citations, voice, and fit' },
+              { icon: '👥', label: 'Audience Sim', desc: 'Tests the draft against skeptical reader personas' },
+              { icon: '💎', label: 'Final Polish', desc: 'Resolves objections and finishes the piece for export' },
+            ].map(({ icon, label, desc }) => (
+              <div key={label} className="bg-zinc-950 border border-white/5 p-5 text-left hover:border-violet-800/40 transition-colors rounded-2xl">
+                <div className="text-2xl mb-3">{icon}</div>
+                <div className="text-xs font-bold text-violet-400 uppercase tracking-widest mb-1">{label}</div>
+                <div className="text-xs text-zinc-500 leading-relaxed">{desc}</div>
               </div>
             ))}
           </div>
+          <p className="mt-6 text-sm text-zinc-500 max-w-2xl mx-auto">
+            The agents coordinate through a deterministic loop: quality checks can send the draft back to Writer, Verifier, Critic, Humanizer, and Evaluator until the piece clears the threshold.
+          </p>
         </div>
       </section>
 

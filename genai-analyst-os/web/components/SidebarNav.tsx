@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { href: '/feed',    label: 'Feed',    icon: '📰' },
   { href: '/ideas',   label: 'Ideas',   icon: '💡' },
   { href: '/create',  label: 'Create',  icon: '✍️'  },
+  { href: '/voice',   label: 'My Voice', icon: '🎙️' },
   { href: '/sources', label: 'Sources', icon: '🔗' },
   { href: '/user-guide', label: 'User Guide', icon: '🧭', divider: true },
   { href: '/implementation-guide', label: 'Implementation', icon: '🛠️' },

@@ -20,6 +20,8 @@ const apiRows = [
   ['/api/ideas/generate', 'POST', 'Uses recent feed context and preferences to propose five topics'],
   ['/api/outline/generate', 'POST', 'Builds a hook, audience, angle, format, and editable section plan'],
   ['/api/outline/save', 'POST', 'Freezes an approved outline for deterministic reuse in Create'],
+  ['/api/data/voice', 'GET', 'Reads the current structured fingerprint from user_profiles'],
+  ['/api/voice/analyze', 'POST', 'Extracts voice patterns, computes rhythm metrics, and replaces the fingerprint'],
   ['/api/articles/react', 'GET / POST / DELETE', 'Stores like/dislike feedback'],
   ['/api/generate', 'POST + SSE', 'Streams the eight-agent drafting and quality workflow'],
 ]
@@ -53,7 +55,7 @@ export default function ImplementationGuidePage() {
           <p className="mb-4 text-xs font-bold uppercase tracking-widest text-zinc-400">Human-directed creation path</p>
           <div className="flex flex-col md:flex-row gap-3 md:items-stretch">
             <FlowNode icon="📌" title="Evidence" subtitle="outline · feed · custom" tone="green" /> <Arrow />
-            <FlowNode icon="🧭" title="Human Brief" subtitle="topic · angle · POV · audience" tone="blue" /> <Arrow />
+            <FlowNode icon="🧭" title="Human Brief" subtitle="topic · POV · audience · voice" tone="blue" /> <Arrow />
             <FlowNode icon="🤖" title="8-Agent Loop" subtitle="draft · verify · evaluate" /> <Arrow />
             <FlowNode icon="📡" title="SSE Stream" subtitle="live status + artifacts" tone="amber" /> <Arrow />
             <FlowNode icon="✍️" title="Human Review" subtitle="edit · copy · publish manually" tone="green" />
@@ -96,7 +98,7 @@ export default function ImplementationGuidePage() {
             <FlowNode icon="📚" title="Sources" subtitle="1–3 feed articles or frozen outline" tone="green" />
             <FlowNode icon="💬" title="Author Direction" subtitle="topic · angle · optional POV" tone="blue" />
             <FlowNode icon="👤" title="Audience" subtitle="engineer · PM · leader · mixed" tone="amber" />
-            <FlowNode icon="📐" title="Platform Spec" subtitle="length · shape · tone · citations" />
+            <FlowNode icon="🎙️" title="Voice + Platform" subtitle="fingerprint · length · citations" />
           </div>
           <div className="my-6 text-center text-2xl text-zinc-300 dark:text-zinc-700">↓</div>
           <div className="grid gap-3 md:grid-cols-4">
@@ -121,6 +123,28 @@ export default function ImplementationGuidePage() {
           <Callout title="Quality gate"><p>Evaluator scores hook, specificity, citations, voice, and platform fit from 1–10. Any criterion below 7 creates targeted Writer instructions.</p></Callout>
           <Callout title="Bounded rewrite loop" tone="amber"><p>Writer → Verifier → Critic → Humanizer → Evaluator can repeat, but <code>MAX_LOOPS = 3</code> prevents runaway cost and latency.</p></Callout>
           <Callout title="Reader pressure test" tone="green"><p>Only after the quality loop does the system simulate a skeptical engineer, product lead, and executive skimmer, then apply one final polish.</p></Callout>
+        </div>
+      </GuideSection>
+
+      <GuideSection id="voice-fingerprint" eyebrow="Voice system" title="Voice Fingerprinting is retrieval-time style control, not fine-tuning" description="The system derives a compact constitution from user-owned samples, stores it on the profile, and injects it only when content is generated.">
+        <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-stretch">
+            <FlowNode icon="✍️" title="3–5 Posts" subtitle="150+ chars each · 50k total cap" tone="blue" /> <Arrow />
+            <FlowNode icon="📏" title="Local Metrics" subtitle="sentence split + word distribution" tone="green" /> <Arrow />
+            <FlowNode icon="🧠" title="Voice Analyst" subtitle="Sonnet + JSON Schema" /> <Arrow />
+            <FlowNode icon="◈" title="user_profiles" subtitle="voice_fingerprint JSONB" tone="amber" /> <Arrow />
+            <FlowNode icon="📜" title="Constitution" subtitle="prompt-time style constraints" tone="green" />
+          </div>
+        </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <FeatureCard icon="〽️" title="Deterministic rhythm">Average sentence length, 20th–80th percentile range, and short/medium/long percentages are computed in code rather than guessed by the model.</FeatureCard>
+          <FeatureCard icon="🔎" title="Conservative inference">Structured analysis extracts repeated phrases, transitions, certainty behavior, paragraph patterns, tone dimensions, and executable principles.</FeatureCard>
+          <FeatureCard icon="🧩" title="Prompt injection point">The constitution is appended to Writer, Humanizer, and Final Polish system instructions on every quality loop.</FeatureCard>
+          <FeatureCard icon="⚖️" title="Precedence rules">Citation accuracy comes first, platform requirements second, and personal rhythm applies everywhere those constraints leave room.</FeatureCard>
+        </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <Callout title="Privacy boundary"><p>The API validates 3–5 bounded samples, sends them once to Claude, and persists only the structured fingerprint. Raw post text is not inserted into Signal’s database.</p></Callout>
+          <Callout title="Safe fallback" tone="green"><p>Profiles without a fingerprint receive the existing platform-aware prompts unchanged. A failed profile lookup does not block content generation.</p></Callout>
         </div>
       </GuideSection>
 
@@ -168,7 +192,7 @@ export default function ImplementationGuidePage() {
       <GuideSection id="data" eyebrow="Persistence" title="Core data relationships" description="Global article enrichment is reused. Personal ranking, feedback, ideas, and digests remain user-scoped.">
         <div className="overflow-x-auto rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
           <div className="min-w-[760px] grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center gap-3 text-center">
-            <div className="rounded-xl bg-blue-50 dark:bg-blue-950/40 p-4"><strong className="text-sm text-blue-700 dark:text-blue-300">user_profiles</strong><p className="mt-1 text-[11px] text-zinc-500">preferences · plan · style</p></div><span>→</span>
+            <div className="rounded-xl bg-blue-50 dark:bg-blue-950/40 p-4"><strong className="text-sm text-blue-700 dark:text-blue-300">user_profiles</strong><p className="mt-1 text-[11px] text-zinc-500">preferences · plan · voice fingerprint</p></div><span>→</span>
             <div className="rounded-xl bg-violet-50 dark:bg-violet-950/40 p-4"><strong className="text-sm text-violet-700 dark:text-violet-300">user_sources</strong><p className="mt-1 text-[11px] text-zinc-500">URL · RSS · tier</p></div><span>→</span>
             <div className="rounded-xl bg-amber-50 dark:bg-amber-950/40 p-4"><strong className="text-sm text-amber-700 dark:text-amber-300">articles</strong><p className="mt-1 text-[11px] text-zinc-500">enrichment · image · vector</p></div>
           </div>
@@ -190,7 +214,7 @@ export default function ImplementationGuidePage() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <FeatureCard icon="⏱️" title="Run tracking">Every user run opens a <code>crawl_runs</code> row. UI polling distinguishes queued, running, completed, degraded, and timeout states.</FeatureCard>
           <FeatureCard icon="🧯" title="Failure isolation">Feed failures do not erase good items. Model failures produce explicit empty/error states rather than malformed partial data.</FeatureCard>
-          <FeatureCard icon="🔒" title="Secret boundaries">Service role, GitHub PAT, and model keys stay server-side. Feed runs plus Create, topic, and outline generation independently validate the admin token; the modal is not the security boundary.</FeatureCard>
+          <FeatureCard icon="🔒" title="Secret boundaries">Service role, GitHub PAT, and model keys stay server-side. Feed runs plus Create, topic, outline, and voice analysis independently validate the admin token; the modal is not the security boundary.</FeatureCard>
           <FeatureCard icon="📏" title="Bounded work">UI choices, server validation, RSS timeouts, source caps, article limits, and response schemas bound latency and spend.</FeatureCard>
           <FeatureCard icon="🧬" title="Deduplication">URL uniqueness protects global articles; API range views deduplicate repeated dated rankings before rendering.</FeatureCard>
           <FeatureCard icon="🗂️" title="Cache strategy">Global enrichment is reused for all users; weekly synthesis is reused until explicit regeneration.</FeatureCard>
