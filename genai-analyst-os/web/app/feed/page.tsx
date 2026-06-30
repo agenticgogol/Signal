@@ -478,6 +478,9 @@ export default function FeedPage() {
   const { user } = useAuthSession()
   const userId = user?.id ?? process.env.NEXT_PUBLIC_USER_ID!
   const [plan, setPlan] = useState<'free' | 'pro'>('free')
+  const [sourceCount, setSourceCount] = useState<number | null>(null)
+  const [seedingSources, setSeedingSources] = useState(false)
+  const [seededSources, setSeededSources] = useState(false)
 
   // Tabs
   const [activeTab, setActiveTab] = useState<Tab>('feed')
@@ -647,6 +650,38 @@ export default function FeedPage() {
     } catch {}
   }, [userId])
 
+  const fetchSourceCount = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/data/sources?userId=${userId}`)
+      const json = await res.json()
+      setSourceCount(Array.isArray(json.sources) ? json.sources.length : 0)
+    } catch {
+      setSourceCount(0)
+    }
+  }, [userId])
+
+  const seedStarterSources = useCallback(async () => {
+    if (!user?.id) return
+    setSeedingSources(true)
+    try {
+      const res = await fetch('/api/sources/seed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Could not seed starter sources')
+      await fetchSourceCount()
+      setSeededSources(true)
+      setPipelineResult(json.inserted > 0
+        ? `Starter sources imported for your account (${json.inserted}). Run Get Latest Feed to build your personal feed.`
+        : 'Starter sources are already present on your account.')
+    } catch (e) {
+      setTriggerError(String(e))
+    }
+    setSeedingSources(false)
+  }, [user?.id, fetchSourceCount])
+
   const fetchNews = useCallback(async () => {
     setNewsLoading(true)
     try {
@@ -779,8 +814,16 @@ export default function FeedPage() {
     }
     autoSelectRange()
     fetchReactions()
+    fetchSourceCount()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId])
+
+  useEffect(() => {
+    if (!user?.id) return
+    if (sourceCount !== 0) return
+    if (seedingSources || seededSources) return
+    seedStarterSources()
+  }, [user?.id, sourceCount, seedingSources, seededSources, seedStarterSources])
 
   useEffect(() => { fetchFeed(dateRange) }, [dateRange, fetchFeed])
 
@@ -1288,9 +1331,32 @@ export default function FeedPage() {
           ) : filteredArticles.length === 0 ? (
             <div className="text-center py-20">
               <div className="text-5xl mb-4">📭</div>
-              <p className="text-base font-medium text-zinc-700 dark:text-zinc-300">No articles in your feed yet</p>
-              <p className="text-sm text-zinc-400 mt-1 mb-4">Click ⚡ Get Latest Feed to pull articles from your saved sources.</p>
-              <p className="text-xs text-zinc-400">Meanwhile, check the <button onClick={() => setActiveTab('news')} className="text-violet-600 underline">🌐 AI News Worldover</button> tab for live headlines.</p>
+              {user?.id && sourceCount === 0 ? (
+                <>
+                  <p className="text-base font-medium text-zinc-700 dark:text-zinc-300">Your account has no sources yet</p>
+                  <p className="text-sm text-zinc-400 mt-1 mb-4">
+                    {seedingSources
+                      ? 'Importing starter sources for your account…'
+                      : 'Signal will import starter sources automatically so your first feed is not empty.'}
+                  </p>
+                  <div className="flex items-center justify-center gap-3">
+                    <button
+                      onClick={seedStarterSources}
+                      disabled={seedingSources}
+                      className="px-4 py-2 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 disabled:opacity-50"
+                    >
+                      {seedingSources ? 'Importing…' : 'Import starter sources'}
+                    </button>
+                    <a href="/sources" className="text-sm text-violet-600 underline">Manage sources</a>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-base font-medium text-zinc-700 dark:text-zinc-300">No articles in your feed yet</p>
+                  <p className="text-sm text-zinc-400 mt-1 mb-4">Click ⚡ Get Latest Feed to pull articles from your saved sources.</p>
+                  <p className="text-xs text-zinc-400">Meanwhile, check the <button onClick={() => setActiveTab('news')} className="text-violet-600 underline">🌐 AI News Worldover</button> tab for live headlines.</p>
+                </>
+              )}
             </div>
           ) : (
             <>

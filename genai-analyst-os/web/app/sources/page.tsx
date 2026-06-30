@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useAuthSession } from '@/lib/useAuthSession'
 
 interface Source {
   id: string; url: string; rss_url: string | null; source_tier: number; name: string | null
@@ -17,11 +18,13 @@ const TIER_INFO: Record<number, { label: string; desc: string; dot: string }> = 
 }
 
 export default function SourcesPage() {
-  const userId = process.env.NEXT_PUBLIC_USER_ID!
+  const { user, loading: authLoading } = useAuthSession()
+  const userId = user?.id ?? process.env.NEXT_PUBLIC_USER_ID!
   const [sources, setSources] = useState<Source[]>([])
   const [loading, setLoading] = useState(true)
   const [newUrl, setNewUrl] = useState('')
   const [adding, setAdding] = useState(false)
+  const [removingId, setRemovingId] = useState<string | null>(null)
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null)
 
   const fetchSources = useCallback(async () => {
@@ -34,7 +37,10 @@ export default function SourcesPage() {
     setLoading(false)
   }, [userId])
 
-  useEffect(() => { fetchSources() }, [fetchSources])
+  useEffect(() => {
+    if (authLoading) return
+    fetchSources()
+  }, [authLoading, fetchSources])
 
   const handleAdd = async () => {
     if (!newUrl.trim()) return
@@ -56,6 +62,28 @@ export default function SourcesPage() {
       }
     } catch (e) { setMsg({ text: String(e), ok: false }) }
     setAdding(false)
+    setTimeout(() => setMsg(null), 5000)
+  }
+
+  const handleRemove = async (sourceId: string) => {
+    setRemovingId(sourceId)
+    setMsg(null)
+    try {
+      const res = await fetch('/api/sources/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceId, userId }),
+      })
+      if (!res.ok) {
+        const j = await res.json()
+        throw new Error(j.error ?? 'Failed to remove source')
+      }
+      await fetchSources()
+      setMsg({ text: 'Source removed successfully', ok: true })
+    } catch (e) {
+      setMsg({ text: String(e), ok: false })
+    }
+    setRemovingId(null)
     setTimeout(() => setMsg(null), 5000)
   }
 
@@ -139,6 +167,13 @@ export default function SourcesPage() {
                             RSS
                           </span>
                         )}
+                        <button
+                          onClick={() => handleRemove(src.id)}
+                          disabled={removingId === src.id}
+                          className="text-xs px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400 hover:text-red-500 hover:border-red-300 disabled:opacity-50"
+                        >
+                          {removingId === src.id ? 'Removing…' : 'Remove'}
+                        </button>
                       </div>
                     )
                   })}
@@ -148,6 +183,7 @@ export default function SourcesPage() {
           })}
         </div>
       )}
+      <p className="mt-6 text-xs text-zinc-400">You can remove any source at any time. Future pipeline runs will stop crawling it for your account.</p>
     </div>
   )
 }
