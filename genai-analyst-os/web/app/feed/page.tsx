@@ -635,7 +635,7 @@ function DigestSignalStats({ items }: { items: Array<{ label: string; value: str
   )
 }
 
-function FeedSection({ title, subtitle, items, reactions, onReact, selectedForCreate, onSelect, onOpen, freshArticleIds, relatedKnowledgeMap }: {
+function FeedSection({ title, subtitle, items, reactions, onReact, selectedForCreate, onSelect, onOpen, freshArticleIds, relatedKnowledgeMap, defaultVisible = 3 }: {
   title: string
   subtitle: string
   items: FeedItem[]
@@ -646,8 +646,12 @@ function FeedSection({ title, subtitle, items, reactions, onReact, selectedForCr
   onOpen: (id: string) => void
   freshArticleIds: Set<string>
   relatedKnowledgeMap?: Record<string, RelatedKnowledgeMatch[]>
+  defaultVisible?: number
 }) {
+  const [expanded, setExpanded] = useState(false)
   if (items.length === 0) return null
+  const visibleItems = expanded ? items : items.slice(0, defaultVisible)
+  const hiddenCount = items.length - visibleItems.length
   return (
     <section className="mb-8">
       <div className="mb-3 flex items-end justify-between gap-3">
@@ -658,7 +662,7 @@ function FeedSection({ title, subtitle, items, reactions, onReact, selectedForCr
         <span className="text-xs text-zinc-400">{items.length}</span>
       </div>
       <div className="grid items-start grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {items.map((item, idx) => {
+        {visibleItems.map((item, idx) => {
           const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
           return (
             <ArticleCard
@@ -675,6 +679,22 @@ function FeedSection({ title, subtitle, items, reactions, onReact, selectedForCr
           )
         })}
       </div>
+      {hiddenCount > 0 && (
+        <button
+          onClick={() => setExpanded(true)}
+          className="mt-3 text-xs font-semibold text-violet-600 dark:text-violet-400 hover:underline"
+        >
+          + {hiddenCount} more in this section
+        </button>
+      )}
+      {expanded && items.length > defaultVisible && (
+        <button
+          onClick={() => setExpanded(false)}
+          className="mt-3 ml-4 text-xs font-medium text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+        >
+          Show fewer
+        </button>
+      )}
     </section>
   )
 }
@@ -1811,6 +1831,9 @@ export default function FeedPage() {
                 {personalSignalSection.length > 0 && ` · 📚 ${personalSignalSection.length} linked to your library`}
                 {' '}· 📌 pin to Create
               </p>
+              <p className="text-[11px] text-zinc-400 mb-4">
+                Signal shows you the strongest picks first and collapses the rest — expand any section for more.
+              </p>
               {personalSignalSection.length > 0 && (
                 <FeedSection
                   title="Personal signal layer"
@@ -1823,6 +1846,7 @@ export default function FeedPage() {
                   onOpen={handleArticleOpen}
                   freshArticleIds={freshArticleIds}
                   relatedKnowledgeMap={relatedKnowledgeMap}
+                  defaultVisible={3}
                 />
               )}
               {emergingNow.length > 0 && (
@@ -1837,6 +1861,7 @@ export default function FeedPage() {
                   onOpen={handleArticleOpen}
                   freshArticleIds={freshArticleIds}
                   relatedKnowledgeMap={relatedKnowledgeMap}
+                  defaultVisible={3}
                 />
               )}
               <FeedSection
@@ -1850,6 +1875,7 @@ export default function FeedPage() {
                 onOpen={handleArticleOpen}
                 freshArticleIds={freshArticleIds}
                 relatedKnowledgeMap={relatedKnowledgeMap}
+                defaultVisible={3}
               />
               <FeedSection
                 title="Top picks"
@@ -1862,6 +1888,7 @@ export default function FeedPage() {
                 onOpen={handleArticleOpen}
                 freshArticleIds={freshArticleIds}
                 relatedKnowledgeMap={relatedKnowledgeMap}
+                defaultVisible={4}
               />
               <FeedSection
                 title="Good reads"
@@ -1874,12 +1901,14 @@ export default function FeedPage() {
                 onOpen={handleArticleOpen}
                 freshArticleIds={freshArticleIds}
                 relatedKnowledgeMap={relatedKnowledgeMap}
+                defaultVisible={2}
               />
               <FeedSection
                 title="Explore"
                 subtitle="Long-tail discoveries and lower-confidence matches that may still surprise you."
                 items={exploreSection}
                 reactions={reactions}
+                defaultVisible={2}
                 onReact={handleReact}
                 selectedForCreate={selectedForCreate}
                 onSelect={handleSelect}

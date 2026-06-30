@@ -4,6 +4,37 @@ import { useEffect, useState } from 'react'
 import { useAuthSession } from '@/lib/useAuthSession'
 import { defaultModelFor, normalizeProvider, type ProviderOption, type SupportedProvider } from '@/lib/llmConfig'
 
+const ROLES = [
+  { id: 'ml_engineer',     label: 'ML / AI Engineer',  icon: '🛠️' },
+  { id: 'researcher',      label: 'Researcher',        icon: '🔬' },
+  { id: 'product_manager', label: 'Product Manager',   icon: '🧭' },
+  { id: 'founder',         label: 'Founder',           icon: '🚀' },
+  { id: 'executive',       label: 'Executive / Leader', icon: '📈' },
+  { id: 'content_creator', label: 'Content Creator',   icon: '✍️' },
+  { id: 'student',         label: 'Student',           icon: '🎓' },
+  { id: 'other',           label: 'Other',             icon: '✨' },
+]
+const INTERESTS = [
+  { id: 'llm',      label: 'LLM Advances', icon: '🧠' },
+  { id: 'agentic',  label: 'Agentic AI',   icon: '🤖' },
+  { id: 'rag',      label: 'RAG',          icon: '📚' },
+  { id: 'finetune', label: 'Fine-tuning',  icon: '🎛️' },
+  { id: 'infra',    label: 'GenAI Infra',  icon: '🏗️' },
+  { id: 'llmops',   label: 'LLMOps',       icon: '⚙️' },
+  { id: 'eval',     label: 'AI Eval',      icon: '📊' },
+]
+const GOALS = [
+  { id: 'stay_current',      label: 'Stay current' },
+  { id: 'deep_research',     label: 'Deep research' },
+  { id: 'content_creation',  label: 'Create content' },
+  { id: 'general_curiosity', label: 'General curiosity' },
+]
+const FREQUENCIES = [
+  { id: 'daily',     label: 'Daily' },
+  { id: 'weekly',    label: 'Weekly' },
+  { id: 'on_demand', label: 'On demand' },
+]
+
 interface SettingsPayload {
   provider: SupportedProvider
   model: string
@@ -30,6 +61,13 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null)
   const [digestEmail, setDigestEmail] = useState('')
   const [dailyDigestEnabled, setDailyDigestEnabled] = useState(false)
+
+  const [role, setRole] = useState<string | null>(null)
+  const [interestAreas, setInterestAreas] = useState<Set<string>>(new Set())
+  const [readingGoal, setReadingGoal] = useState<string | null>(null)
+  const [readingFrequency, setReadingFrequency] = useState<string | null>(null)
+  const [prefsSaving, setPrefsSaving] = useState(false)
+  const [prefsStatus, setPrefsStatus] = useState<string | null>(null)
 
   useEffect(() => {
     if (!session?.access_token || !userId) return
@@ -80,6 +118,58 @@ export default function SettingsPage() {
     if (!providerOptions.length) return
     if (!model) setModel(defaultModelFor(provider))
   }, [provider, providerOptions, model])
+
+  useEffect(() => {
+    if (!session?.access_token || !userId) return
+    fetch(`/api/data/user-preferences?userId=${encodeURIComponent(userId)}`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then(async response => {
+        const json = await response.json()
+        if (!response.ok) throw new Error(json.error ?? 'Could not load preferences')
+        setRole(json.role ?? null)
+        setInterestAreas(new Set(json.interestAreas ?? []))
+        setReadingGoal(json.readingGoal ?? null)
+        setReadingFrequency(json.readingFrequency ?? null)
+      })
+      .catch(() => {})
+  }, [session?.access_token, userId])
+
+  const toggleInterest = (id: string) => {
+    setInterestAreas(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const savePreferences = async () => {
+    if (!session?.access_token || !userId) return
+    setPrefsSaving(true)
+    setPrefsStatus(null)
+    try {
+      const response = await fetch('/api/data/user-preferences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({
+          userId,
+          role,
+          interestAreas: Array.from(interestAreas),
+          readingGoal,
+          readingFrequency,
+          markComplete: true,
+        }),
+      })
+      const json = await response.json()
+      if (!response.ok) throw new Error(json.error ?? 'Could not save preferences')
+      setPrefsStatus('Saved. Your feed ranking and digest cadence are updated.')
+    } catch (err) {
+      setPrefsStatus(err instanceof Error ? err.message : 'Could not save preferences')
+    } finally {
+      setPrefsSaving(false)
+    }
+  }
 
   const providerMeta = providerOptions.find(option => option.id === provider)
 
@@ -178,6 +268,73 @@ export default function SettingsPage() {
           <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4 text-sm"><strong className="block text-zinc-900 dark:text-zinc-100">Trust boundary</strong><span className="mt-1 block text-zinc-500 dark:text-zinc-400">The key is stored server-side in encrypted form and is never exposed in browser code.</span></div>
         </div>
       </div>
+
+      <section className="mt-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
+        <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Your preferences</h2>
+        <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">These drive feed ranking and digest cadence. Change them any time — Signal re-ranks immediately.</p>
+
+        <div className="mt-5">
+          <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Role</label>
+          <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {ROLES.map(r => (
+              <button key={r.id} onClick={() => setRole(r.id)}
+                className={`flex items-center gap-2 rounded-xl border-2 px-3 py-2 text-left text-xs font-medium transition-all ${
+                  role === r.id ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300' : 'border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:border-violet-300'}`}>
+                <span>{r.icon}</span>{r.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-5">
+          <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Interest areas</label>
+          <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {INTERESTS.map(i => (
+              <button key={i.id} onClick={() => toggleInterest(i.id)}
+                className={`flex items-center gap-2 rounded-xl border-2 px-3 py-2 text-left text-xs font-medium transition-all ${
+                  interestAreas.has(i.id) ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300' : 'border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:border-violet-300'}`}>
+                <span>{i.icon}</span>{i.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-5 sm:grid-cols-2">
+          <div>
+            <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Main goal</label>
+            <div className="mt-2 flex flex-col gap-1.5">
+              {GOALS.map(g => (
+                <button key={g.id} onClick={() => setReadingGoal(g.id)}
+                  className={`rounded-xl border-2 px-3 py-2 text-left text-sm font-medium transition-all ${
+                    readingGoal === g.id ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300' : 'border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:border-violet-300'}`}>
+                  {g.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Reading cadence</label>
+            <div className="mt-2 flex flex-col gap-1.5">
+              {FREQUENCIES.map(f => (
+                <button key={f.id} onClick={() => setReadingFrequency(f.id)}
+                  className={`rounded-xl border-2 px-3 py-2 text-left text-sm font-medium transition-all ${
+                    readingFrequency === f.id ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300' : 'border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:border-violet-300'}`}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={savePreferences}
+          disabled={prefsSaving}
+          className="mt-5 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-violet-700 disabled:opacity-40"
+        >
+          {prefsSaving ? 'Saving...' : 'Save preferences'}
+        </button>
+        {prefsStatus && <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-300">{prefsStatus}</p>}
+      </section>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
         <section className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">

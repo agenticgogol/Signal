@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import SidebarNav from './SidebarNav'
 import ThemeToggle from './ThemeToggle'
+import OnboardingWizard, { type OnboardingPrefs } from './OnboardingWizard'
 import { getSupabase } from '@/lib/supabase'
 import { useAuthSession } from '@/lib/useAuthSession'
 
@@ -22,6 +23,32 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [plan, setPlan] = useState<'free' | 'pro'>('free')
   const [canUsePaidFeatures, setCanUsePaidFeatures] = useState(false)
   const [setupStatus, setSetupStatus] = useState<SetupStatusPayload | null>(null)
+  const [showOnboarding, setShowOnboarding] = useState(false)
+
+  useEffect(() => {
+    if (!user?.id || !session?.access_token) return
+    fetch(`/api/data/user-preferences?userId=${encodeURIComponent(user.id)}`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then(async response => {
+        const json = await response.json()
+        if (!response.ok) throw new Error(json.error ?? 'Could not load preferences')
+        setShowOnboarding(!json.onboardingCompleted)
+      })
+      .catch(() => setShowOnboarding(false))
+  }, [user?.id, session?.access_token])
+
+  const saveOnboarding = async (prefs: OnboardingPrefs, markComplete = true) => {
+    if (!user?.id || !session?.access_token) return
+    try {
+      await fetch('/api/data/user-preferences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ userId: user.id, ...prefs, markComplete }),
+      })
+    } catch {}
+    setShowOnboarding(false)
+  }
 
   useEffect(() => {
     if (!user?.id) {
@@ -68,6 +95,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
+      {showOnboarding && user?.id && (
+        <OnboardingWizard
+          onComplete={prefs => saveOnboarding(prefs, true)}
+          onSkip={() => saveOnboarding({ role: null, interestAreas: [], readingGoal: null, readingFrequency: null }, true)}
+        />
+      )}
       <aside className="fixed inset-y-0 left-0 z-40 w-56 bg-white dark:bg-zinc-900 border-r border-zinc-200/80 dark:border-zinc-800/80 flex flex-col">
         <div className="px-5 pt-6 pb-4 border-b border-zinc-200/80 dark:border-zinc-800/80 flex-shrink-0">
           <Link href="/" className="block hover:opacity-80 transition-opacity">
