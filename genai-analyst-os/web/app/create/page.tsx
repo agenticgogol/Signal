@@ -121,6 +121,7 @@ function CreatePageInner() {
   // Step 5
   const [copied, setCopied] = useState(false)
   const [publishModalOpen, setPublishModalOpen] = useState(false)
+  const [exportStatus, setExportStatus] = useState<{ ok: boolean; text: string } | null>(null)
   const finalRef = useRef<HTMLTextAreaElement>(null)
 
   // Admin gate
@@ -352,10 +353,104 @@ function CreatePageInner() {
     }
   }
 
-  const handleCopy = (text?: string) => {
-    navigator.clipboard.writeText(text ?? finalOutput)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+  const fallbackCopyText = (value: string) => {
+    const textarea = document.createElement('textarea')
+    textarea.value = value
+    textarea.setAttribute('readonly', 'true')
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    textarea.style.pointerEvents = 'none'
+    document.body.appendChild(textarea)
+    textarea.focus()
+    textarea.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(textarea)
+    if (!ok) throw new Error('Clipboard copy was blocked by the browser.')
+  }
+
+  const toSubstackHtml = (input: string) => {
+    const escaped = input
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+
+    return escaped
+      .replace(/^### (.*)$/gm, '<h3>$1</h3>')
+      .replace(/^## (.*)$/gm, '<h2>$1</h2>')
+      .replace(/^# (.*)$/gm, '<h1>$1</h1>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2">$1</a>')
+      .split(/\n\s*\n/)
+      .map(block => {
+        const trimmed = block.trim()
+        if (!trimmed) return ''
+        if (/^<h[1-3]>/.test(trimmed)) return trimmed
+        if (/^[-•]\s+/m.test(trimmed)) {
+          const items = trimmed
+            .split('\n')
+            .map(line => line.trim())
+            .filter(Boolean)
+            .map(line => line.replace(/^[-•]\s+/, ''))
+            .map(line => `<li>${line}</li>`)
+            .join('')
+          return `<ul>${items}</ul>`
+        }
+        return `<p>${trimmed.replace(/\n/g, '<br/>')}</p>`
+      })
+      .filter(Boolean)
+      .join('\n\n')
+  }
+
+  const handleCopy = async (text?: string) => {
+    const value = text ?? finalOutput
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value)
+      } else {
+        fallbackCopyText(value)
+      }
+      setCopied(true)
+      setExportStatus({ ok: true, text: 'Copied to clipboard.' })
+      setTimeout(() => setCopied(false), 2000)
+      setTimeout(() => setExportStatus(null), 2500)
+    } catch {
+      try {
+        fallbackCopyText(value)
+        setCopied(true)
+        setExportStatus({ ok: true, text: 'Copied to clipboard.' })
+        setTimeout(() => setCopied(false), 2000)
+        setTimeout(() => setExportStatus(null), 2500)
+      } catch (error) {
+        setExportStatus({ ok: false, text: error instanceof Error ? error.message : 'Copy failed.' })
+      }
+    }
+  }
+
+  const handleExportForPlatform = async () => {
+    try {
+      if (format === 'substack') {
+        const html = toSubstackHtml(finalOutput)
+        const plain = finalOutput
+        if (navigator.clipboard?.write && typeof ClipboardItem !== 'undefined') {
+          const item = new ClipboardItem({
+            'text/html': new Blob([html], { type: 'text/html' }),
+            'text/plain': new Blob([plain], { type: 'text/plain' }),
+          })
+          await navigator.clipboard.write([item])
+        } else {
+          await handleCopy(html)
+        }
+        setExportStatus({ ok: true, text: 'Substack-ready HTML copied to clipboard.' })
+      } else {
+        await handleCopy(formatForPlatform())
+        setExportStatus({ ok: true, text: `Copied optimized ${spec?.name ?? format} version.` })
+      }
+      setPublishModalOpen(false)
+      setTimeout(() => setExportStatus(null), 2500)
+    } catch (error) {
+      setExportStatus({ ok: false, text: error instanceof Error ? error.message : 'Export failed.' })
+    }
   }
 
   const formatForPlatform = () => {
@@ -739,6 +834,16 @@ function CreatePageInner() {
             </button>
           </div>
 
+          {exportStatus && (
+            <div className={`mt-4 rounded-xl border px-4 py-3 text-sm ${
+              exportStatus.ok
+                ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-300'
+                : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300'
+            }`}>
+              {exportStatus.ok ? '✓ ' : '✗ '}{exportStatus.text}
+            </div>
+          )}
+
           {publishModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
               <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-700 p-6 max-w-md w-full mx-4">
@@ -749,7 +854,7 @@ function CreatePageInner() {
                 <div className="space-y-3 mb-5">
                   {['linkedin', 'substack', 'thread'].includes(format) && (
                     <button
-                      onClick={() => { handleCopy(formatForPlatform()); setPublishModalOpen(false) }}
+                      onClick={handleExportForPlatform}
                       className="w-full px-4 py-3 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-sm font-medium text-left transition-colors">
                       {format === 'linkedin' ? '💼' : format === 'substack' ? '📧' : '🧵'} Copy optimized for {spec?.name}
                       <span className="block text-xs text-violet-200 mt-0.5">
@@ -760,7 +865,7 @@ function CreatePageInner() {
                     </button>
                   )}
                   <button
-                    onClick={() => { handleCopy(); setPublishModalOpen(false) }}
+                    onClick={async () => { await handleCopy(); setPublishModalOpen(false) }}
                     className="w-full px-4 py-3 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 text-zinc-800 dark:text-zinc-200 rounded-xl text-sm font-medium text-left transition-colors">
                     📋 Copy raw text
                   </button>
