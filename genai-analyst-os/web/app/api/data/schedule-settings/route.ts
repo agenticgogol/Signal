@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await createServiceClient()
     .from('user_profiles')
-    .select('scheduled_crawl_enabled, scheduled_crawl_hour_utc, last_scheduled_crawl_at')
+    .select('scheduled_crawl_enabled, scheduled_crawl_hour_utc, last_scheduled_crawl_at, scheduled_crawl_lookback_days, scheduled_crawl_max_per_source')
     .eq('id', userId)
     .maybeSingle()
 
@@ -22,6 +22,8 @@ export async function GET(req: NextRequest) {
     enabled: Boolean(data?.scheduled_crawl_enabled),
     hourUtc: data?.scheduled_crawl_hour_utc ?? null,
     lastScheduledCrawlAt: data?.last_scheduled_crawl_at ?? null,
+    lookbackDays: data?.scheduled_crawl_lookback_days ?? 7,
+    maxPerSource: data?.scheduled_crawl_max_per_source ?? 5,
   })
 }
 
@@ -43,15 +45,32 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'hourUtc is required to enable scheduling' }, { status: 400 })
   }
 
+  const update: Record<string, unknown> = {
+    scheduled_crawl_enabled: enabled,
+    scheduled_crawl_hour_utc: hourUtc,
+    updated_at: new Date().toISOString(),
+  }
+
+  // lookbackDays/maxPerSource are shared by manual "Run now" and the scheduled
+  // hourly job — single source of truth instead of the Feed page's localStorage.
+  if ([1, 3, 7, 14].includes(Number(body.lookbackDays))) {
+    update.scheduled_crawl_lookback_days = Number(body.lookbackDays)
+  }
+  if ([1, 3, 5, 10].includes(Number(body.maxPerSource))) {
+    update.scheduled_crawl_max_per_source = Number(body.maxPerSource)
+  }
+
   const { error } = await createServiceClient()
     .from('user_profiles')
-    .update({
-      scheduled_crawl_enabled: enabled,
-      scheduled_crawl_hour_utc: hourUtc,
-      updated_at: new Date().toISOString(),
-    })
+    .update(update)
     .eq('id', userId)
 
   if (error) return Response.json({ error: error.message }, { status: 500 })
-  return Response.json({ ok: true, enabled, hourUtc })
+  return Response.json({
+    ok: true,
+    enabled,
+    hourUtc,
+    lookbackDays: update.scheduled_crawl_lookback_days,
+    maxPerSource: update.scheduled_crawl_max_per_source,
+  })
 }

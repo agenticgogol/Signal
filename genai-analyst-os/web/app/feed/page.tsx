@@ -45,6 +45,10 @@ function formatRelativeTime(iso: string): string {
     return `${Math.floor(hrs / 24)}d ago`
   } catch { return '' }
 }
+function hourUtcToLocalLabel(hourUtc: number): string {
+  const d = new Date(Date.UTC(2024, 0, 1, hourUtc, 0, 0))
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+}
 function fmtElapsed(ms: number): string {
   const s = Math.floor(ms / 1000)
   const m = Math.floor(s / 60)
@@ -790,6 +794,7 @@ export default function FeedPage() {
   const [pendingPaidAction, setPendingPaidAction] = useState<'feed' | 'narrative' | 'daily' | null>(null)
   const [showConfig, setShowConfig] = useState(false)
   const [pipelineConfig, setPipelineConfig] = useState<PipelineConfig>(DEFAULT_CONFIG)
+  const [scheduleInfo, setScheduleInfo] = useState<{ enabled: boolean; hourUtc: number | null } | null>(null)
 
   // AI News tab
   const [newsItems, setNewsItems] = useState<NewsItem[]>([])
@@ -892,6 +897,25 @@ export default function FeedPage() {
   useEffect(() => { refreshProfile() }, [refreshProfile])
   useEffect(() => { refreshSetupStatus() }, [refreshSetupStatus])
 
+  // Schedule status (for the "Auto-refresh" chip) and persisted pipeline
+  // config — the database is the source of truth once signed in; localStorage
+  // is only the offline/first-paint cache used above before this resolves.
+  useEffect(() => {
+    if (!session?.access_token || !user?.id) { setScheduleInfo(null); return }
+    fetch(`/api/data/schedule-settings?userId=${encodeURIComponent(user.id)}`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then(async response => {
+        const json = await response.json()
+        if (!response.ok) throw new Error(json.error ?? 'Could not load schedule')
+        setScheduleInfo({ enabled: Boolean(json.enabled), hourUtc: json.hourUtc ?? null })
+        if ([1, 3, 7, 14].includes(json.lookbackDays) && [1, 3, 5, 10].includes(json.maxPerSource)) {
+          setPipelineConfig({ lookbackDays: json.lookbackDays, maxPerSource: json.maxPerSource })
+        }
+      })
+      .catch(() => setScheduleInfo(null))
+  }, [session?.access_token, user?.id])
+
   useEffect(() => {
     const onVisible = () => { if (document.visibilityState === 'visible') { refreshProfile(); refreshSetupStatus() } }
     document.addEventListener('visibilitychange', onVisible)
@@ -901,6 +925,22 @@ export default function FeedPage() {
   function saveConfig(c: PipelineConfig) {
     setPipelineConfig(c)
     try { localStorage.setItem(CONFIG_KEY, JSON.stringify(c)) } catch {}
+    // Keep the server-side config (used by "Run now" and the scheduled job)
+    // in sync with whatever the user picks here, so there's one set of
+    // numbers instead of a silent Feed-page-only override.
+    if (session?.access_token && user?.id) {
+      fetch('/api/data/schedule-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({
+          userId: user.id,
+          enabled: scheduleInfo?.enabled ?? false,
+          hourUtc: scheduleInfo?.hourUtc ?? 13,
+          lookbackDays: c.lookbackDays,
+          maxPerSource: c.maxPerSource,
+        }),
+      }).catch(() => {})
+    }
   }
 
   function startElapsedTimer(startTs: number) {
@@ -1629,10 +1669,21 @@ export default function FeedPage() {
               {plan === 'pro' ? 'Pro access' : 'Free preview'}
             </span>
           </div>
-          <div className="flex items-center gap-2 mt-0.5">
+          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             <p className="text-xs text-zinc-500 dark:text-zinc-400">GenAI intelligence, curated daily</p>
             {lastRefreshed && (
               <span className="text-xs text-zinc-400 dark:text-zinc-500">· Last refreshed {formatRelativeTime(lastRefreshed)}</span>
+            )}
+            {user?.id && (
+              scheduleInfo?.enabled && scheduleInfo.hourUtc !== null ? (
+                <a href="/settings" className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline">
+                  · 🕐 Auto-refresh daily ~{hourUtcToLocalLabel(scheduleInfo.hourUtc)} your time
+                </a>
+              ) : (
+                <a href="/settings" className="text-xs text-zinc-400 dark:text-zinc-500 hover:underline">
+                  · Not scheduled — set up auto-refresh in Settings
+                </a>
+              )
             )}
           </div>
         </div>

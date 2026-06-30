@@ -1,9 +1,10 @@
 import { requirePaidFeature } from '@/lib/featureAccess'
+import { createServiceClient } from '@/lib/supabase'
 
 export async function POST(req: Request) {
   const pat = process.env.GITHUB_PAT
-  let lookbackDays = '7'
-  let maxPerSource = '5'
+  let lookbackDays: string | null = null
+  let maxPerSource: string | null = null
   let userId = ''
   try {
     const body = await req.json()
@@ -17,6 +18,19 @@ export async function POST(req: Request) {
   }
   const paidGate = await requirePaidFeature(req, userId, 'Feed pipeline refresh')
   if (paidGate) return paidGate
+
+  // If the caller (e.g. Settings "Run now") didn't pass explicit values,
+  // fall back to the user's persisted schedule config rather than a silent
+  // 7/5 default — keeps manual and scheduled runs using the same depth.
+  if (lookbackDays === null || maxPerSource === null) {
+    const { data } = await createServiceClient()
+      .from('user_profiles')
+      .select('scheduled_crawl_lookback_days, scheduled_crawl_max_per_source')
+      .eq('id', userId)
+      .maybeSingle()
+    if (lookbackDays === null) lookbackDays = String(data?.scheduled_crawl_lookback_days ?? 7)
+    if (maxPerSource === null) maxPerSource = String(data?.scheduled_crawl_max_per_source ?? 5)
+  }
 
   if (!pat) {
     return Response.json({ ok: false, error: 'GITHUB_PAT not configured' }, { status: 500 })

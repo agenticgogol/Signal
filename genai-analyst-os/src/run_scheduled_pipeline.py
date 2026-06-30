@@ -8,6 +8,7 @@ Pro user pick their own hour in Settings ("Feed schedule").
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 
 from src.db import get_client
@@ -21,7 +22,7 @@ def main() -> None:
     response = (
         get_client()
         .table("user_profiles")
-        .select("id, style_seed, plan")
+        .select("id, style_seed, plan, scheduled_crawl_lookback_days, scheduled_crawl_max_per_source")
         .eq("scheduled_crawl_enabled", True)
         .eq("scheduled_crawl_hour_utc", current_hour)
         .execute()
@@ -39,6 +40,15 @@ def main() -> None:
 
     for user in users:
         user_id = str(user["id"])
+        # crawl_sources() reads CRAWL_LOOKBACK_DAYS / CRAWL_MAX_PER_SOURCE via
+        # os.getenv() at call time, not at import time. Since this loop is
+        # synchronous (one user's graph.invoke() fully completes before the
+        # next starts), overriding the env per-iteration safely applies each
+        # user's own crawl-depth preference instead of one shared value for
+        # the whole batch.
+        os.environ["CRAWL_LOOKBACK_DAYS"] = str(user.get("scheduled_crawl_lookback_days") or 7)
+        os.environ["CRAWL_MAX_PER_SOURCE"] = str(user.get("scheduled_crawl_max_per_source") or 5)
+
         state = PipelineState(user_id=user_id, style_seed=user.get("style_seed") or "practitioner")
         try:
             graph.invoke(

@@ -89,6 +89,8 @@ export default function SettingsPage() {
 
   const [scheduleEnabled, setScheduleEnabled] = useState(false)
   const [scheduleHourUtc, setScheduleHourUtc] = useState<number>(13)
+  const [lookbackDays, setLookbackDays] = useState<number>(7)
+  const [maxPerSource, setMaxPerSource] = useState<number>(5)
   const [lastScheduledCrawlAt, setLastScheduledCrawlAt] = useState<string | null>(null)
   const [scheduleSaving, setScheduleSaving] = useState(false)
   const [scheduleStatus, setScheduleStatus] = useState<string | null>(null)
@@ -170,6 +172,8 @@ export default function SettingsPage() {
         if (!response.ok) throw new Error(json.error ?? 'Could not load schedule')
         setScheduleEnabled(Boolean(json.enabled))
         if (typeof json.hourUtc === 'number') setScheduleHourUtc(json.hourUtc)
+        if ([1, 3, 7, 14].includes(json.lookbackDays)) setLookbackDays(json.lookbackDays)
+        if ([1, 3, 5, 10].includes(json.maxPerSource)) setMaxPerSource(json.maxPerSource)
         setLastScheduledCrawlAt(json.lastScheduledCrawlAt ?? null)
       })
       .catch(() => {})
@@ -211,7 +215,12 @@ export default function SettingsPage() {
     }
   }
 
-  const saveSchedule = async (nextEnabled: boolean, nextHourUtc: number) => {
+  const saveSchedule = async (
+    nextEnabled: boolean,
+    nextHourUtc: number,
+    nextLookbackDays: number = lookbackDays,
+    nextMaxPerSource: number = maxPerSource,
+  ) => {
     if (!session?.access_token || !userId) return
     setScheduleSaving(true)
     setScheduleStatus(null)
@@ -219,14 +228,22 @@ export default function SettingsPage() {
       const response = await fetch('/api/data/schedule-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ userId, enabled: nextEnabled, hourUtc: nextHourUtc }),
+        body: JSON.stringify({
+          userId,
+          enabled: nextEnabled,
+          hourUtc: nextHourUtc,
+          lookbackDays: nextLookbackDays,
+          maxPerSource: nextMaxPerSource,
+        }),
       })
       const json = await response.json()
       if (!response.ok) throw new Error(json.error ?? 'Could not save schedule')
       setScheduleEnabled(nextEnabled)
       setScheduleHourUtc(nextHourUtc)
+      setLookbackDays(nextLookbackDays)
+      setMaxPerSource(nextMaxPerSource)
       setScheduleStatus(nextEnabled
-        ? `Saved. Your feed will refresh automatically around ${hourUtcToLocalLabel(nextHourUtc)} your time, every day.`
+        ? `Saved. Your feed will refresh automatically around ${hourUtcToLocalLabel(nextHourUtc)} your time, every day — ${nextLookbackDays}d lookback, ${nextMaxPerSource}/source.`
         : 'Automatic refresh turned off.')
     } catch (err) {
       setScheduleStatus(err instanceof Error ? err.message : 'Could not save schedule')
@@ -243,11 +260,11 @@ export default function SettingsPage() {
       const response = await fetch('/api/pipeline/trigger', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({ userId, lookbackDays, maxPerSource }),
       })
       const json = await response.json()
       if (!response.ok || !json.ok) throw new Error(json.error ?? 'Could not start the pipeline')
-      setScheduleStatus('Feed refresh started — check the Feed tab in a couple of minutes.')
+      setScheduleStatus(`Feed refresh started (${lookbackDays}d lookback, ${maxPerSource}/source) — check the Feed tab in a couple of minutes.`)
     } catch (err) {
       setScheduleStatus(err instanceof Error ? err.message : 'Could not start the pipeline')
     } finally {
@@ -579,7 +596,7 @@ export default function SettingsPage() {
                       <option key={hourUtc} value={hourUtc}>{hourUtcToLocalLabel(hourUtc)} (your time)</option>
                     ))}
                   </select>
-                  <span className="text-xs text-zinc-400">Runs take ~2-3 minutes and finish before this time.</span>
+                  <span className="text-xs text-zinc-400">Starts around this time; GitHub's scheduler can run a few minutes late under load.</span>
                 </div>
               </div>
               <button
@@ -590,6 +607,42 @@ export default function SettingsPage() {
                 {runningNow ? 'Starting…' : '⚡ Run now'}
               </button>
             </div>
+
+            <div className="mt-5 pt-5 border-t border-zinc-100 dark:border-zinc-800">
+              <p className="text-xs font-bold uppercase tracking-wider text-zinc-500">Crawl depth</p>
+              <p className="mt-1 text-xs text-zinc-400">Used by both Run now and the daily schedule — one setting, not two.</p>
+              <div className="mt-3 flex flex-wrap gap-5">
+                <div>
+                  <p className="text-[11px] font-medium text-zinc-500 mb-1.5">Lookback window</p>
+                  <div className="flex gap-1.5">
+                    {[1, 3, 7, 14].map(n => (
+                      <button key={n}
+                        onClick={() => { setLookbackDays(n); saveSchedule(scheduleEnabled, scheduleHourUtc, n, maxPerSource) }}
+                        disabled={scheduleSaving}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                          lookbackDays === n ? 'bg-violet-600 text-white border-violet-600' : 'bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-violet-300'}`}>
+                        {n}d
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[11px] font-medium text-zinc-500 mb-1.5">Max articles per source</p>
+                  <div className="flex gap-1.5">
+                    {[1, 3, 5, 10].map(n => (
+                      <button key={n}
+                        onClick={() => { setMaxPerSource(n); saveSchedule(scheduleEnabled, scheduleHourUtc, lookbackDays, n) }}
+                        disabled={scheduleSaving}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                          maxPerSource === n ? 'bg-violet-600 text-white border-violet-600' : 'bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-violet-300'}`}>
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <p className="mt-4 text-xs text-zinc-400">
               {scheduleEnabled
                 ? `Auto-refresh is on, scheduled around ${hourUtcToLocalLabel(scheduleHourUtc)} your time daily.`
