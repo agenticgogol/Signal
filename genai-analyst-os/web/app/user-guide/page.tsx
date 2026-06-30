@@ -1,9 +1,10 @@
 import Link from 'next/link'
-import { Callout, FeatureCard, GuideHero, GuideSection, ScreenshotFrame, StepCard } from '@/components/GuideUI'
+import { Arrow, Callout, FeatureCard, FlowNode, GuideHero, GuideSection, ScreenshotFrame, StepCard } from '@/components/GuideUI'
 
 const toc = [
   ['quick-start', 'Quick start'], ['feed', 'Your Feed'], ['news', 'AI News'],
-  ['digest', 'Weekly Digest'], ['ideas', 'Ideas'], ['create', 'Create'], ['sources', 'Sources'], ['faq', 'FAQ'],
+  ['digest', 'Weekly Digest'], ['ideas', 'Idea Wizard'], ['content-workflow', 'Content Studio'],
+  ['create', 'Create walkthrough'], ['formats', 'Formats'], ['sources', 'Sources'], ['faq', 'FAQ'],
 ]
 
 export default function UserGuidePage() {
@@ -57,12 +58,76 @@ export default function UserGuidePage() {
 
       <GuideSection id="ideas" eyebrow="Editorial strategy" title="Ideas: five evidence-backed ways to contribute" description="Signal uses the strongest articles and your style to propose formats, hooks, source evidence, and a rationale—without pretending the idea is your final point of view.">
         <ScreenshotFrame src="/guides/ideas.png" alt="Signal Ideas page with content angle cards" number={4} caption="Choose an angle for its argument and evidence fit. The format can be refined later in Create." />
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <Callout title="Today’s AI-Generated Ideas"><p>Five overnight ideas are grounded in your top-ranked feed. Each card explains the proposed hook, format, and why the angle is timely. Click <strong>Use This Outline</strong> to prefill the discovery wizard.</p></Callout>
+          <Callout title="Discover New Topic" tone="green"><p>Use the wizard whenever you want to explore beyond the daily five. It combines your answers with up to 20 articles from the last three feed days.</p></Callout>
+        </div>
+        <div className="mt-6 flex flex-col gap-3 md:flex-row md:items-stretch">
+          <FlowNode icon="🎯" title="Focus Q&A" subtitle="focus · audience · angle · optional trend" /> <Arrow />
+          <FlowNode icon="💡" title="Pick a Topic" subtitle="5 timely ideas or your own topic" tone="blue" /> <Arrow />
+          <FlowNode icon="📋" title="Build Outline" subtitle="hook · angle · 4–6 editable sections" tone="amber" /> <Arrow />
+          <FlowNode icon="🔒" title="Freeze" subtitle="save and open in Create" tone="green" />
+        </div>
+        <Callout title="Why freeze an outline?" tone="amber"><p>Freezing saves the version you deliberately reviewed. Create loads that exact hook, angle, audience, and section structure rather than silently regenerating it.</p></Callout>
       </GuideSection>
 
-      <GuideSection id="create" eyebrow="Human in the loop" title="Create: your POV is the required ingredient" description="Signal will not publish or invent your conviction. Add concrete POV bullets, choose an output format, generate the draft, and edit before using it anywhere.">
+      <GuideSection id="content-workflow" eyebrow="Content generation" title="The Content Studio: evidence in, reviewed content out" description="Create is not a single prompt. It assembles your evidence and point of view, applies platform rules, streams an eight-agent quality workflow, and hands the final text back for human editing.">
+        <div className="grid gap-4 md:grid-cols-3">
+          <FeatureCard icon="📋" title="From Outline" value="Planned route">Choose a frozen Idea Wizard outline. Topic, angle, suggested format, hook, and section plan are carried into the brief.</FeatureCard>
+          <FeatureCard icon="📰" title="From Feed" value="Evidence-first route">Select one to three current articles. Items pinned with 📌 in Feed are preselected and passed to the agents as allowed sources.</FeatureCard>
+          <FeatureCard icon="✏️" title="Custom Brief" value="Blank-canvas route">Start from your own topic and instructions without requiring a saved outline or feed selection.</FeatureCard>
+        </div>
+        <div className="mt-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
+          <p className="mb-5 text-xs font-bold uppercase tracking-widest text-zinc-400">The five-stage workspace</p>
+          <div className="flex flex-col gap-3 md:flex-row md:items-stretch">
+            <FlowNode icon="1" title="Source" subtitle="outline, feed, or custom" /> <Arrow />
+            <FlowNode icon="2" title="Brief" subtitle="topic · angle · POV · audience" tone="blue" /> <Arrow />
+            <FlowNode icon="3" title="Platform" subtitle="choose one of 6 formats" tone="amber" /> <Arrow />
+            <FlowNode icon="4" title="Generate" subtitle="watch 8 agents live" /> <Arrow />
+            <FlowNode icon="5" title="Review" subtitle="edit · regenerate · copy" tone="green" />
+          </div>
+        </div>
+      </GuideSection>
+
+      <GuideSection id="create" eyebrow="Click-by-click" title="Create: your POV is the differentiating ingredient" description="The POV field is currently optional, but Signal should not invent your conviction. The strongest results combine selected evidence with a specific author perspective.">
         <div className="grid gap-5 lg:grid-cols-[1.45fr_1fr]">
           <ScreenshotFrame src="/guides/create.png" alt="Signal Create workspace" number={5} caption="A good POV bullet is specific: what you believe, what changed your mind, and what the reader should do differently." />
           <Callout title="A strong POV recipe" tone="green"><ol className="list-decimal space-y-2 pl-4"><li>Name the claim you agree or disagree with.</li><li>Add direct experience, a tradeoff, or a counterexample.</li><li>State the practical recommendation.</li><li>Check every factual claim against the pinned sources.</li></ol></Callout>
+        </div>
+        <div className="mt-6 grid gap-5 md:grid-cols-2 lg:grid-cols-5">
+          <StepCard number={1} title="Select evidence" action="From Outline, From Today’s Feed, or Custom Brief" result="The content brief is grounded in exactly the context you chose." />
+          <StepCard number={2} title="Define the brief" action="Enter topic, key angle, author POV, and audience" result="The orchestrator receives both editorial direction and personal perspective." />
+          <StepCard number={3} title="Choose platform" action="Select LinkedIn, Substack, Thread, Blog, YouTube Long, or Short" result="Length, structure, voice, citations, and anti-patterns change automatically." />
+          <StepCard number={4} title="Watch generation" action="Generate Content, then expand any completed agent output" result="Progress streams live; failed quality criteria may trigger up to three rewrite loops." />
+          <StepCard number={5} title="Own the result" action="Edit, Regenerate, Copy, or Approve & Publish" result="You remain responsible for factual review and the final external posting action." />
+        </div>
+        <div className="mt-6 grid gap-4 md:grid-cols-4">
+          <FeatureCard icon="🎯" title="Orchestrator">Turns topic, POV, audience, outline, evidence, and platform rules into a structured claim plan.</FeatureCard>
+          <FeatureCard icon="✍️" title="Writer">Produces the first platform-native draft with the required citation style.</FeatureCard>
+          <FeatureCard icon="🔬" title="Verifier + Critic">Flags unsupported, overstated, uncited, or hallucinated claims and identifies weak writing.</FeatureCard>
+          <FeatureCard icon="✨" title="Humanizer">Applies critique, removes common AI writing tells, strengthens specifics, and preserves citations.</FeatureCard>
+          <FeatureCard icon="📊" title="Evaluator">Scores hook, specificity, citations, voice, and platform fit. Any criterion below 7 can start another loop.</FeatureCard>
+          <FeatureCard icon="👥" title="Audience Simulation">Tests the piece against a skeptical engineer, a product lead, and an executive skimmer.</FeatureCard>
+          <FeatureCard icon="💎" title="Final Polish">Addresses reader objections without adding unnecessary sections or dropping source references.</FeatureCard>
+          <FeatureCard icon="💾" title="Saved Job">Persists the brief, intermediate outputs, final draft, verification report, audience feedback, and scores.</FeatureCard>
+        </div>
+        <Callout title="“Approve & Publish” does not post externally" tone="amber"><p>Signal deliberately stops at a formatted copy action. LinkedIn removes markdown, Substack prepares HTML-friendly text, and Threads are numbered. You still paste, review, and publish in the destination platform.</p></Callout>
+      </GuideSection>
+
+      <GuideSection id="formats" eyebrow="Platform intelligence" title="One argument, six native formats" description="The platform choice changes the drafting contract—not just the label on the output.">
+        <div className="overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+          {[
+            ['💼', 'LinkedIn', '200–280 words / 1,300 chars', 'Hook-first short paragraphs, soft CTA, 2–3 hashtags', 'Inline domain attribution + source list'],
+            ['📧', 'Substack', '700–1,000 words', 'Personal opening, problem framing, three insight sections', 'Inline markdown links + Sources section'],
+            ['🧵', 'X / Twitter Thread', '8–12 posts', 'One insight per numbered post with mini-cliffhangers', 'Domain markers + final source post'],
+            ['📝', 'Blog Post', '1,500–2,000 words', 'TL;DR, 4–6 H2 sections, actionable close', 'Inline links + Sources section'],
+            ['🎥', 'YouTube Long', '8–12 minute script', 'Hook, chapters, B-roll cues, spoken rhythm', 'Editor source notes + description links'],
+            ['⚡', 'YouTube Short', '60–90 second script', 'Three-second hook, fast insights, overlay cues', 'One primary source + overlay note'],
+          ].map(([icon, format, length, shape, citation]) => (
+            <div key={format} className="grid gap-2 border-b last:border-0 border-zinc-100 dark:border-zinc-800 p-4 md:grid-cols-[2rem_1fr_1fr_1.5fr_1.4fr] md:items-center">
+              <span className="text-xl">{icon}</span><strong className="text-sm text-zinc-900 dark:text-zinc-100">{format}</strong><span className="text-xs text-violet-600 dark:text-violet-400">{length}</span><span className="text-xs text-zinc-500">{shape}</span><span className="text-xs text-zinc-400">{citation}</span>
+            </div>
+          ))}
         </div>
       </GuideSection>
 
@@ -80,7 +145,8 @@ export default function UserGuidePage() {
           <Callout title="Why did a larger lookback add nothing?">A lookback widens eligibility; it cannot create new source entries. Check RSS status, increase max per source, and confirm the publication actually posted in that period.</Callout>
           <Callout title="Why is AI News faster than Weekly Digest?">AI News is parallel RSS retrieval. Weekly Digest is a personalized synthesis call. Once generated, its weekly cache makes subsequent loads fast.</Callout>
           <Callout title="Why do some cards use color banners?">Not every RSS feed supplies artwork. Signal uses the feed image when available and a stable topic gradient otherwise.</Callout>
-          <Callout title="Does Signal publish automatically?">No. Publishing is intentionally outside the autonomous pipeline. Draft generation also requires your explicit POV input.</Callout>
+          <Callout title="Does Signal publish automatically?">No. Publishing is intentionally outside the autonomous pipeline. POV is optional in the current form, but strongly recommended before generating a draft.</Callout>
+          <Callout title="Why can content generation take longer?">It is an eight-agent workflow, not one completion. Verification and evaluation can trigger up to three Writer → Verifier → Critic → Humanizer → Evaluator loops before audience simulation and final polish.</Callout>
         </div>
       </GuideSection>
 

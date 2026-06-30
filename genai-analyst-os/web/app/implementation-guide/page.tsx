@@ -17,8 +17,11 @@ const apiRows = [
   ['/api/data/feed', 'GET', 'Returns deduplicated ranked feed items'],
   ['/api/data/ai-news', 'GET', 'Parallel live RSS aggregation; no LLM'],
   ['/api/data/narrative', 'GET / POST', 'Reads weekly cache or explicitly regenerates structured output'],
+  ['/api/ideas/generate', 'POST', 'Uses recent feed context and preferences to propose five topics'],
+  ['/api/outline/generate', 'POST', 'Builds a hook, audience, angle, format, and editable section plan'],
+  ['/api/outline/save', 'POST', 'Freezes an approved outline for deterministic reuse in Create'],
   ['/api/articles/react', 'GET / POST / DELETE', 'Stores like/dislike feedback'],
-  ['/api/generate', 'POST', 'Streams a user-directed content draft'],
+  ['/api/generate', 'POST + SSE', 'Streams the eight-agent drafting and quality workflow'],
 ]
 
 export default function ImplementationGuidePage() {
@@ -28,7 +31,7 @@ export default function ImplementationGuidePage() {
         description="This guide maps the runtime architecture, agent graph, data model, model tiers, API boundaries, reliability decisions, and deployment controls. It is written for maintainers who need to understand not only what runs, but why the system is shaped this way."
         chips={['Next.js + Python', 'Supabase + pgvector', 'Claude tiering', 'GitHub Actions', 'Human-in-the-loop']} />
 
-      <GuideSection id="architecture" eyebrow="System map" title="Two paths, one intelligence layer" description="The scheduled path builds durable personalized intelligence. The immediate path serves live worldwide headlines without waiting for enrichment.">
+      <GuideSection id="architecture" eyebrow="System map" title="Three paths, one intelligence layer" description="The scheduled path builds durable personalized intelligence. The immediate path serves live worldwide headlines. The creation path turns selected evidence and human direction into reviewed platform-native content.">
         <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
           <p className="mb-4 text-xs font-bold uppercase tracking-widest text-zinc-400">Durable personalized path</p>
           <div className="flex flex-col md:flex-row gap-3 md:items-stretch">
@@ -45,6 +48,15 @@ export default function ImplementationGuidePage() {
             <FlowNode icon="⚡" title="Parallel Fetch" subtitle="8-second timeout/source" tone="amber" /> <Arrow />
             <FlowNode icon="🗂️" title="Sort + Dedupe" subtitle="up to 40 headlines" tone="green" /> <Arrow />
             <FlowNode icon="🖥️" title="AI News UI" subtitle="no model latency" />
+          </div>
+          <div className="my-6 border-t border-dashed border-zinc-200 dark:border-zinc-800" />
+          <p className="mb-4 text-xs font-bold uppercase tracking-widest text-zinc-400">Human-directed creation path</p>
+          <div className="flex flex-col md:flex-row gap-3 md:items-stretch">
+            <FlowNode icon="📌" title="Evidence" subtitle="outline · feed · custom" tone="green" /> <Arrow />
+            <FlowNode icon="🧭" title="Human Brief" subtitle="topic · angle · POV · audience" tone="blue" /> <Arrow />
+            <FlowNode icon="🤖" title="8-Agent Loop" subtitle="draft · verify · evaluate" /> <Arrow />
+            <FlowNode icon="📡" title="SSE Stream" subtitle="live status + artifacts" tone="amber" /> <Arrow />
+            <FlowNode icon="✍️" title="Human Review" subtitle="edit · copy · publish manually" tone="green" />
           </div>
         </div>
       </GuideSection>
@@ -77,6 +89,69 @@ export default function ImplementationGuidePage() {
         </div>
       </GuideSection>
 
+      <GuideSection id="content-generation" eyebrow="Creation engine" title="Content generation is an evaluated agent loop" description="The Create API has a five-minute execution budget and streams progress as Server-Sent Events. Expensive creative work uses Sonnet; bounded checking work uses Haiku.">
+        <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
+          <p className="mb-4 text-xs font-bold uppercase tracking-widest text-zinc-400">Input assembly</p>
+          <div className="grid gap-3 md:grid-cols-4">
+            <FlowNode icon="📚" title="Sources" subtitle="1–3 feed articles or frozen outline" tone="green" />
+            <FlowNode icon="💬" title="Author Direction" subtitle="topic · angle · optional POV" tone="blue" />
+            <FlowNode icon="👤" title="Audience" subtitle="engineer · PM · leader · mixed" tone="amber" />
+            <FlowNode icon="📐" title="Platform Spec" subtitle="length · shape · tone · citations" />
+          </div>
+          <div className="my-6 text-center text-2xl text-zinc-300 dark:text-zinc-700">↓</div>
+          <div className="grid gap-3 md:grid-cols-4">
+            {[
+              ['1', 'Orchestrator', 'Sonnet', 'claim plan + hook'],
+              ['2', 'Writer', 'Sonnet', 'platform-native draft'],
+              ['3', 'Claim Verifier', 'Haiku', 'support + citation check'],
+              ['4', 'Critic', 'Haiku', 'gaps + exact rewrites'],
+              ['5', 'Humanizer', 'Sonnet', 'voice + critique fixes'],
+              ['6', 'Evaluator', 'Haiku', 'five quality scores'],
+              ['7', 'Audience Sim', 'Haiku', 'three reader reactions'],
+              ['8', 'Final Polish', 'Sonnet', 'objection-aware final'],
+            ].map(([number, name, model, job]) => (
+              <div key={name} className="rounded-2xl border border-zinc-200 dark:border-zinc-700 p-4">
+                <div className="flex items-center justify-between"><span className="text-xs font-black text-violet-600">AGENT {number}</span><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${model === 'Sonnet' ? 'bg-violet-50 text-violet-600 dark:bg-violet-950/40' : 'bg-blue-50 text-blue-600 dark:bg-blue-950/40'}`}>{model}</span></div>
+                <p className="mt-2 text-sm font-bold text-zinc-900 dark:text-zinc-100">{name}</p><p className="mt-1 text-xs text-zinc-400">{job}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
+          <Callout title="Quality gate"><p>Evaluator scores hook, specificity, citations, voice, and platform fit from 1–10. Any criterion below 7 creates targeted Writer instructions.</p></Callout>
+          <Callout title="Bounded rewrite loop" tone="amber"><p>Writer → Verifier → Critic → Humanizer → Evaluator can repeat, but <code>MAX_LOOPS = 3</code> prevents runaway cost and latency.</p></Callout>
+          <Callout title="Reader pressure test" tone="green"><p>Only after the quality loop does the system simulate a skeptical engineer, product lead, and executive skimmer, then apply one final polish.</p></Callout>
+        </div>
+      </GuideSection>
+
+      <GuideSection id="streaming" eyebrow="Runtime protocol" title="How generation reaches the browser" description="The UI does not wait behind a blank spinner. Each agent emits a structured SSE event that updates its row and exposes intermediate output for inspection.">
+        <div className="grid gap-4 md:grid-cols-5">
+          <FlowNode icon="▶" title="agent_start" subtitle="mark one agent running" tone="blue" />
+          <FlowNode icon="✓" title="agent_complete" subtitle="status + inspectable output" tone="green" />
+          <FlowNode icon="↻" title="loop_start" subtitle="reset quality-loop agents" tone="amber" />
+          <FlowNode icon="◆" title="complete" subtitle="deliver editable final" />
+          <FlowNode icon="!" title="error" subtitle="mark failure + allow retry" tone="amber" />
+        </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <Callout title="Persisted after success"><p><code>generation_jobs</code> stores user, brief, format, status, and completion time. <code>generation_artifacts</code> stores orchestrator brief, draft, critique, final, verifier report, audience feedback, and evaluator scores.</p></Callout>
+          <Callout title="Publishing boundary" tone="green"><p>The final modal formats text for copying. It never sends content to LinkedIn, Substack, X, YouTube, or any external publishing API.</p></Callout>
+        </div>
+      </GuideSection>
+
+      <GuideSection id="platform-rules" eyebrow="Output contracts" title="Platform rules are data, not scattered prompt prose" description="A shared platform specification drives both UI previews and server-side agents. Citation behavior is specialized separately per destination.">
+        <div className="overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+          <div className="grid grid-cols-[1fr_1fr_1.8fr_1.5fr] gap-3 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-zinc-400"><span>Format</span><span>Budget</span><span>Structural contract</span><span>Citation contract</span></div>
+          {[
+            ['LinkedIn', '200–280 words / 1,300 chars', 'Hook → short paragraphs → CTA', 'Inline domain + Sources'],
+            ['Substack', '700–1,000 words', 'Story → problem → 3 insights → close', 'Markdown links + Sources'],
+            ['X Thread', '8–12 × 280 chars', 'Numbered insight sequence', 'Domain tags + final URLs'],
+            ['Blog', '1,500–2,000 words', 'TL;DR → 4–6 H2 → actions', 'Inline links + Sources'],
+            ['YouTube Long', '8–12 minutes', 'Hook → chapters → CTA + B-roll', 'Editor notes + description links'],
+            ['YouTube Short', '60–90 seconds', '3s hook → fast insights → payoff', 'One source + overlay cue'],
+          ].map(row => <div key={row[0]} className="grid grid-cols-[1fr_1fr_1.8fr_1.5fr] gap-3 border-b last:border-0 border-zinc-100 dark:border-zinc-800/70 px-4 py-3 text-xs"><strong className="text-zinc-800 dark:text-zinc-200">{row[0]}</strong><span className="text-violet-600 dark:text-violet-400">{row[1]}</span><span className="text-zinc-500">{row[2]}</span><span className="text-zinc-400">{row[3]}</span></div>)}
+        </div>
+      </GuideSection>
+
       <GuideSection id="digest" eyebrow="Optimized synthesis" title="Why Weekly Digest is slower—and how caching changes the curve" description="Synthesis is intentionally heavier than headline retrieval because it compares personalized evidence with outside framing.">
         <div className="grid gap-4 md:grid-cols-4">
           <FlowNode icon="🗃️" title="Cache check" subtitle="user + UTC week" tone="green" />
@@ -99,7 +174,7 @@ export default function ImplementationGuidePage() {
           </div>
           <div className="my-3 text-center text-zinc-300 dark:text-zinc-700">↓</div>
           <div className="grid gap-3 md:grid-cols-4 text-center">
-            {['user_feed_items', 'article_reactions', 'daily_ideas', 'weekly_digests'].map(name => <div key={name} className="rounded-xl border border-zinc-200 dark:border-zinc-700 p-3 text-xs font-bold text-zinc-700 dark:text-zinc-300">{name}</div>)}
+            {['user_feed_items', 'article_reactions', 'daily_ideas', 'weekly_digests', 'content_outlines', 'generation_jobs', 'generation_artifacts'].map(name => <div key={name} className="rounded-xl border border-zinc-200 dark:border-zinc-700 p-3 text-xs font-bold text-zinc-700 dark:text-zinc-300">{name}</div>)}
           </div>
         </div>
       </GuideSection>
