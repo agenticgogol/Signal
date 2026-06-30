@@ -52,9 +52,9 @@ export function AdminGateModal({ onSuccess, onCancel, action = 'this action' }: 
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-700 p-6 w-full max-w-sm mx-4">
         <div className="mb-5">
-          <h3 className="font-bold text-zinc-900 dark:text-zinc-100 text-lg">Admin access required</h3>
+          <h3 className="font-bold text-zinc-900 dark:text-zinc-100 text-lg">Pro access required</h3>
           <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-            Enter credentials to {action}
+            Enter credentials to unlock {action}
           </p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-3">

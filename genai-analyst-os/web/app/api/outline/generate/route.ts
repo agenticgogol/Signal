@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest } from 'next/server'
-import { verifyAdminToken } from '@/lib/adminAuth'
+import { requirePaidFeature } from '@/lib/featureAccess'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
@@ -33,11 +33,12 @@ const OUTLINE_SCHEMA = {
 } as const
 
 export async function POST(req: NextRequest) {
-  if (!verifyAdminToken(req)) {
-    return Response.json({ error: 'Admin authentication required' }, { status: 401 })
+  const { topic, audience, angle, focusAreas, userId } = await req.json()
+  if (!userId) {
+    return Response.json({ error: 'userId is required' }, { status: 400 })
   }
-
-  const { topic, audience, angle, focusAreas } = await req.json()
+  const paidGate = await requirePaidFeature(req, userId, 'AI outlines')
+  if (paidGate) return paidGate
 
   const prompt = `You are an expert content strategist. Generate a detailed content outline for a GenAI practitioner's content.
 

@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest } from 'next/server'
-import { verifyAdminToken } from '@/lib/adminAuth'
 import { createServiceClient } from '@/lib/supabase'
+import { requirePaidFeature } from '@/lib/featureAccess'
 import type { VoiceFingerprint } from '@/lib/voice'
 
 export const maxDuration = 60
@@ -79,10 +79,6 @@ function clampScore(value: unknown) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!verifyAdminToken(req)) {
-    return Response.json({ error: 'Admin authentication required' }, { status: 401 })
-  }
-
   try {
     const body = await req.json()
     const userId = String(body.userId ?? '')
@@ -90,6 +86,9 @@ export async function POST(req: NextRequest) {
       .map((post: unknown) => String(post).trim())
       .filter(Boolean)
 
+    if (!userId) {
+      return Response.json({ error: 'userId is required' }, { status: 400 })
+    }
     if (!userId || posts.length < 3 || posts.length > 5) {
       return Response.json({ error: 'Provide a userId and 3–5 writing samples' }, { status: 400 })
     }
@@ -99,6 +98,8 @@ export async function POST(req: NextRequest) {
     if (posts.reduce((sum: number, post: string) => sum + post.length, 0) > 50000) {
       return Response.json({ error: 'Writing samples exceed the 50,000-character limit' }, { status: 400 })
     }
+    const paidGate = await requirePaidFeature(req, userId, 'Voice Fingerprinting')
+    if (paidGate) return paidGate
 
     const samples = posts.map((post: string, index: number) => `--- SAMPLE ${index + 1} ---\n${post}`).join('\n\n')
     const response = await anthropic.messages.create({

@@ -34,6 +34,7 @@ export default function VoicePage() {
   const [analyzing, setAnalyzing] = useState(false)
   const [showAdminGate, setShowAdminGate] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [plan, setPlan] = useState<'free' | 'pro'>('free')
 
   useEffect(() => {
     fetch(`/api/data/voice?userId=${encodeURIComponent(userId)}`)
@@ -46,18 +47,30 @@ export default function VoicePage() {
       .finally(() => setLoadingProfile(false))
   }, [userId])
 
+  useEffect(() => {
+    fetch(`/api/data/profile?userId=${encodeURIComponent(userId)}`)
+      .then(async response => {
+        const json = await response.json()
+        if (!response.ok) throw new Error(json.error ?? 'Could not load profile')
+        setPlan(json.plan === 'pro' ? 'pro' : 'free')
+      })
+      .catch(() => {})
+  }, [userId])
+
   const validPosts = posts.map(post => post.trim()).filter(Boolean)
   const canAnalyze = validPosts.length >= 3
     && validPosts.length <= 5
     && validPosts.every(post => post.length >= 150)
 
-  const analyze = async (token: string) => {
+  const analyze = async (token?: string) => {
     setAnalyzing(true)
     setError(null)
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (token) headers['x-admin-token'] = token
       const response = await fetch('/api/voice/analyze', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-token': token },
+        headers,
         body: JSON.stringify({ userId, posts: validPosts }),
       })
       const json = await response.json()
@@ -72,13 +85,13 @@ export default function VoicePage() {
 
   const handleAnalyze = () => {
     const token = getAdminToken()
-    if (token) analyze(token)
+    if (token || plan === 'pro') analyze(token ?? undefined)
     else setShowAdminGate(true)
   }
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 pb-20">
-      {showAdminGate && <AdminGateModal action="analyze your writing voice (Claude Sonnet)" onSuccess={token => { setShowAdminGate(false); analyze(token) }} onCancel={() => setShowAdminGate(false)} />}
+      {showAdminGate && <AdminGateModal action="unlock writing voice analysis" onSuccess={token => { setShowAdminGate(false); analyze(token) }} onCancel={() => setShowAdminGate(false)} />}
 
       <div className="relative overflow-hidden rounded-3xl border border-violet-200/70 dark:border-violet-800/60 bg-gradient-to-br from-violet-50 via-white to-blue-50 dark:from-violet-950/40 dark:via-zinc-900 dark:to-blue-950/30 p-7 md:p-9">
         <div className="absolute -right-12 -top-20 h-60 w-60 rounded-full bg-violet-300/20 blur-3xl" />
@@ -88,7 +101,10 @@ export default function VoicePage() {
             <h1 className="mt-2 text-3xl font-black tracking-tight text-zinc-950 dark:text-white">Teach Signal how you actually write</h1>
             <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">Paste 3–5 posts that sound unmistakably like you. The Voice Analyst turns recurring choices into a style constitution used by Writer, Humanizer, and Final Polish.</p>
           </div>
-          <div className={`w-fit rounded-full border px-3 py-1.5 text-xs font-bold ${fingerprint ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300' : 'border-zinc-200 bg-white/80 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900/80'}`}>{fingerprint ? '✓ Voice fingerprint active' : '○ Setup incomplete'}</div>
+          <div className="flex flex-col items-end gap-2">
+            <div className={`w-fit rounded-full border px-3 py-1.5 text-xs font-bold ${fingerprint ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300' : 'border-zinc-200 bg-white/80 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900/80'}`}>{fingerprint ? '✓ Voice fingerprint active' : '○ Setup incomplete'}</div>
+            <div className={`w-fit rounded-full border px-3 py-1.5 text-[11px] font-bold ${plan === 'pro' ? 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300' : 'border-zinc-200 bg-white/80 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900/80'}`}>{plan === 'pro' ? 'Pro access' : 'Free preview'}</div>
+          </div>
         </div>
       </div>
 
@@ -108,7 +124,7 @@ export default function VoicePage() {
         </div>
         <div className="mt-5 flex flex-wrap items-center gap-3">
           {posts.length < 5 && <button onClick={() => setPosts(current => [...current, ''])} className="rounded-xl border border-zinc-200 dark:border-zinc-700 px-4 py-2.5 text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:border-violet-300">+ Add sample</button>}
-          <button onClick={handleAnalyze} disabled={!canAnalyze || analyzing} className="rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40">{analyzing ? 'Analyzing your voice…' : fingerprint ? 'Re-analyze Voice' : 'Analyze My Voice'}</button>
+          <button onClick={handleAnalyze} disabled={!canAnalyze || analyzing} className="rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40">{analyzing ? 'Analyzing your voice…' : fingerprint ? (plan === 'pro' ? 'Re-analyze Voice' : 'Pro: Re-analyze Voice') : (plan === 'pro' ? 'Analyze My Voice' : 'Pro: Analyze My Voice')}</button>
           {!canAnalyze && <p className="text-xs text-zinc-400">Complete at least three samples to continue.</p>}
         </div>
         {error && <div className="mt-4 rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-700 dark:text-red-300">{error}</div>}
@@ -137,6 +153,7 @@ export default function VoicePage() {
       )}
 
       <div className="mt-8 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/30 p-5 text-sm leading-6 text-amber-900 dark:text-amber-200"><strong>Privacy and control:</strong> your pasted samples are sent to Claude for analysis but are not stored by Signal. Only the extracted fingerprint is saved to your profile. Re-analyzing replaces the previous fingerprint.</div>
+      <div className="mt-4 rounded-2xl border border-violet-200 dark:border-violet-800 bg-violet-50/70 dark:bg-violet-950/30 p-5 text-sm leading-6 text-violet-900 dark:text-violet-200"><strong>Pro feature:</strong> voice analysis is a paid action because it runs Claude Sonnet and stores a reusable writing constitution.</div>
     </div>
   )
 }

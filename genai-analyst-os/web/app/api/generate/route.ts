@@ -9,8 +9,8 @@ import {
   runFinalPolishAgent,
   persistJob,
 } from '@/lib/agents'
-import { verifyAdminToken } from '@/lib/adminAuth'
 import { createServiceClient } from '@/lib/supabase'
+import { requirePaidFeature } from '@/lib/featureAccess'
 import type { VoiceFingerprint } from '@/lib/voice'
 
 export const maxDuration = 300
@@ -18,11 +18,13 @@ export const maxDuration = 300
 const MAX_LOOPS = 3
 
 export async function POST(req: Request) {
-  if (!verifyAdminToken(req)) {
-    return Response.json({ error: 'Admin authentication required' }, { status: 401 })
-  }
-
   const { brief, sources, format, pov, userId } = await req.json()
+  if (!userId) {
+    return Response.json({ error: 'userId is required' }, { status: 400 })
+  }
+  const paidGate = await requirePaidFeature(req, userId, 'Content generation')
+  if (paidGate) return paidGate
+
   let voiceFingerprint: VoiceFingerprint | null = null
   if (userId) {
     const { data } = await createServiceClient()

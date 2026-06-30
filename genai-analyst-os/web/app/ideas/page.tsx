@@ -91,6 +91,7 @@ export default function IdeasPage() {
   const router = useRouter()
   const userId = process.env.NEXT_PUBLIC_USER_ID!
   const today = new Date().toISOString().split('T')[0]
+  const [plan, setPlan] = useState<'free' | 'pro'>('free')
 
   const [tab, setTab] = useState<'today' | 'wizard'>('today')
 
@@ -140,6 +141,16 @@ export default function IdeasPage() {
 
   useEffect(() => { fetchIdeas() }, [fetchIdeas])
 
+  useEffect(() => {
+    fetch(`/api/data/profile?userId=${userId}`)
+      .then(async response => {
+        const json = await response.json()
+        if (!response.ok) throw new Error(json.error ?? 'Could not load profile')
+        setPlan(json.plan === 'pro' ? 'pro' : 'free')
+      })
+      .catch(() => {})
+  }, [userId])
+
   // Pre-fill wizard from "Use This Outline" on a today's idea
   const useIdeaInWizard = (idea: Idea) => {
     setFreeText(`${idea.angle_title}\n\nHook: ${idea.hook_sentence}\n\nWhy: ${idea.rationale}`)
@@ -149,15 +160,17 @@ export default function IdeasPage() {
   }
 
   // Generate topic ideas
-  const generateTopicIdeas = async (token: string) => {
+  const generateTopicIdeas = async (token?: string) => {
     setTopicIdeasError(null)
     setGeneratingIdeas(true)
     setWizardStep(2)
     try {
       const allFocus = focusOther ? [...focusAreas, focusOther] : focusAreas
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (token) headers['x-admin-token'] = token
       const res = await fetch('/api/ideas/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-token': token },
+        headers,
         body: JSON.stringify({ focusAreas: allFocus, audience, angle, freeText, userId }),
       })
       const json = await res.json()
@@ -171,12 +184,12 @@ export default function IdeasPage() {
 
   const handleGenerateIdeas = () => {
     const token = getAdminToken()
-    if (token) generateTopicIdeas(token)
+    if (token || plan === 'pro') generateTopicIdeas(token ?? undefined)
     else setPendingAdminAction('ideas')
   }
 
   // Generate outline
-  const generateOutline = async (token: string) => {
+  const generateOutline = async (token?: string) => {
     const topic = selectedIdeaIdx !== null
       ? generatedIdeas[selectedIdeaIdx]?.title
       : customTopic
@@ -186,9 +199,11 @@ export default function IdeasPage() {
     setWizardStep(3)
     try {
       const allFocus = focusOther ? [...focusAreas, focusOther] : focusAreas
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (token) headers['x-admin-token'] = token
       const res = await fetch('/api/outline/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-token': token },
+        headers,
         body: JSON.stringify({ topic, audience, angle, focusAreas: allFocus, userId }),
       })
       const json = await res.json()
@@ -203,7 +218,7 @@ export default function IdeasPage() {
 
   const handleGenerateOutline = () => {
     const token = getAdminToken()
-    if (token) generateOutline(token)
+    if (token || plan === 'pro') generateOutline(token ?? undefined)
     else setPendingAdminAction('outline')
   }
 
@@ -240,8 +255,8 @@ export default function IdeasPage() {
       {pendingAdminAction && (
         <AdminGateModal
           action={pendingAdminAction === 'ideas'
-            ? 'generate AI topic ideas (Claude Haiku)'
-            : 'generate an AI content outline (Claude Sonnet)'}
+            ? 'unlock AI topic ideas (Claude Haiku)'
+            : 'unlock an AI content outline (Claude Sonnet)'}
           onSuccess={token => {
             const action = pendingAdminAction
             setPendingAdminAction(null)
@@ -253,10 +268,18 @@ export default function IdeasPage() {
       )}
       {/* Page header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight">Ideas</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-3xl font-bold tracking-tight">Ideas</h1>
+          <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold ${plan === 'pro'
+            ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300'
+            : 'border-zinc-200 bg-white text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400'}`}>
+            {plan === 'pro' ? 'Pro access' : 'Free preview'}
+          </span>
+        </div>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
           Today&apos;s AI-curated ideas and your topic discovery wizard
         </p>
+        <p className="text-xs text-gray-400 mt-1">Pro actions: AI topic ideas and outline generation.</p>
       </div>
 
       {/* Tab bar */}

@@ -147,6 +147,7 @@ function FeedInfoTooltip() {
           <p><strong className="text-zinc-700 dark:text-zinc-300">Your Feed:</strong> Crawls your saved RSS sources within the lookback window. Articles scored by recency + topic match + source tier → Must Read / Top Pick / Good Read / Explore.</p>
           <p><strong className="text-zinc-700 dark:text-zinc-300">AI News:</strong> Live headlines directly from 6 curated sources (The Decoder, TechCrunch, VentureBeat, MIT Tech Review, Import AI, Last Week in AI) — no pipeline needed.</p>
           <p><strong className="text-zinc-700 dark:text-zinc-300">Weekly Digest:</strong> A narrative briefing generated from your top articles of the week by Claude Sonnet.</p>
+          <p><strong className="text-zinc-700 dark:text-zinc-300">Pro actions:</strong> Get Latest Feed, Weekly Digest Regenerate, Create, Ideas, Outline, and Voice analysis. Free preview stays read-only until you unlock access.</p>
           <p className="text-amber-700 dark:text-amber-400 font-medium">⚠ If you see no enrichment (Why it matters / Takeaways), run this SQL in Supabase:<br/><code className="font-mono text-[10px]">ALTER TABLE articles ADD COLUMN IF NOT EXISTS why_it_matters TEXT;<br/>ALTER TABLE articles ADD COLUMN IF NOT EXISTS key_takeaways TEXT[];<br/>ALTER TABLE articles ADD COLUMN IF NOT EXISTS og_image_url TEXT;</code></p>
           <button onClick={() => setOpen(false)} className="text-violet-600 dark:text-violet-400 font-medium hover:underline">Close</button>
         </div>
@@ -403,6 +404,7 @@ function NewsCard({ item }: { item: NewsItem }) {
 
 export default function FeedPage() {
   const userId = process.env.NEXT_PUBLIC_USER_ID!
+  const [plan, setPlan] = useState<'free' | 'pro'>('free')
 
   // Tabs
   const [activeTab, setActiveTab] = useState<Tab>('feed')
@@ -486,6 +488,16 @@ export default function FeedPage() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    fetch(`/api/data/profile?userId=${encodeURIComponent(userId)}`)
+      .then(async response => {
+        const json = await response.json()
+        if (!response.ok) throw new Error(json.error ?? 'Could not load profile')
+        setPlan(json.plan === 'pro' ? 'pro' : 'free')
+      })
+      .catch(() => {})
+  }, [userId])
 
   function saveConfig(c: PipelineConfig) {
     setPipelineConfig(c)
@@ -601,8 +613,8 @@ export default function FeedPage() {
 
   const handleNarrativeRegenerate = () => {
     const token = getAdminToken()
-    if (token) {
-      fetchNarrative(true, token)
+    if (token || plan === 'pro') {
+      fetchNarrative(true, token ?? undefined)
       return
     }
     setPendingNarrativeRegenerate(true)
@@ -679,7 +691,7 @@ export default function FeedPage() {
     }, 15000)
   }, [userId, fetchFeed])
 
-  const doTrigger = async (token: string) => {
+  const doTrigger = async (token?: string) => {
     setFreshArticleIds(new Set())
     setShowFreshBanner(false)
     setTriggering(true)
@@ -699,8 +711,11 @@ export default function FeedPage() {
 
       const res = await fetch('/api/pipeline/trigger', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-token': token },
-        body: JSON.stringify({ lookbackDays: pipelineConfig.lookbackDays, maxPerSource: pipelineConfig.maxPerSource }),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'x-admin-token': token } : {}),
+        },
+        body: JSON.stringify({ userId, lookbackDays: pipelineConfig.lookbackDays, maxPerSource: pipelineConfig.maxPerSource }),
       })
       const json = await res.json()
       if (json.ok) {
@@ -718,7 +733,7 @@ export default function FeedPage() {
 
   const handleTrigger = () => {
     const token = getAdminToken()
-    if (token) doTrigger(token); else setShowAdminGate(true)
+    if (token || plan === 'pro') doTrigger(token ?? undefined); else setShowAdminGate(true)
   }
 
   const handleReact = async (articleId: string, r: 'like' | 'dislike') => {
@@ -835,6 +850,11 @@ export default function FeedPage() {
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">Feed</h1>
             <FeedInfoTooltip />
+            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold ${plan === 'pro'
+              ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300'
+              : 'border-zinc-200 bg-white text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400'}`}>
+              {plan === 'pro' ? 'Pro access' : 'Free preview'}
+            </span>
           </div>
           <div className="flex items-center gap-2 mt-0.5">
             <p className="text-xs text-zinc-500 dark:text-zinc-400">GenAI intelligence, curated daily</p>
@@ -862,7 +882,7 @@ export default function FeedPage() {
               ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />Starting…</>
               : pipelineStarted
               ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />Running {fmtElapsed(elapsed)}</>
-              : <>⚡ Get Latest Feed</>}
+              : <>{plan === 'pro' ? '⚡ Get Latest Feed' : '🔒 Pro: Get Latest Feed'}</>}
           </button>
         </div>
       </div>
@@ -1137,7 +1157,7 @@ export default function FeedPage() {
               {weeklyView === 'narrative' && (
                 <button onClick={handleNarrativeRegenerate} disabled={narrativeLoading}
                   className="text-xs text-violet-600 dark:text-violet-400 px-3 py-1.5 bg-violet-50 dark:bg-violet-950/30 rounded-lg border border-violet-200 dark:border-violet-800 hover:bg-violet-100 transition-colors font-medium disabled:opacity-50">
-                  {narrativeLoading ? 'Writing briefing…' : '↺ Regenerate'}
+                  {narrativeLoading ? 'Writing briefing…' : plan === 'pro' ? '↺ Regenerate' : '🔒 Pro: Regenerate'}
                 </button>
               )}
             </div>
@@ -1156,7 +1176,7 @@ export default function FeedPage() {
                 <div className="text-center py-16 text-zinc-400">
                   <div className="text-5xl mb-4">📭</div>
                   <p className="font-medium text-zinc-600 dark:text-zinc-400">{narrativeError}</p>
-                  <p className="text-sm mt-2">The article feed is available. Regenerate is admin-gated because it triggers a fresh Claude Sonnet briefing.</p>
+                  <p className="text-sm mt-2">The article feed is available. Regenerate is a Pro action because it triggers a fresh Claude Sonnet briefing.</p>
                 </div>
               ) : narrative ? (
                 <div className="space-y-6 max-w-2xl">
@@ -1202,7 +1222,7 @@ export default function FeedPage() {
                 </div>
               ) : (
                 <div className="text-center py-12 text-zinc-400">
-                  <p className="text-sm">Click Regenerate to write this week&apos;s briefing. It requires the admin password because it incurs LLM cost.</p>
+                  <p className="text-sm">Click Regenerate to write this week&apos;s briefing. It is a Pro action because it incurs LLM cost.</p>
                 </div>
               )}
             </div>

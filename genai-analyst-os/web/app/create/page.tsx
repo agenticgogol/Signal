@@ -125,6 +125,7 @@ function CreatePageInner() {
   const [showAdminGate, setShowAdminGate] = useState(false)
   const [pendingGenerate, setPendingGenerate] = useState(false)
   const [voiceActive, setVoiceActive] = useState(false)
+  const [plan, setPlan] = useState<'free' | 'pro'>('free')
 
   // ── Load frozen outlines on mount ──────────────────────────────────────────
   useEffect(() => {
@@ -138,6 +139,16 @@ function CreatePageInner() {
     fetch(`/api/data/voice?userId=${userId}`)
       .then(response => response.json())
       .then(json => setVoiceActive(Boolean(json.fingerprint)))
+      .catch(() => {})
+  }, [userId])
+
+  useEffect(() => {
+    fetch(`/api/data/profile?userId=${userId}`)
+      .then(async response => {
+        const json = await response.json()
+        if (!response.ok) throw new Error(json.error ?? 'Could not load profile')
+        setPlan(json.plan === 'pro' ? 'pro' : 'free')
+      })
       .catch(() => {})
   }, [userId])
 
@@ -286,7 +297,7 @@ function CreatePageInner() {
 
   const handleGenerateClick = () => {
     const token = getAdminToken()
-    if (token) { doGenerate(token) }
+    if (token || plan === 'pro') { doGenerate(token ?? undefined) }
     else { setPendingGenerate(true); setShowAdminGate(true) }
   }
 
@@ -356,7 +367,7 @@ function CreatePageInner() {
 
       {showAdminGate && (
         <AdminGateModal
-          action="generate content (LLM cost)"
+          action="unlock content generation"
           onSuccess={token => {
             setShowAdminGate(false)
             if (pendingGenerate) { setPendingGenerate(false); doGenerate(token) }
@@ -366,8 +377,17 @@ function CreatePageInner() {
       )}
 
       <div className="mb-8">
-        <div className="flex flex-wrap items-center gap-2"><h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">Create Content</h1>{voiceActive ? <a href="/voice" className="rounded-full border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/40 px-2.5 py-1 text-[11px] font-bold text-green-700 dark:text-green-300">🎙️ Your voice active</a> : <a href="/voice" className="rounded-full border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1 text-[11px] font-bold text-amber-700 dark:text-amber-300">Set up your voice →</a>}</div>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">Create Content</h1>
+          <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold ${plan === 'pro'
+            ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300'
+            : 'border-zinc-200 bg-white text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400'}`}>
+            {plan === 'pro' ? 'Pro access' : 'Free preview'}
+          </span>
+          {voiceActive ? <a href="/voice" className="rounded-full border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/40 px-2.5 py-1 text-[11px] font-bold text-green-700 dark:text-green-300">🎙️ Your voice active</a> : <a href="/voice" className="rounded-full border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1 text-[11px] font-bold text-amber-700 dark:text-amber-300">Set up your voice →</a>}
+        </div>
         <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">8-agent pipeline: write → verify claims → critique → humanize → evaluate → simulate audience → polish</p>
+        <p className="text-xs text-zinc-400 mt-1">Pro actions: content generation, voice fingerprinting, and premium export flows.</p>
       </div>
 
       <Stepper current={step} />
@@ -588,7 +608,7 @@ function CreatePageInner() {
             <button onClick={() => setStep(2)} className="px-4 py-2 text-sm font-medium text-zinc-600 border border-zinc-200 rounded-xl hover:bg-zinc-50 transition-colors">← Back</button>
             <button onClick={handleGenerateClick}
               className="px-6 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-medium text-sm transition-colors">
-              🔒 Generate Content →
+              {plan === 'pro' ? '🔒 Generate Content →' : '🔒 Pro: Generate Content →'}
             </button>
           </div>
         </div>
@@ -668,7 +688,12 @@ function CreatePageInner() {
           />
 
           <div className="flex flex-wrap gap-3">
-            <button onClick={() => { setStep(4); doGenerate() }} disabled={isGenerating}
+            <button onClick={() => {
+              setStep(4)
+              const token = getAdminToken()
+              if (token || plan === 'pro') doGenerate(token ?? undefined)
+              else { setPendingGenerate(true); setShowAdminGate(true) }
+            }} disabled={isGenerating}
               className="px-4 py-2.5 text-sm font-medium border border-zinc-200 rounded-xl hover:bg-zinc-50 transition-colors disabled:opacity-50">
               ⟳ Regenerate
             </button>

@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server'
 import { fetchAiNews } from '@/lib/aiNews'
 import { createServiceClient } from '@/lib/supabase'
 import { TAG_LABELS } from '@/lib/tagColors'
+import { requirePaidFeature } from '@/lib/featureAccess'
 
 export const maxDuration = 60
 
@@ -85,6 +86,9 @@ async function handle(req: NextRequest, force: boolean) {
         })
       }
     }
+
+    const paidGate = await requirePaidFeature(req, userId, 'Weekly Digest regeneration')
+    if (paidGate) return paidGate
 
     const from = new Date()
     from.setUTCDate(from.getUTCDate() - days)

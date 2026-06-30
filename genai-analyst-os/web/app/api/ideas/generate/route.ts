@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createServiceClient } from '@/lib/supabase'
 import { NextRequest } from 'next/server'
-import { verifyAdminToken } from '@/lib/adminAuth'
+import { requirePaidFeature } from '@/lib/featureAccess'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
@@ -21,11 +21,12 @@ const TOPIC_IDEAS_SCHEMA = {
 } as const
 
 export async function POST(req: NextRequest) {
-  if (!verifyAdminToken(req)) {
-    return Response.json({ error: 'Admin authentication required' }, { status: 401 })
-  }
-
   const { focusAreas, audience, angle, freeText, userId } = await req.json()
+  if (!userId) {
+    return Response.json({ error: 'userId is required' }, { status: 400 })
+  }
+  const paidGate = await requirePaidFeature(req, userId, 'AI topic ideas')
+  if (paidGate) return paidGate
 
   const db = createServiceClient()
 
