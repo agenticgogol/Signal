@@ -66,6 +66,18 @@ export default function ImplementationGuidePage() {
         </div>
       </GuideSection>
 
+      <GuideSection id="commercial-boundaries" eyebrow="Commercial model" title="Subscription entitlement and model execution are separate concerns" description="Signal should be explainable commercially as well as technically. Product access, execution permissions, and model spend are different things.">
+        <div className="grid gap-4 md:grid-cols-3">
+          <FeatureCard icon="👤" title="Identity">Supabase auth identifies the user and scopes sources, feed items, digests, voice fingerprint, and generation artifacts.</FeatureCard>
+          <FeatureCard icon="💳" title="Entitlement">Subscription status unlocks premium capabilities such as setting provider/model/key and running premium generation without the admin wall.</FeatureCard>
+          <FeatureCard icon="🧠" title="Execution dependency">A configured account-level API key determines which provider actually executes premium generation. Model spend remains the user’s own.</FeatureCard>
+        </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <Callout title="Current rule"><p>Paid workflows are permitted when the request is admin-approved, or when the account has both subscription entitlement and a stored account-level model key.</p></Callout>
+          <Callout title="Why this is cleaner" tone="amber"><p>Entitlement and execution dependency are still separate concepts, but the operational rule is now explicit: subscription unlocks the feature, and the saved key powers the run.</p></Callout>
+        </div>
+      </GuideSection>
+
       <GuideSection id="stack" eyebrow="Technology" title="The stack and its job boundaries" description="Each technology owns a narrow responsibility. That containment makes failures diagnosable and cost visible.">
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {stack.map(([icon, title, text]) => <FeatureCard key={title} icon={icon} title={title}>{text}</FeatureCard>)}
@@ -204,6 +216,10 @@ export default function ImplementationGuidePage() {
             {['user_feed_items', 'article_reactions', 'daily_ideas', 'daily_digests', 'weekly_digests', 'content_outlines', 'generation_jobs', 'generation_artifacts'].map(name => <div key={name} className="rounded-xl border border-zinc-200 dark:border-zinc-700 p-3 text-xs font-bold text-zinc-700 dark:text-zinc-300">{name}</div>)}
           </div>
         </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <Callout title="Shared versus private"><p><code>articles</code> is shared global enrichment. <code>user_sources</code>, <code>user_feed_items</code>, digests, voice fingerprints, and generation artifacts are user-scoped.</p></Callout>
+          <Callout title="Why this matters for trust" tone="green"><p>The product should always be able to explain whether a result came from shared article knowledge or a user-specific personalization layer.</p></Callout>
+        </div>
       </GuideSection>
 
       <GuideSection id="api" eyebrow="Interfaces" title="API boundary map" description="Browser-facing routes isolate credentials and normalize access to Supabase, GitHub, per-user model providers, and external feeds.">
@@ -217,10 +233,14 @@ export default function ImplementationGuidePage() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <FeatureCard icon="⏱️" title="Run tracking">Every user run opens a <code>crawl_runs</code> row. UI polling distinguishes queued, running, completed, degraded, and timeout states.</FeatureCard>
           <FeatureCard icon="🧯" title="Failure isolation">Feed failures do not erase good items. Model failures produce explicit empty/error states rather than malformed partial data.</FeatureCard>
-          <FeatureCard icon="🔒" title="Secret boundaries">Service role, GitHub PAT, Stripe secrets, and model keys stay server-side. Free and guest users still require admin credentials per costly action, while paid signed-in users authenticate with Supabase and run on their own provider settings.</FeatureCard>
+          <FeatureCard icon="🔒" title="Secret boundaries">Service role, GitHub PAT, payment secrets, and model keys stay server-side. Premium users authenticate with Supabase and run on their own provider settings; admin credentials are only an operational fallback.</FeatureCard>
           <FeatureCard icon="📏" title="Bounded work">UI choices, server validation, RSS timeouts, source caps, article limits, and response schemas bound latency and spend.</FeatureCard>
           <FeatureCard icon="🧬" title="Deduplication">URL uniqueness protects global articles; API range views deduplicate repeated dated rankings before rendering.</FeatureCard>
           <FeatureCard icon="🗂️" title="Cache strategy">Global enrichment is reused for all users; daily digests are written nightly per user; weekly synthesis is reused until explicit regeneration.</FeatureCard>
+        </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <Callout title="Explainability contract"><p>Users should be able to inspect why something surfaced, whether a digest is cached or fresh, which provider/model produced output, and which sources grounded the result.</p></Callout>
+          <Callout title="Expectation to carry into the UI" tone="green"><p>Trust improves when the product reveals scoring reasons, generation provenance, and data boundaries at decision points instead of hiding them in docs.</p></Callout>
         </div>
       </GuideSection>
 

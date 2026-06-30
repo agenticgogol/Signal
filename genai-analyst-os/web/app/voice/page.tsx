@@ -28,7 +28,7 @@ function Chips({ items, empty = 'No strong pattern detected' }: { items: string[
 }
 
 export default function VoicePage() {
-  const { user } = useAuthSession()
+  const { session, user } = useAuthSession()
   const userId = user?.id ?? process.env.NEXT_PUBLIC_USER_ID!
   const [posts, setPosts] = useState<string[]>(EMPTY_POSTS)
   const [fingerprint, setFingerprint] = useState<VoiceFingerprint | null>(null)
@@ -38,7 +38,7 @@ export default function VoicePage() {
   const [error, setError] = useState<string | null>(null)
   const [plan, setPlan] = useState<'free' | 'pro'>('free')
   const [showPaidConfirm, setShowPaidConfirm] = useState(false)
-  const [hasModelAccess, setHasModelAccess] = useState(false)
+  const [canUsePaidFeatures, setCanUsePaidFeatures] = useState(false)
 
   useEffect(() => {
     fetch(`/api/data/voice?userId=${encodeURIComponent(userId)}`)
@@ -57,9 +57,9 @@ export default function VoicePage() {
         const json = await response.json()
         if (!response.ok) throw new Error(json.error ?? 'Could not load profile')
         setPlan(json.plan === 'pro' ? 'pro' : 'free')
-        setHasModelAccess(Boolean(json.hasModelAccess))
+        setCanUsePaidFeatures(Boolean(json.canUsePaidFeatures))
       })
-      .catch(() => { setPlan('free'); setHasModelAccess(false) })
+      .catch(() => { setPlan('free'); setCanUsePaidFeatures(false) })
   }, [userId])
 
   const validPosts = posts.map(post => post.trim()).filter(Boolean)
@@ -72,6 +72,7 @@ export default function VoicePage() {
     setError(null)
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
       if (token) headers['x-admin-token'] = token
       const response = await fetch('/api/voice/analyze', {
         method: 'POST',
@@ -89,7 +90,7 @@ export default function VoicePage() {
   }
 
   const handleAnalyze = () => {
-    if (hasModelAccess) setShowPaidConfirm(true)
+    if (canUsePaidFeatures) setShowPaidConfirm(true)
     else setShowAdminGate(true)
   }
 
@@ -99,7 +100,7 @@ export default function VoicePage() {
       {showPaidConfirm && (
         <ActionConfirmModal
           title="Confirm API usage"
-          description="This will call external APIs and spend your Pro plan allowance. No admin credentials are needed."
+          description="This will call your configured provider and use your stored account API key. No admin credentials are needed."
           confirmLabel="Proceed"
           action="analyze your writing voice"
           onConfirm={() => {
@@ -141,7 +142,7 @@ export default function VoicePage() {
         </div>
         <div className="mt-5 flex flex-wrap items-center gap-3">
           {posts.length < 5 && <button onClick={() => setPosts(current => [...current, ''])} className="rounded-xl border border-zinc-200 dark:border-zinc-700 px-4 py-2.5 text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:border-violet-300">+ Add sample</button>}
-          <button onClick={handleAnalyze} disabled={!canAnalyze || analyzing} className="rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40">{analyzing ? 'Analyzing your voice…' : fingerprint ? (hasModelAccess ? 'Re-analyze Voice' : 'Admin: Re-analyze Voice') : (hasModelAccess ? 'Analyze My Voice' : 'Admin: Analyze My Voice')}</button>
+          <button onClick={handleAnalyze} disabled={!canAnalyze || analyzing} className="rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40">{analyzing ? 'Analyzing your voice…' : fingerprint ? (canUsePaidFeatures ? 'Re-analyze Voice' : 'Admin: Re-analyze Voice') : (canUsePaidFeatures ? 'Analyze My Voice' : 'Admin: Analyze My Voice')}</button>
           {!canAnalyze && <p className="text-xs text-zinc-400">Complete at least three samples to continue.</p>}
         </div>
         {error && <div className="mt-4 rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-700 dark:text-red-300">{error}</div>}
@@ -170,7 +171,7 @@ export default function VoicePage() {
       )}
 
       <div className="mt-8 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/30 p-5 text-sm leading-6 text-amber-900 dark:text-amber-200"><strong>Privacy and control:</strong> your pasted samples are sent to Claude for analysis but are not stored by Signal. Only the extracted fingerprint is saved to your profile. Re-analyzing replaces the previous fingerprint.</div>
-      <div className="mt-4 rounded-2xl border border-violet-200 dark:border-violet-800 bg-violet-50/70 dark:bg-violet-950/30 p-5 text-sm leading-6 text-violet-900 dark:text-violet-200"><strong>Pro feature:</strong> voice analysis is a paid action because it runs Claude Sonnet and stores a reusable writing constitution. Free users can unlock it with admin credentials each time.</div>
+      <div className="mt-4 rounded-2xl border border-violet-200 dark:border-violet-800 bg-violet-50/70 dark:bg-violet-950/30 p-5 text-sm leading-6 text-violet-900 dark:text-violet-200"><strong>Premium feature:</strong> voice analysis requires both subscription entitlement and a configured model API key. Accounts without both still need admin credentials each time.</div>
     </div>
   )
 }

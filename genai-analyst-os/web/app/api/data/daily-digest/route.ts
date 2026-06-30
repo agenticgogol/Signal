@@ -11,6 +11,13 @@ interface DailyDigest {
   takeaway: string
 }
 
+interface SourceArticleMeta {
+  title: string
+  url: string
+  topic_tags: string[]
+  why_it_matters: string | null
+}
+
 const DAILY_DIGEST_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -83,10 +90,46 @@ export async function GET(req: NextRequest) {
     .order('digest_date', { ascending: false })
     .limit(24)
 
+  const [{ data: profile }, sourceArticleResult] = await Promise.all([
+    db.from('user_profiles').select('llm_provider, llm_model').eq('id', userId).maybeSingle(),
+    current?.digest_date
+      ? db
+          .from('user_feed_items')
+          .select('blend_score, articles(url, title, topic_tags, why_it_matters)')
+          .eq('user_id', userId)
+          .eq('feed_date', current.digest_date)
+          .order('blend_score', { ascending: false })
+          .limit(5)
+      : Promise.resolve({ data: [] as Record<string, unknown>[], error: null }),
+  ])
+
+  if (sourceArticleResult.error) {
+    return Response.json({ error: sourceArticleResult.error.message }, { status: 500 })
+  }
+
+  const sourceArticles: SourceArticleMeta[] = (sourceArticleResult.data ?? [])
+    .map((item: Record<string, unknown>) => {
+      const article = Array.isArray(item.articles) ? item.articles[0] : item.articles as Record<string, unknown> | null
+      if (!article?.url || !article?.title) return null
+      return {
+        title: String(article.title),
+        url: String(article.url),
+        topic_tags: Array.isArray(article.topic_tags) ? article.topic_tags.map(String) : [],
+        why_it_matters: typeof article.why_it_matters === 'string' ? article.why_it_matters : null,
+      }
+    })
+    .filter(Boolean) as SourceArticleMeta[]
+
   return Response.json({
     current: current ?? null,
     recent: recent ?? [],
     archive: archive ?? [],
+    provenance: {
+      sourceArticles,
+      modelProvider: profile?.llm_provider ?? null,
+      modelName: profile?.llm_model ?? null,
+      generationMode: current ? 'cached_or_pipeline' : null,
+    },
   })
 }
 
@@ -123,10 +166,19 @@ export async function POST(req: NextRequest) {
     }
 
     const topicCounts = new Map<string, number>()
+    const sourceArticles: SourceArticleMeta[] = []
     const articleBriefs = data.map((item, index) => {
       const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
       const tags = Array.isArray(article?.topic_tags) ? article.topic_tags as string[] : []
       tags.forEach(tag => topicCounts.set(tag, (topicCounts.get(tag) ?? 0) + 1))
+      if (article?.url && article?.title && sourceArticles.length < 5) {
+        sourceArticles.push({
+          title: String(article.title),
+          url: String(article.url),
+          topic_tags: tags,
+          why_it_matters: typeof article?.why_it_matters === 'string' ? article.why_it_matters : null,
+        })
+      }
       const bullets = Array.isArray(article?.tldr_bullets) ? (article?.tldr_bullets as string[]).slice(0, 3).join(' ') : ''
       return `[${index + 1}] ${article?.title}\nTopics: ${tags.map(tag => TAG_LABELS[tag] ?? tag).join(', ')}\n${bullets}\nWhy it matters: ${article?.why_it_matters ?? 'Not supplied'}\nURL: ${article?.url}`
     }).join('\n\n')
@@ -147,6 +199,7 @@ export async function POST(req: NextRequest) {
     if (!isDailyDigest(parsed)) throw new Error('Invalid daily digest structure returned by model.')
 
     const generatedAt = new Date().toISOString()
+    const { data: profile } = await db.from('user_profiles').select('llm_provider, llm_model').eq('id', userId).maybeSingle()
     const { error: upsertError } = await db.from('daily_digests').upsert({
       user_id: userId,
       digest_date: feedDate,
@@ -168,6 +221,12 @@ export async function POST(req: NextRequest) {
         emailed_at: null,
       },
       regenerated: true,
+      provenance: {
+        sourceArticles,
+        modelProvider: profile?.llm_provider ?? null,
+        modelName: profile?.llm_model ?? null,
+        generationMode: 'fresh_regeneration',
+      },
     })
   } catch (error) {
     console.error('daily_digest_generation_failed', error)

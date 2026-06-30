@@ -17,6 +17,7 @@ export default function AuthPopupGate() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [plan, setPlan] = useState<'free' | 'pro'>('free')
+  const [canUsePaidFeatures, setCanUsePaidFeatures] = useState(false)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -42,16 +43,19 @@ export default function AuthPopupGate() {
         const json = await response.json()
         if (!response.ok) throw new Error(json.error ?? 'Could not load profile')
         setPlan(json.plan === 'pro' ? 'pro' : 'free')
+        setCanUsePaidFeatures(Boolean(json.canUsePaidFeatures))
       })
-      .catch(() => setPlan('free'))
+      .catch(() => { setPlan('free'); setCanUsePaidFeatures(false) })
   }, [user?.id])
 
   const statusText = useMemo(() => {
     if (!session) return 'Read the preview, then sign in to save your setup and use the product.'
     return plan === 'pro'
-      ? 'Your account is active. Paid actions use your Pro plan.'
-      : 'You are signed in. Billing is temporarily disabled for this iteration.'
-  }, [plan, session])
+      ? canUsePaidFeatures
+        ? 'Your account is active. Paid actions run on your configured model settings.'
+        : 'Your account has subscription entitlement. Add a model API key in Settings to remove the admin wall.'
+      : 'You are signed in. Costly actions still require the admin wall until this account is subscribed and configured.'
+  }, [canUsePaidFeatures, plan, session])
 
   if (!open) return null
 
@@ -110,7 +114,7 @@ export default function AuthPopupGate() {
               <button disabled={busy || !email || !password} className="w-full rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40">{busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'}</button>
             </form>
 
-            <p className="mt-4 text-xs leading-6 text-zinc-500 dark:text-zinc-400">One account unlocks the product experience. Paid actions still confirm API usage, and free users continue to require admin credentials for costly requests.</p>
+            <p className="mt-4 text-xs leading-6 text-zinc-500 dark:text-zinc-400">One account unlocks the product experience. Admin-free premium actions require both subscription entitlement and a configured model API key.</p>
           </div>
 
           <div className="border-t border-zinc-200 bg-zinc-50 p-7 dark:border-zinc-800 dark:bg-zinc-950 md:border-l md:border-t-0">
@@ -132,7 +136,7 @@ export default function AuthPopupGate() {
               </div>
             )}
             {session && plan === 'pro' && (
-              <div className="mt-5 rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-800 dark:border-green-800 dark:bg-green-950/30 dark:text-green-300">Your account is already subscribed.</div>
+              <div className="mt-5 rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-800 dark:border-green-800 dark:bg-green-950/30 dark:text-green-300">{canUsePaidFeatures ? 'Your account is subscribed and ready for admin-free premium actions.' : 'Your account is subscribed. Add your model API key in Settings to unlock admin-free premium actions.'}</div>
             )}
           </div>
         </div>

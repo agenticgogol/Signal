@@ -14,6 +14,13 @@ interface Narrative {
   takeaway: string
 }
 
+interface SourceArticleMeta {
+  title: string
+  url: string
+  topic_tags: string[]
+  why_it_matters: string | null
+}
+
 const NARRATIVE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -65,6 +72,8 @@ async function handle(req: NextRequest, force: boolean) {
   const db = createServiceClient()
 
   try {
+    const { data: profile } = await db.from('user_profiles').select('llm_provider, llm_model').eq('id', userId).maybeSingle()
+
     if (!force) {
       const { data: cached } = await db
         .from('weekly_digests')
@@ -74,6 +83,30 @@ async function handle(req: NextRequest, force: boolean) {
         .maybeSingle()
 
       if (cached && isNarrative(cached.narrative)) {
+        const cachedFrom = new Date()
+        cachedFrom.setUTCDate(cachedFrom.getUTCDate() - days)
+        const cachedFromISO = cachedFrom.toISOString().slice(0, 10)
+        const { data: cachedArticles } = await db
+          .from('user_feed_items')
+          .select('blend_score, articles(url, title, topic_tags, why_it_matters)')
+          .eq('user_id', userId)
+          .gte('feed_date', cachedFromISO)
+          .order('blend_score', { ascending: false })
+          .limit(5)
+
+        const sourceArticles: SourceArticleMeta[] = (cachedArticles ?? [])
+          .map((item: Record<string, unknown>) => {
+            const article = Array.isArray(item.articles) ? item.articles[0] : item.articles as Record<string, unknown> | null
+            if (!article?.url || !article?.title) return null
+            return {
+              title: String(article.title),
+              url: String(article.url),
+              topic_tags: Array.isArray(article.topic_tags) ? article.topic_tags.map(String) : [],
+              why_it_matters: typeof article.why_it_matters === 'string' ? article.why_it_matters : null,
+            }
+          })
+          .filter(Boolean) as SourceArticleMeta[]
+
         return Response.json({
           narrative: cached.narrative,
           articleCount: cached.article_count,
@@ -81,6 +114,12 @@ async function handle(req: NextRequest, force: boolean) {
           generatedAt: cached.generated_at,
           cached: true,
           period: `Last ${days} days`,
+          provenance: {
+            sourceArticles,
+            modelProvider: profile?.llm_provider ?? null,
+            modelName: profile?.llm_model ?? null,
+            generationMode: 'cached',
+          },
         })
       }
     }
@@ -114,10 +153,19 @@ async function handle(req: NextRequest, force: boolean) {
     }).slice(0, 12)
 
     const topicCounts = new Map<string, number>()
+    const sourceArticles: SourceArticleMeta[] = []
     const articleBriefs = uniqueData.map((item, index) => {
       const article = (Array.isArray(item.articles) ? item.articles[0] : item.articles)!
       const tags = Array.isArray(article.topic_tags) ? article.topic_tags as string[] : []
       tags.forEach(tag => topicCounts.set(tag, (topicCounts.get(tag) ?? 0) + 1))
+      if (sourceArticles.length < 5) {
+        sourceArticles.push({
+          title: String(article.title),
+          url: String(article.url),
+          topic_tags: tags,
+          why_it_matters: typeof article.why_it_matters === 'string' ? article.why_it_matters : null,
+        })
+      }
       const bullets = Array.isArray(article.tldr_bullets)
         ? (article.tldr_bullets as string[]).slice(0, 3).join(' ')
         : ''
@@ -162,6 +210,12 @@ async function handle(req: NextRequest, force: boolean) {
       generatedAt,
       cached: false,
       period: `Last ${days} days`,
+      provenance: {
+        sourceArticles,
+        modelProvider: profile?.llm_provider ?? null,
+        modelName: profile?.llm_model ?? null,
+        generationMode: 'fresh_regeneration',
+      },
     })
   } catch (error) {
     console.error('weekly_digest_generation_failed', error)

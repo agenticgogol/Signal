@@ -2,6 +2,7 @@ import { createServiceClient } from '@/lib/supabase'
 import { NextRequest } from 'next/server'
 import { requirePaidFeature } from '@/lib/featureAccess'
 import { generateJsonForUser } from '@/lib/llmClient'
+import { getNotebookContext } from '@/lib/knowledge'
 
 const TOPIC_IDEAS_SCHEMA = {
   type: 'array',
@@ -19,7 +20,7 @@ const TOPIC_IDEAS_SCHEMA = {
 } as const
 
 export async function POST(req: NextRequest) {
-  const { focusAreas, audience, angle, freeText, userId } = await req.json()
+  const { focusAreas, audience, angle, freeText, userId, notebookId } = await req.json()
   if (!userId) {
     return Response.json({ error: 'userId is required' }, { status: 400 })
   }
@@ -47,10 +48,21 @@ export async function POST(req: NextRequest) {
     })
     .join('\n')
 
+  let notebookContext = ''
+  if (typeof notebookId === 'string' && notebookId.trim()) {
+    const notebookItems = await getNotebookContext({ userId, notebookId, limit: 6 })
+    notebookContext = notebookItems
+      .map(item => `- ${item.title}\nSummary: ${item.summary}\nWhy it matters: ${item.why}\nTopics: ${item.topicTags.join(', ')}`)
+      .join('\n')
+  }
+
   const prompt = `You are a content strategist for a GenAI practitioner.
 
 Recent articles from their feed (last 3 days):
 ${feedContext || '(no recent feed available)'}
+
+Notebook context:
+${notebookContext || '(no notebook context supplied)'}
 
 User's content preferences:
 - Focus areas: ${focusAreas.join(', ')}

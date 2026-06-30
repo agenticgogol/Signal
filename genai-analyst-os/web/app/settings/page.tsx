@@ -16,6 +16,7 @@ export default function SettingsPage() {
   const { session, user, loading } = useAuthSession()
   const userId = user?.id ?? ''
   const [plan, setPlan] = useState<'free' | 'pro'>('free')
+  const [canUsePaidFeatures, setCanUsePaidFeatures] = useState(false)
 
   const [providerOptions, setProviderOptions] = useState<ProviderOption[]>([])
   const [provider, setProvider] = useState<SupportedProvider>('anthropic')
@@ -39,8 +40,9 @@ export default function SettingsPage() {
         const json = await response.json()
         if (!response.ok) throw new Error(json.error ?? 'Could not load profile')
         setPlan(json.plan === 'pro' ? 'pro' : 'free')
+        setCanUsePaidFeatures(Boolean(json.canUsePaidFeatures))
       })
-      .catch(() => setPlan('free'))
+      .catch(() => { setPlan('free'); setCanUsePaidFeatures(false) })
   }, [session?.access_token, userId])
 
   useEffect(() => {
@@ -169,7 +171,12 @@ export default function SettingsPage() {
       <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-7">
         <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-600 dark:text-violet-400">Account model settings</p>
         <h1 className="mt-2 text-3xl font-black tracking-tight text-zinc-950 dark:text-white">Bring your own provider, model, and API key</h1>
-        <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-600 dark:text-zinc-300">Paid actions use your account-level provider settings. This controls weekly digest regeneration, topic ideas, outline generation, voice analysis, and the full multi-agent content writer stack.</p>
+        <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-600 dark:text-zinc-300">Admin-free premium actions require both subscription entitlement and your account-level provider settings. This controls weekly digest regeneration, topic ideas, outline generation, voice analysis, and the full multi-agent content writer stack.</p>
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4 text-sm"><strong className="block text-zinc-900 dark:text-zinc-100">What Signal charges for</strong><span className="mt-1 block text-zinc-500 dark:text-zinc-400">Product access, orchestration, ranking, synthesis, and workflow UX.</span></div>
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4 text-sm"><strong className="block text-zinc-900 dark:text-zinc-100">What your provider charges for</strong><span className="mt-1 block text-zinc-500 dark:text-zinc-400">Premium model execution such as digests, ideas, outlines, voice analysis, and drafting.</span></div>
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4 text-sm"><strong className="block text-zinc-900 dark:text-zinc-100">Trust boundary</strong><span className="mt-1 block text-zinc-500 dark:text-zinc-400">The key is stored server-side in encrypted form and is never exposed in browser code.</span></div>
+        </div>
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
@@ -234,7 +241,17 @@ export default function SettingsPage() {
             {error && <div className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-700 dark:text-red-300">{error}</div>}
             {plan !== 'pro' && (
               <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/30 p-4 text-sm leading-6 text-amber-900 dark:text-amber-200">
-                Model provider and API key settings are locked until this account has an active subscription. Once a key is configured here, costly workflows no longer require the admin username and password.
+                Model provider and API key settings are locked until this account has an active subscription.
+              </div>
+            )}
+            {plan === 'pro' && !canUsePaidFeatures && (
+              <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/70 dark:bg-blue-950/30 p-4 text-sm leading-6 text-blue-900 dark:text-blue-200">
+                This account has subscription entitlement, but the admin wall remains in place until you save a model API key here.
+              </div>
+            )}
+            {canUsePaidFeatures && (
+              <div className="rounded-xl border border-green-200 dark:border-green-800 bg-green-50/70 dark:bg-green-950/30 p-4 text-sm leading-6 text-green-900 dark:text-green-200">
+                This account is fully configured. Premium actions now use confirmation only and no longer ask for admin credentials.
               </div>
             )}
           </div>

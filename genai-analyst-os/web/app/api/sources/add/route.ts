@@ -1,9 +1,13 @@
 import { createServiceClient } from '@/lib/supabase'
 import { NextRequest } from 'next/server'
+import { requireSignedInUser } from '@/lib/serverAuth'
 
 export async function POST(req: NextRequest) {
   const { url, userId } = await req.json()
   if (!url || !userId) return Response.json({ error: 'url and userId required' }, { status: 400 })
+
+  const signedIn = await requireSignedInUser(req, userId)
+  if (signedIn instanceof Response) return signedIn
 
   const db = createServiceClient()
   const { data, error } = await db.from('user_sources').insert({

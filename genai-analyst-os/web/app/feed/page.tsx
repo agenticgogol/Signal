@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { TAG_COLORS, TAG_LABELS } from '@/lib/tagColors'
 import { ActionConfirmModal, AdminGateModal } from '@/components/AdminGate'
+import OnboardingChecklist, { type SetupStatus } from '@/components/OnboardingChecklist'
 import { useAuthSession } from '@/lib/useAuthSession'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -100,8 +101,18 @@ interface NarrativeData {
   headline: string; signal: string
   watch: { item: string; why: string }[]; takeaway: string
 }
+interface SourceArticleMeta {
+  title: string
+  url: string
+  topic_tags: string[]
+  why_it_matters: string | null
+}
 interface NarrativeMeta {
   cached: boolean; generatedAt: string | null; articleCount: number
+  sourceArticles?: SourceArticleMeta[]
+  modelProvider?: string | null
+  modelName?: string | null
+  generationMode?: string | null
 }
 interface DailyDigestData {
   headline: string
@@ -118,10 +129,50 @@ interface DigestRecord {
   emailed_at?: string | null
   narrative?: DailyDigestData
 }
+interface DigestProvenance {
+  sourceArticles: SourceArticleMeta[]
+  modelProvider: string | null
+  modelName: string | null
+  generationMode: string | null
+}
 interface PipelineConfig { lookbackDays: number; maxPerSource: number }
 type DateRange = 'today' | '7d' | '30d'
 type SortBy   = 'ranking' | 'recency'
-type Tab      = 'feed' | 'daily' | 'news' | 'weekly'
+type Tab      = 'feed' | 'library' | 'daily' | 'news' | 'weekly'
+
+interface KnowledgeNotebookFilter {
+  id: string
+  title: string
+}
+
+interface KnowledgeFeedItem {
+  id: string
+  notebook_id: string
+  notebook_title: string
+  title: string
+  source_type: 'url' | 'note'
+  source_url: string | null
+  summary: string | null
+  why_it_matters: string | null
+  topic_tags: string[]
+  processed_at: string | null
+  created_at: string | null
+  blend_score: number
+  topic_score: number
+  recency_score: number
+  detail_score: number
+  is_fresh: boolean
+}
+
+interface RelatedKnowledgeMatch {
+  notebookId: string
+  notebookTitle: string
+  knowledgeTitle: string
+  summary: string | null
+  whyItMatters: string | null
+  matchScore: number
+  sourceUrl: string | null
+}
 
 const DEFAULT_CONFIG: PipelineConfig = { lookbackDays: 7, maxPerSource: 5 }
 
@@ -164,7 +215,7 @@ function FeedInfoTooltip() {
           <p><strong className="text-zinc-700 dark:text-zinc-300">AI News:</strong> Live headlines directly from 6 curated sources (The Decoder, TechCrunch, VentureBeat, MIT Tech Review, Import AI, Last Week in AI) — no pipeline needed.</p>
           <p><strong className="text-zinc-700 dark:text-zinc-300">Daily Digest:</strong> One story-like morning brief generated overnight from your strongest ranked articles, with optional email delivery.</p>
           <p><strong className="text-zinc-700 dark:text-zinc-300">Weekly Digest:</strong> A narrative briefing generated from your top articles of the week using your configured model provider.</p>
-          <p><strong className="text-zinc-700 dark:text-zinc-300">Pro actions:</strong> Get Latest Feed, Weekly Digest Regenerate, Create, Ideas, Outline, and Voice analysis. Free preview stays read-only until you unlock access.</p>
+          <p><strong className="text-zinc-700 dark:text-zinc-300">Premium actions:</strong> Get Latest Feed, Weekly Digest Regenerate, Create, Ideas, Outline, and Voice analysis. Admin-free use requires both subscription entitlement and a configured model API key.</p>
           <p className="text-amber-700 dark:text-amber-400 font-medium">⚠ If you see no enrichment (Why it matters / Takeaways), run this SQL in Supabase:<br/><code className="font-mono text-[10px]">ALTER TABLE articles ADD COLUMN IF NOT EXISTS why_it_matters TEXT;<br/>ALTER TABLE articles ADD COLUMN IF NOT EXISTS key_takeaways TEXT[];<br/>ALTER TABLE articles ADD COLUMN IF NOT EXISTS og_image_url TEXT;</code></p>
           <button onClick={() => setOpen(false)} className="text-violet-600 dark:text-violet-400 font-medium hover:underline">Close</button>
         </div>
@@ -223,7 +274,7 @@ function PipelineConfigPanel({ config, onChange, onClose }: {
 
 // ── ArticleCard ───────────────────────────────────────────────────────────────
 
-function ArticleCard({ item, reaction, onReact, selected, onSelect, isFresh }: {
+function ArticleCard({ item, reaction, onReact, selected, onSelect, isFresh, relatedKnowledge = [] }: {
   item: FeedItem
   reaction?: 'like' | 'dislike'
   onReact: (id: string, r: 'like' | 'dislike') => void
@@ -231,6 +282,7 @@ function ArticleCard({ item, reaction, onReact, selected, onSelect, isFresh }: {
   onSelect: (id: string) => void
   isFresh?: boolean
   isEmerging?: boolean
+  relatedKnowledge?: RelatedKnowledgeMatch[]
 }) {
   const [expanded, setExpanded] = useState(false)
   const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
@@ -243,6 +295,12 @@ function ArticleCard({ item, reaction, onReact, selected, onSelect, isFresh }: {
   const pubDate   = formatPubDate(article.published_at)
   const gradient  = topicGradient(tags)
   const priority  = priorityLabel(item.blend_score)
+  const scorePct = Math.max(0, Math.min(100, Math.round(item.blend_score * 100)))
+  const surfacedReasons = [
+    isFresh ? 'Fresh in your current window' : null,
+    tags.length > 0 ? `Matched topics: ${tags.slice(0, 2).map(tag => TAG_LABELS[tag] ?? tag).join(', ')}` : null,
+    item.blend_score >= 0.6 ? 'High relevance score' : item.blend_score >= 0.4 ? 'Solid relevance score' : 'Exploratory signal',
+  ].filter(Boolean) as string[]
 
   return (
     <div className={`bg-white dark:bg-zinc-900 rounded-2xl border overflow-hidden hover:shadow-md transition-all flex flex-col group ${
@@ -299,17 +357,33 @@ function ArticleCard({ item, reaction, onReact, selected, onSelect, isFresh }: {
                 <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
                   {why ? 'Why this matters' : 'Key takeaways'}{takeaways.length > 0 ? ` · ${takeaways.length} takeaways` : ''}
                 </p>
+                <p className="text-[11px] text-zinc-400 mt-1">Why this surfaced: {surfacedReasons[0]} · score {scorePct}/100</p>
               </div>
               <span className="text-xs text-violet-600 dark:text-violet-400 font-medium">{expanded ? 'Hide' : 'Open'}</span>
             </button>
             {expanded && (
               <div className="mt-3 space-y-3">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Ranking breakdown</p>
+                  <div className="h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
+                    <div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-blue-500" style={{ width: `${scorePct}%` }} />
+                  </div>
+                  <p className="mt-1 text-[11px] text-zinc-400">Blend score combines recency, topic match, source tier, and your learned preference signals.</p>
+                </div>
                 {why && (
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400 mb-1">Why this matters</p>
                     <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed">{why}</p>
                   </div>
                 )}
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Why this surfaced</p>
+                  <ul className="space-y-1">
+                    {surfacedReasons.map((reason, i) => (
+                      <li key={i} className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed">• {reason}</li>
+                    ))}
+                  </ul>
+                </div>
                 {takeaways.length > 0 && (
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Key takeaways</p>
@@ -330,6 +404,43 @@ function ArticleCard({ item, reaction, onReact, selected, onSelect, isFresh }: {
             )}
           </div>
         ) : null}
+
+        {relatedKnowledge.length > 0 && (
+          <div className="rounded-xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50 dark:bg-emerald-950/20 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">Backed by your library</p>
+                <p className="text-xs text-zinc-700 dark:text-zinc-300 mt-1">
+                  {relatedKnowledge[0].knowledgeTitle} · {relatedKnowledge[0].notebookTitle}
+                </p>
+                {relatedKnowledge[0].whyItMatters && (
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1 line-clamp-2">{relatedKnowledge[0].whyItMatters}</p>
+                )}
+              </div>
+              <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">{Math.round(relatedKnowledge[0].matchScore * 100)}%</span>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <a
+                href={`/knowledge/${relatedKnowledge[0].notebookId}?q=${encodeURIComponent(`What does my notebook say that helps interpret this article: ${article.title}?`)}&includeFeed=1`}
+                className="text-xs font-medium text-emerald-700 dark:text-emerald-400 hover:underline"
+              >
+                Ask notebook
+              </a>
+              <a
+                href={`/create?source=notebook&notebook_id=${relatedKnowledge[0].notebookId}`}
+                className="text-xs font-medium text-violet-600 dark:text-violet-400 hover:underline"
+              >
+                Use notebook in Create
+              </a>
+              <a
+                href={`/knowledge/${relatedKnowledge[0].notebookId}`}
+                className="text-xs font-medium text-zinc-500 dark:text-zinc-400 hover:underline"
+              >
+                Open notebook
+              </a>
+            </div>
+          </div>
+        )}
 
         {/* Footer */}
         <div className="mt-auto pt-1 flex items-center justify-between gap-2">
@@ -432,7 +543,49 @@ function NewsCard({ item }: { item: NewsItem }) {
   )
 }
 
-function FeedSection({ title, subtitle, items, reactions, onReact, selectedForCreate, onSelect, freshArticleIds }: {
+function ProvenancePanel({
+  label,
+  mode,
+  provider,
+  model,
+  sourceArticles,
+}: {
+  label: string
+  mode?: string | null
+  provider?: string | null
+  model?: string | null
+  sourceArticles?: SourceArticleMeta[]
+}) {
+  const articles = sourceArticles ?? []
+  return (
+    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-5">
+      <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">Why you can trust this</p>
+      <div className="space-y-3 text-xs text-zinc-500 dark:text-zinc-400">
+        <p><strong className="text-zinc-700 dark:text-zinc-300">Mode:</strong> {mode ?? label}</p>
+        <p><strong className="text-zinc-700 dark:text-zinc-300">Model:</strong> {provider ? `${provider}${model ? ` · ${model}` : ''}` : 'Not disclosed in this response'}</p>
+        <p><strong className="text-zinc-700 dark:text-zinc-300">Source basis:</strong> built from your ranked feed articles, not generic browsing.</p>
+      </div>
+      {articles.length > 0 && (
+        <div className="mt-4">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-400 mb-2">Top source articles used</p>
+          <div className="space-y-2">
+            {articles.map((article, idx) => (
+              <a key={`${article.url}-${idx}`} href={article.url} target="_blank" rel="noopener noreferrer"
+                className="block rounded-xl border border-zinc-100 dark:border-zinc-800 px-3 py-2 hover:border-violet-300 dark:hover:border-violet-700 transition-colors">
+                <p className="text-xs font-medium text-zinc-800 dark:text-zinc-200 line-clamp-2">{article.title}</p>
+                <p className="mt-1 text-[11px] text-zinc-400">
+                  {article.topic_tags.slice(0, 2).map(tag => TAG_LABELS[tag] ?? tag).join(' · ') || getDomain(article.url)}
+                </p>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function FeedSection({ title, subtitle, items, reactions, onReact, selectedForCreate, onSelect, freshArticleIds, relatedKnowledgeMap }: {
   title: string
   subtitle: string
   items: FeedItem[]
@@ -441,6 +594,7 @@ function FeedSection({ title, subtitle, items, reactions, onReact, selectedForCr
   selectedForCreate: Set<string>
   onSelect: (id: string) => void
   freshArticleIds: Set<string>
+  relatedKnowledgeMap?: Record<string, RelatedKnowledgeMatch[]>
 }) {
   if (items.length === 0) return null
   return (
@@ -464,6 +618,7 @@ function FeedSection({ title, subtitle, items, reactions, onReact, selectedForCr
               selected={article ? selectedForCreate.has(article.id) : false}
               onSelect={onSelect}
               isFresh={article ? freshArticleIds.has(article.id) : false}
+              relatedKnowledge={article ? relatedKnowledgeMap?.[article.id] ?? [] : []}
             />
           )
         })}
@@ -475,10 +630,11 @@ function FeedSection({ title, subtitle, items, reactions, onReact, selectedForCr
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function FeedPage() {
-  const { user } = useAuthSession()
+  const { session, user } = useAuthSession()
   const userId = user?.id ?? process.env.NEXT_PUBLIC_USER_ID!
   const [plan, setPlan] = useState<'free' | 'pro'>('free')
-  const [hasModelAccess, setHasModelAccess] = useState(false)
+  const [canUsePaidFeatures, setCanUsePaidFeatures] = useState(false)
+  const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null)
   const [sourceCount, setSourceCount] = useState<number | null>(null)
   const [seedingSources, setSeedingSources] = useState(false)
   const [seededSources, setSeededSources] = useState(false)
@@ -526,6 +682,13 @@ export default function FeedPage() {
   const [newsFetchedAt, setNewsFetchedAt] = useState<string | null>(null)
   const [newsFilter, setNewsFilter] = useState<string>('all')
 
+  // Knowledge feed tab
+  const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeFeedItem[]>([])
+  const [knowledgeLoading, setKnowledgeLoading] = useState(false)
+  const [knowledgeError, setKnowledgeError] = useState<string | null>(null)
+  const [knowledgeNotebooks, setKnowledgeNotebooks] = useState<KnowledgeNotebookFilter[]>([])
+  const [knowledgeNotebookFilter, setKnowledgeNotebookFilter] = useState<string>('all')
+
   // Weekly digest tab
   const [weeklyItems, setWeeklyItems] = useState<WeeklyItem[]>([])
   const [weeklyLoading, setWeeklyLoading] = useState(false)
@@ -542,6 +705,7 @@ export default function FeedPage() {
   const [dailyDigestLoading, setDailyDigestLoading] = useState(false)
   const [dailyDigestError, setDailyDigestError] = useState<string | null>(null)
   const [dailyDigestFetched, setDailyDigestFetched] = useState(false)
+  const [dailyDigestProvenance, setDailyDigestProvenance] = useState<DigestProvenance | null>(null)
 
   const pollRef           = useRef<ReturnType<typeof setInterval> | null>(null)
   const elapsedRef        = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -553,7 +717,7 @@ export default function FeedPage() {
     const params = new URLSearchParams(window.location.search)
     const tab = params.get('tab')
     const view = params.get('view')
-    if (tab === 'feed' || tab === 'daily' || tab === 'news' || tab === 'weekly') setActiveTab(tab)
+    if (tab === 'feed' || tab === 'library' || tab === 'daily' || tab === 'news' || tab === 'weekly') setActiveTab(tab)
     if (view === 'narrative' || view === 'list') setWeeklyView(view)
 
     try {
@@ -582,10 +746,26 @@ export default function FeedPage() {
         const json = await response.json()
         if (!response.ok) throw new Error(json.error ?? 'Could not load profile')
         setPlan(json.plan === 'pro' ? 'pro' : 'free')
-        setHasModelAccess(Boolean(json.hasModelAccess))
+        setCanUsePaidFeatures(Boolean(json.canUsePaidFeatures))
       })
-      .catch(() => { setPlan('free'); setHasModelAccess(false) })
+      .catch(() => { setPlan('free'); setCanUsePaidFeatures(false) })
   }, [userId])
+
+  useEffect(() => {
+    if (!session?.access_token || !user?.id) {
+      setSetupStatus(null)
+      return
+    }
+    fetch(`/api/data/setup-status?userId=${encodeURIComponent(user.id)}`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then(async response => {
+        const json = await response.json()
+        if (!response.ok) throw new Error(json.error ?? 'Could not load setup status')
+        setSetupStatus(json)
+      })
+      .catch(() => setSetupStatus(null))
+  }, [session?.access_token, user?.id])
 
   function saveConfig(c: PipelineConfig) {
     setPipelineConfig(c)
@@ -653,22 +833,28 @@ export default function FeedPage() {
   }, [userId])
 
   const fetchSourceCount = useCallback(async () => {
+    if (!session?.access_token || !user?.id) {
+      setSourceCount(0)
+      return
+    }
     try {
-      const res = await fetch(`/api/data/sources?userId=${userId}`)
+      const res = await fetch(`/api/data/sources?userId=${userId}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
       const json = await res.json()
       setSourceCount(Array.isArray(json.sources) ? json.sources.length : 0)
     } catch {
       setSourceCount(0)
     }
-  }, [userId])
+  }, [session?.access_token, user?.id, userId])
 
   const seedStarterSources = useCallback(async () => {
-    if (!user?.id) return
+    if (!session?.access_token || !user?.id) return
     setSeedingSources(true)
     try {
       const res = await fetch('/api/sources/seed', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ userId: user.id }),
       })
       const json = await res.json()
@@ -682,7 +868,7 @@ export default function FeedPage() {
       setTriggerError(String(e))
     }
     setSeedingSources(false)
-  }, [user?.id, fetchSourceCount])
+  }, [session?.access_token, user?.id, fetchSourceCount])
 
   const fetchNews = useCallback(async () => {
     setNewsLoading(true)
@@ -694,6 +880,30 @@ export default function FeedPage() {
     } catch { setNewsItems([]) }
     setNewsLoading(false)
   }, [])
+
+  const fetchKnowledgeFeed = useCallback(async () => {
+    if (!session?.access_token || !user?.id) {
+      setKnowledgeItems([])
+      setKnowledgeNotebooks([])
+      return
+    }
+    setKnowledgeLoading(true)
+    setKnowledgeError(null)
+    try {
+      const suffix = knowledgeNotebookFilter !== 'all' ? `&notebookId=${encodeURIComponent(knowledgeNotebookFilter)}` : ''
+      const res = await fetch(`/api/data/knowledge-feed?userId=${encodeURIComponent(user.id)}${suffix}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Could not load knowledge feed')
+      setKnowledgeItems(json.items ?? [])
+      setKnowledgeNotebooks(json.notebooks ?? [])
+    } catch (e) {
+      setKnowledgeError(e instanceof Error ? e.message : String(e))
+      setKnowledgeItems([])
+    }
+    setKnowledgeLoading(false)
+  }, [session?.access_token, user?.id, knowledgeNotebookFilter])
 
   const fetchWeekly = useCallback(async () => {
     setWeeklyLoading(true)
@@ -711,6 +921,7 @@ export default function FeedPage() {
     if (regenerate) setNarrative(null)
     try {
       const headers: Record<string, string> = {}
+      if (regenerate && session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
       if (regenerate && token) headers['x-admin-token'] = token
       const res = await fetch(`/api/data/narrative?userId=${userId}&days=7`, {
         method: regenerate ? 'POST' : 'GET',
@@ -723,13 +934,17 @@ export default function FeedPage() {
           cached: Boolean(json.cached),
           generatedAt: json.generatedAt ?? null,
           articleCount: Number(json.articleCount ?? 0),
+          sourceArticles: Array.isArray(json.provenance?.sourceArticles) ? json.provenance.sourceArticles : [],
+          modelProvider: json.provenance?.modelProvider ?? null,
+          modelName: json.provenance?.modelName ?? null,
+          generationMode: json.provenance?.generationMode ?? null,
         })
       } else {
         setNarrativeError(json.error ?? 'No articles found for the last 7 days')
       }
     } catch (e) { setNarrativeError(String(e)) }
     setNarrativeLoading(false)
-  }, [userId])
+  }, [session?.access_token, userId])
 
   const fetchDailyDigest = useCallback(async () => {
     setDailyDigestLoading(true)
@@ -747,6 +962,7 @@ export default function FeedPage() {
       setDailyDigestRecent(digestJson.recent ?? [])
       setDailyDigestArchive(archiveJson.dailyArchive ?? [])
       setWeeklyArchive(archiveJson.weeklyArchive ?? [])
+      setDailyDigestProvenance(digestJson.provenance ?? null)
     } catch (e) {
       setDailyDigestError(String(e))
     }
@@ -759,6 +975,7 @@ export default function FeedPage() {
     setDailyDigestError(null)
     try {
       const headers: Record<string, string> = {}
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
       if (token) headers['x-admin-token'] = token
       const res = await fetch(`/api/data/daily-digest?userId=${userId}`, {
         method: 'POST',
@@ -769,12 +986,13 @@ export default function FeedPage() {
       setDailyDigest((json.current?.narrative ?? null) as DailyDigestData | null)
       setDailyDigestMeta(json.current ?? null)
       setDailyDigestFetched(true)
+      setDailyDigestProvenance(json.provenance ?? null)
       await fetchDailyDigest()
     } catch (e) {
       setDailyDigestError(String(e))
       setDailyDigestLoading(false)
     }
-  }, [userId, fetchDailyDigest])
+  }, [session?.access_token, userId, fetchDailyDigest])
 
   useEffect(() => {
     setDailyDigest(null)
@@ -784,10 +1002,11 @@ export default function FeedPage() {
     setWeeklyArchive([])
     setDailyDigestError(null)
     setDailyDigestFetched(false)
+    setDailyDigestProvenance(null)
   }, [userId])
 
   const promptForCostlyAction = (action: 'feed' | 'narrative' | 'daily') => {
-    if (hasModelAccess) {
+    if (canUsePaidFeatures) {
       setPendingPaidAction(action)
       setShowPaidConfirm(true)
     } else {
@@ -830,11 +1049,13 @@ export default function FeedPage() {
   useEffect(() => { fetchFeed(dateRange) }, [dateRange, fetchFeed])
 
   useEffect(() => {
+    if (user?.id && knowledgeItems.length === 0) fetchKnowledgeFeed()
+    if (activeTab === 'library' && user?.id) fetchKnowledgeFeed()
     if (activeTab === 'news' && newsItems.length === 0) fetchNews()
     if (activeTab === 'daily' && !dailyDigestFetched && !dailyDigestLoading) fetchDailyDigest()
     if (activeTab === 'weekly' && weeklyItems.length === 0) fetchWeekly()
     if (activeTab === 'weekly' && weeklyView === 'narrative' && !narrative && !narrativeLoading) fetchNarrative()
-  }, [activeTab, weeklyView, newsItems.length, weeklyItems.length, dailyDigestFetched, dailyDigestLoading, fetchNews, fetchWeekly, fetchNarrative, fetchDailyDigest])
+  }, [activeTab, weeklyView, user?.id, knowledgeItems.length, newsItems.length, weeklyItems.length, dailyDigestFetched, dailyDigestLoading, fetchKnowledgeFeed, fetchNews, fetchWeekly, fetchNarrative, fetchDailyDigest])
 
   // ── pipeline trigger ──────────────────────────────────────────────────────
 
@@ -905,6 +1126,7 @@ export default function FeedPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
           ...(token ? { 'x-admin-token': token } : {}),
         },
         body: JSON.stringify({ userId, lookbackDays: pipelineConfig.lookbackDays, maxPerSource: pipelineConfig.maxPerSource }),
@@ -1066,6 +1288,53 @@ export default function FeedPage() {
   const newsSources = [...new Set(newsItems.map(n => n.source))]
   const filteredNews = newsFilter === 'all' ? newsItems : newsItems.filter(n => n.source === newsFilter)
 
+  const knowledgeFresh = knowledgeItems.filter(item => item.is_fresh || item.recency_score >= 0.85).slice(0, 6)
+  const knowledgeTopPicks = knowledgeItems.filter(item => item.blend_score >= 0.72 && !knowledgeFresh.some(f => f.id === item.id)).slice(0, 8)
+  const knowledgeExplore = knowledgeItems.filter(item => !knowledgeFresh.some(f => f.id === item.id) && !knowledgeTopPicks.some(f => f.id === item.id))
+
+  const relatedKnowledgeMap: Record<string, RelatedKnowledgeMatch[]> = {}
+  for (const item of filteredArticles) {
+    const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
+    if (!article) continue
+    const articleTags = Array.isArray(article.topic_tags) ? article.topic_tags : []
+    if (articleTags.length === 0) continue
+    const matches = knowledgeItems
+      .map(knowledge => {
+        const tags = Array.isArray(knowledge.topic_tags) ? knowledge.topic_tags : []
+        const overlap = tags.filter(tag => articleTags.includes(tag)).length
+        if (overlap === 0) return null
+        const overlapScore = overlap / Math.max(articleTags.length, 1)
+        const matchScore = Math.min(1, (overlapScore * 0.65) + (knowledge.blend_score * 0.35))
+        return {
+          notebookId: knowledge.notebook_id,
+          notebookTitle: knowledge.notebook_title,
+          knowledgeTitle: knowledge.title,
+          summary: knowledge.summary,
+          whyItMatters: knowledge.why_it_matters,
+          matchScore,
+          sourceUrl: knowledge.source_url,
+        } satisfies RelatedKnowledgeMatch
+      })
+      .filter(Boolean)
+      .sort((a, b) => (b?.matchScore ?? 0) - (a?.matchScore ?? 0))
+      .slice(0, 2) as RelatedKnowledgeMatch[]
+    if (matches.length > 0) relatedKnowledgeMap[article.id] = matches
+  }
+
+  const personalSignalSection = filteredArticles
+    .filter(item => {
+      const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
+      return article ? Boolean(relatedKnowledgeMap[article.id]?.length) : false
+    })
+    .sort((a, b) => {
+      const aArticle = Array.isArray(a.articles) ? a.articles[0] : a.articles
+      const bArticle = Array.isArray(b.articles) ? b.articles[0] : b.articles
+      const aBoost = aArticle ? (relatedKnowledgeMap[aArticle.id]?.[0]?.matchScore ?? 0) : 0
+      const bBoost = bArticle ? (relatedKnowledgeMap[bArticle.id]?.[0]?.matchScore ?? 0) : 0
+      return (bBoost + b.blend_score) - (aBoost + a.blend_score)
+    })
+    .slice(0, 6)
+
   const selectedCount = selectedForCreate.size
   const isNonDefaultConfig = pipelineConfig.lookbackDays !== DEFAULT_CONFIG.lookbackDays || pipelineConfig.maxPerSource !== DEFAULT_CONFIG.maxPerSource
 
@@ -1107,7 +1376,9 @@ export default function FeedPage() {
       {showPaidConfirm && (
         <ActionConfirmModal
           title="Confirm API usage"
-          description="This will call external APIs and spend your Pro plan allowance. No admin credentials are needed."
+          description={pendingPaidAction === 'feed'
+            ? 'This will run a paid background refresh for your account. No admin credentials are needed.'
+            : 'This will call your configured provider and use your stored account API key. No admin credentials are needed.'}
           confirmLabel="Proceed"
           action={
             pendingPaidAction === 'narrative'
@@ -1169,13 +1440,19 @@ export default function FeedPage() {
               ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />Starting…</>
               : pipelineStarted
               ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />Running {fmtElapsed(elapsed)}</>
-              : <>{hasModelAccess ? '⚡ Get Latest Feed' : '🔒 Subscription or API key required'}</>}
+              : <>{canUsePaidFeatures ? '⚡ Get Latest Feed' : '🔒 Subscription + API key required'}</>}
           </button>
         </div>
       </div>
 
       {/* Pipeline config */}
       {showConfig && <PipelineConfigPanel config={pipelineConfig} onChange={saveConfig} onClose={() => setShowConfig(false)} />}
+
+      {setupStatus && !setupStatus.checklistComplete && (
+        <div className="mb-5">
+          <OnboardingChecklist status={setupStatus} compact />
+        </div>
+      )}
 
       {/* Pipeline running banner with progress bar */}
       {pipelineStarted && (
@@ -1226,6 +1503,7 @@ export default function FeedPage() {
       <div className="flex gap-5 border-b border-zinc-200 dark:border-zinc-800 mb-5">
         {([
           { id: 'feed'   as Tab, label: `Your Feed${articles.length ? ` (${articles.length})` : ''}` },
+          { id: 'library' as Tab, label: `📚 Knowledge Feed${knowledgeItems.length ? ` (${knowledgeItems.length})` : ''}` },
           { id: 'daily'  as Tab, label: '✦ Daily Digest' },
           { id: 'news'   as Tab, label: '🌐 AI News Worldover' },
           { id: 'weekly' as Tab, label: '📰 Weekly Digest' },
@@ -1367,8 +1645,22 @@ export default function FeedPage() {
                 {selectedTopic !== 'all' || selectedDomain !== 'all' ? ' (filtered)' : ''}
                 {' '}· {sortBy === 'ranking' ? 'by relevance' : 'by date'}
                 {freshCount > 0 && ` · ✦ ${freshCount} fresh`}
+                {personalSignalSection.length > 0 && ` · 📚 ${personalSignalSection.length} linked to your library`}
                 {' '}· 📌 pin to Create
               </p>
+              {personalSignalSection.length > 0 && (
+                <FeedSection
+                  title="Personal signal layer"
+                  subtitle="Articles strengthened by your private notebook knowledge, so public news and your stored thinking work together."
+                  items={personalSignalSection}
+                  reactions={reactions}
+                  onReact={handleReact}
+                  selectedForCreate={selectedForCreate}
+                  onSelect={handleSelect}
+                  freshArticleIds={freshArticleIds}
+                  relatedKnowledgeMap={relatedKnowledgeMap}
+                />
+              )}
               {emergingNow.length > 0 && (
                 <FeedSection
                   title="Emerging now"
@@ -1379,6 +1671,7 @@ export default function FeedPage() {
                   selectedForCreate={selectedForCreate}
                   onSelect={handleSelect}
                   freshArticleIds={freshArticleIds}
+                  relatedKnowledgeMap={relatedKnowledgeMap}
                 />
               )}
               <FeedSection
@@ -1390,6 +1683,7 @@ export default function FeedPage() {
                 selectedForCreate={selectedForCreate}
                 onSelect={handleSelect}
                 freshArticleIds={freshArticleIds}
+                relatedKnowledgeMap={relatedKnowledgeMap}
               />
               <FeedSection
                 title="Top picks"
@@ -1400,6 +1694,7 @@ export default function FeedPage() {
                 selectedForCreate={selectedForCreate}
                 onSelect={handleSelect}
                 freshArticleIds={freshArticleIds}
+                relatedKnowledgeMap={relatedKnowledgeMap}
               />
               <FeedSection
                 title="Good reads"
@@ -1410,6 +1705,7 @@ export default function FeedPage() {
                 selectedForCreate={selectedForCreate}
                 onSelect={handleSelect}
                 freshArticleIds={freshArticleIds}
+                relatedKnowledgeMap={relatedKnowledgeMap}
               />
               <FeedSection
                 title="Explore"
@@ -1420,8 +1716,172 @@ export default function FeedPage() {
                 selectedForCreate={selectedForCreate}
                 onSelect={handleSelect}
                 freshArticleIds={freshArticleIds}
+                relatedKnowledgeMap={relatedKnowledgeMap}
               />
             </>
+          )}
+        </div>
+      )}
+
+      {/* ══ KNOWLEDGE FEED TAB ═════════════════════════════════════════════ */}
+      {activeTab === 'library' && (
+        <div>
+          <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
+            <div>
+              <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Ranked from your saved knowledge</p>
+              <p className="text-xs text-zinc-400 mt-0.5">Personal links and notes scored by topic affinity, recency, and content richness.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <a
+                href="/knowledge"
+                className="text-xs text-violet-600 dark:text-violet-400 px-3 py-1.5 bg-violet-50 dark:bg-violet-950/30 rounded-lg border border-violet-200 dark:border-violet-800 hover:bg-violet-100 transition-colors font-medium"
+              >
+                Manage notebooks
+              </a>
+              <button
+                onClick={fetchKnowledgeFeed}
+                disabled={knowledgeLoading || !user?.id}
+                className="text-xs text-violet-600 dark:text-violet-400 px-3 py-1.5 bg-white dark:bg-zinc-900 rounded-lg border border-violet-200 dark:border-violet-800 hover:bg-violet-50 dark:hover:bg-violet-950/20 transition-colors font-medium disabled:opacity-50"
+              >
+                {knowledgeLoading ? 'Refreshing…' : '↺ Refresh'}
+              </button>
+            </div>
+          </div>
+
+          {user?.id && knowledgeNotebooks.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 mb-5">
+              <span className="text-xs text-zinc-400 font-medium">Notebook</span>
+              <button
+                onClick={() => setKnowledgeNotebookFilter('all')}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                  knowledgeNotebookFilter === 'all'
+                    ? 'bg-violet-600 text-white border-violet-600'
+                    : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-violet-300'
+                }`}
+              >
+                All ({knowledgeItems.length})
+              </button>
+              {knowledgeNotebooks.map(notebook => (
+                <button
+                  key={notebook.id}
+                  onClick={() => setKnowledgeNotebookFilter(notebook.id)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                    knowledgeNotebookFilter === notebook.id
+                      ? 'bg-violet-600 text-white border-violet-600'
+                      : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-violet-300'
+                  }`}
+                >
+                  {notebook.title}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {!user?.id ? (
+            <div className="text-center py-16 text-zinc-400">
+              <div className="text-5xl mb-4">📚</div>
+              <p className="font-medium text-zinc-600 dark:text-zinc-400">Sign in to unlock your knowledge feed</p>
+              <p className="text-sm mt-2">This view ranks your saved links and notes so they can become reusable source material for Ideas, Outline, and Create.</p>
+            </div>
+          ) : knowledgeLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {[0, 1, 2, 3, 4, 5].map(i => <SkeletonCard key={i} />)}
+            </div>
+          ) : knowledgeError ? (
+            <div className="text-center py-16 text-zinc-400">
+              <div className="text-5xl mb-4">⚠️</div>
+              <p className="font-medium text-zinc-600 dark:text-zinc-400">{knowledgeError}</p>
+              <p className="text-sm mt-2">The knowledge feed is computed from notebook items that have already been processed into Signal notes.</p>
+            </div>
+          ) : knowledgeItems.length === 0 ? (
+            <div className="text-center py-16 text-zinc-400">
+              <div className="text-5xl mb-4">📝</div>
+              <p className="font-medium text-zinc-600 dark:text-zinc-400">No notebook knowledge yet</p>
+              <p className="text-sm mt-2">Save a few links or notes in Knowledge Base first. Signal will extract summaries, why-it-matters notes, and topic tags and then rank them here.</p>
+              <a href="/knowledge" className="inline-flex mt-4 px-4 py-2 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700">Open Knowledge Base</a>
+            </div>
+          ) : (
+            <div className="space-y-8">
+              {([
+                {
+                  title: 'Fresh from your library',
+                  subtitle: 'Recently processed knowledge with strong near-term relevance.',
+                  items: knowledgeFresh,
+                },
+                {
+                  title: 'Top knowledge picks',
+                  subtitle: 'Your highest-confidence reusable context for content generation.',
+                  items: knowledgeTopPicks,
+                },
+                {
+                  title: 'Explore more',
+                  subtitle: 'Long-tail saved knowledge that may be useful for niche angles or future drafts.',
+                  items: knowledgeExplore,
+                },
+              ].filter(section => section.items.length > 0)).map(section => (
+                <div key={section.title}>
+                  <div className="mb-3">
+                    <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{section.title}</h3>
+                    <p className="text-xs text-zinc-400 mt-1">{section.subtitle}</p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {section.items.map(item => (
+                      <div key={item.id} className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-4 hover:border-zinc-200 dark:hover:border-zinc-700 transition-colors">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${priorityLabel(item.blend_score).cls}`}>{priorityLabel(item.blend_score).label}</span>
+                          {item.is_fresh && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-500 text-white">Fresh</span>}
+                        </div>
+                        <p className="text-[11px] uppercase tracking-wide text-zinc-400 mb-2">{item.notebook_title}</p>
+                        <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 leading-snug mb-2">{item.title}</p>
+                        {item.summary && (
+                          <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed mb-2 line-clamp-3">{item.summary}</p>
+                        )}
+                        {item.why_it_matters && (
+                          <div className="rounded-xl border border-violet-200 dark:border-violet-900/60 bg-violet-50 dark:bg-violet-950/20 p-3 mb-3">
+                            <p className="text-[11px] font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400 mb-1">Why this matters</p>
+                            <p className="text-xs text-zinc-700 dark:text-zinc-300 leading-relaxed line-clamp-4">{item.why_it_matters}</p>
+                          </div>
+                        )}
+                        {item.topic_tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mb-3">
+                            {item.topic_tags.slice(0, 4).map(tag => <TagPill key={`${item.id}-${tag}`} tag={tag} />)}
+                          </div>
+                        )}
+                        <div className="rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/30 p-3 mb-3">
+                          <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-500 mb-2">Why this surfaced</p>
+                          <div className="grid grid-cols-3 gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+                            <div>
+                              <p className="font-semibold text-zinc-700 dark:text-zinc-300">{Math.round(item.topic_score * 100)}</p>
+                              <p>topic fit</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-zinc-700 dark:text-zinc-300">{Math.round(item.recency_score * 100)}</p>
+                              <p>recency</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-zinc-700 dark:text-zinc-300">{Math.round(item.detail_score * 100)}</p>
+                              <p>richness</p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between gap-3 pt-1">
+                          <div className="text-[11px] text-zinc-400">
+                            {item.processed_at ? `Processed ${formatRelativeTime(item.processed_at)}` : item.created_at ? `Saved ${formatRelativeTime(item.created_at)}` : ''}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <a href={`/knowledge/${item.notebook_id}`} className="text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 underline">Notebook</a>
+                            <a href={`/create?source=notebook&notebook_id=${item.notebook_id}`} className="text-xs text-violet-600 dark:text-violet-400 font-medium hover:underline">Use in Create</a>
+                            {item.source_url && (
+                              <a href={item.source_url} target="_blank" rel="noreferrer" className="text-xs text-violet-600 dark:text-violet-400 font-medium hover:underline">Open source</a>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}
@@ -1445,7 +1905,7 @@ export default function FeedPage() {
               </button>
               <button onClick={handleDailyDigestRegenerate} disabled={dailyDigestLoading}
                 className="text-xs text-violet-600 dark:text-violet-400 px-3 py-1.5 bg-white dark:bg-zinc-900 rounded-lg border border-violet-200 dark:border-violet-800 hover:bg-violet-50 dark:hover:bg-violet-950/20 transition-colors font-medium disabled:opacity-50">
-                {dailyDigestLoading ? 'Writing…' : hasModelAccess ? '↺ Regenerate' : '🔒 Subscription or API key required'}
+                {dailyDigestLoading ? 'Writing…' : canUsePaidFeatures ? '↺ Regenerate' : '🔒 Subscription + API key required'}
               </button>
             </div>
           </div>
@@ -1478,6 +1938,13 @@ export default function FeedPage() {
                 </div>
               </div>
               <div className="space-y-5">
+                <ProvenancePanel
+                  label="Pipeline-generated daily digest"
+                  mode={dailyDigestProvenance?.generationMode}
+                  provider={dailyDigestProvenance?.modelProvider}
+                  model={dailyDigestProvenance?.modelName}
+                  sourceArticles={dailyDigestProvenance?.sourceArticles}
+                />
                 <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-5">
                   <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">Daily highlights</p>
                   <div className="space-y-3">
@@ -1628,7 +2095,7 @@ export default function FeedPage() {
               {weeklyView === 'narrative' && (
                 <button onClick={handleNarrativeRegenerate} disabled={narrativeLoading}
                   className="text-xs text-violet-600 dark:text-violet-400 px-3 py-1.5 bg-violet-50 dark:bg-violet-950/30 rounded-lg border border-violet-200 dark:border-violet-800 hover:bg-violet-100 transition-colors font-medium disabled:opacity-50">
-                  {narrativeLoading ? 'Writing briefing…' : hasModelAccess ? '↺ Regenerate' : '🔒 Subscription or API key required'}
+                  {narrativeLoading ? 'Writing briefing…' : canUsePaidFeatures ? '↺ Regenerate' : '🔒 Subscription + API key required'}
                 </button>
               )}
             </div>
@@ -1651,6 +2118,13 @@ export default function FeedPage() {
                 </div>
               ) : narrative ? (
                 <div className="space-y-6 max-w-2xl">
+                  <ProvenancePanel
+                    label="Weekly digest"
+                    mode={narrativeMeta?.generationMode}
+                    provider={narrativeMeta?.modelProvider}
+                    model={narrativeMeta?.modelName}
+                    sourceArticles={narrativeMeta?.sourceArticles}
+                  />
                   {/* Headline */}
                   <div className="border-l-4 border-violet-600 pl-4">
                     <p className="text-xs text-violet-600 dark:text-violet-400 font-semibold uppercase tracking-wide mb-1">The Week In One Sentence</p>

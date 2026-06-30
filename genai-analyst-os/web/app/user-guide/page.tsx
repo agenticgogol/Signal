@@ -25,6 +25,10 @@ export default function UserGuidePage() {
           <StepCard number={3} title="Find the signal" action="Daily Digest, AI News, or Weekly Digest" result="See the overnight story, live worldwide context, or the connected weekly narrative." />
           <StepCard number={4} title="Create your angle" action="📌 article → Ideas → Create" result="Turn evidence plus your POV bullets into a draft you control." />
         </div>
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <Callout title="What you pay for"><p>Signal subscription pays for the intelligence workflow, product layer, and personalized orchestration. Premium generation runs on the provider and API key you configure in Settings.</p></Callout>
+          <Callout title="What is free vs paid" tone="green"><p>Reading, browsing, and setup can be previewed. Costly actions like feed refresh, digest regeneration, ideas, outlines, voice analysis, and content generation require both an active subscription and a configured model API key.</p></Callout>
+        </div>
       </GuideSection>
 
       <GuideSection id="feed" eyebrow="Daily workspace" title="Your Feed: ranked intelligence, not an inbox" description="The feed combines freshness, source quality, topic preference, and article depth. It is the best place to decide what deserves your attention.">
@@ -34,6 +38,7 @@ export default function UserGuidePage() {
           <FeatureCard icon="⭐" title="Priority labels" value="Must Read → Explore">Scores help triage. They are comparative signals—not objective truth—so use topic filters and reactions to shape future ranking.</FeatureCard>
           <FeatureCard icon="📌" title="Pin for Create" value="Evidence handoff">Pin strong articles, then open Create. Likes teach preferences; pins select evidence for a specific piece.</FeatureCard>
         </div>
+        <Callout title="Why did this article surface?" tone="green"><p>Use the card-level Signal Notes and article context to understand recency, article depth, and why the item was ranked for you. The feed is intended to be explainable, not mysterious.</p></Callout>
       </GuideSection>
 
       <GuideSection id="news" eyebrow="External radar" title="AI News Worldover: immediate situational awareness" description="This view fetches current RSS headlines directly from six curated publications. It appears quickly because it does not wait for the enrichment pipeline or an LLM.">
@@ -120,9 +125,10 @@ export default function UserGuidePage() {
         </div>
         <div className="mt-6 grid gap-4 md:grid-cols-3">
           <StepCard number={1} title="Sign in" action="Create or log into your account" result="Only signed-in accounts can attach subscription state and private model credentials." />
-          <StepCard number={2} title="Subscribe" action="Use the account card or popup checkout" result="Paid accounts bypass the admin wall and use confirmation-only for costly actions." />
-          <StepCard number={3} title="Connect model" action="Settings → provider, model, API key" result="Signal runs paid generation against your account-level LLM configuration." />
+          <StepCard number={2} title="Subscribe" action="Activate paid access for the account" result="Subscribed accounts can manage their own provider, model, and API key without admin involvement." />
+          <StepCard number={3} title="Connect model" action="Settings → provider, model, API key" result="Signal runs premium generation against your account-level LLM configuration. Once the account is subscribed and a key is saved, costly actions stop asking for admin credentials." />
         </div>
+        <Callout title="Trust boundary" tone="amber"><p>Your provider key is encrypted before storage. Signal uses it only for workflows tied to your account and does not expose it in the browser.</p></Callout>
       </GuideSection>
 
       <GuideSection id="create" eyebrow="Click-by-click" title="Create: your POV is the differentiating ingredient" description="The POV field is currently optional, but Signal should not invent your conviction. The strongest results combine selected evidence with a specific author perspective.">
@@ -180,6 +186,7 @@ export default function UserGuidePage() {
         <div className="grid gap-4 md:grid-cols-2">
           <Callout title="Why did a larger lookback add nothing?">A lookback widens eligibility; it cannot create new source entries. Check RSS status, increase max per source, and confirm the publication actually posted in that period.</Callout>
           <Callout title="Why is AI News faster than Weekly Digest?">AI News is parallel RSS retrieval. Weekly Digest is a personalized synthesis call. Once generated, its weekly cache makes subsequent loads fast.</Callout>
+          <Callout title="Why does a digest say cached or generated?">Cached means Signal is reusing the latest saved personalized digest for speed and consistency. Generated means Signal just called your configured model again.</Callout>
           <Callout title="Why do some cards use color banners?">Not every RSS feed supplies artwork. Signal uses the feed image when available and a stable topic gradient otherwise.</Callout>
           <Callout title="Does Signal publish automatically?">No. Publishing is intentionally outside the autonomous pipeline. POV is optional in the current form, but strongly recommended before generating a draft.</Callout>
           <Callout title="Why can content generation take longer?">It is an eight-agent workflow, not one completion. Verification and evaluation can trigger up to three Writer → Verifier → Critic → Humanizer → Evaluator loops before audience simulation and final polish.</Callout>

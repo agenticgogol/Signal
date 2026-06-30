@@ -1,9 +1,14 @@
 import { createServiceClient } from '@/lib/supabase'
 import { NextRequest } from 'next/server'
+import { requireSignedInUser } from '@/lib/serverAuth'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
-  const userId = searchParams.get('userId') || process.env.NEXT_PUBLIC_USER_ID!
+  const userId = searchParams.get('userId') || ''
+  if (!userId) return Response.json({ error: 'userId is required' }, { status: 400 })
+
+  const signedIn = await requireSignedInUser(req, userId)
+  if (signedIn instanceof Response) return signedIn
 
   try {
     const db = createServiceClient()

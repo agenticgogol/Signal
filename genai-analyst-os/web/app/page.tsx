@@ -3,20 +3,20 @@ import Link from 'next/link'
 const VALUE_PROPS = [
   {
     icon: '🧠',
-    title: 'Know what matters — before everyone else',
-    body: 'Signal monitors 50+ curated sources: research papers, engineering blogs, product launches, and industry takes. Every article is scored, tagged, and ranked against your interests. You read the 5 that matter, not the 50 that exist, and start your day with a daily narrative digest if you want it in email.',
+    title: 'Personalized AI intelligence, not a generic news feed',
+    body: 'Signal tracks the AI sources you trust, enriches every useful article, and ranks the feed around your interests and reactions. You open the app already knowing what mattered, why it mattered, and what is still noise.',
     accent: 'from-violet-500 to-indigo-500',
   },
   {
     icon: '✍️',
-    title: 'From insight to publish-ready content in minutes',
-    body: 'Pick an article, pick a format — LinkedIn post, Substack essay, blog, YouTube script, or Twitter thread. An 8-agent workflow (Orchestrator, Writer, Verifier, Critic, Humanizer, Evaluator, Audience Sim, Final Polish) turns raw ideas into polished drafts with your voice and your chosen model stack.',
+    title: 'From ranked evidence to publish-ready drafts',
+    body: 'Pick an article, idea, or outline, choose the platform, and let the agent workflow draft, verify, critique, humanize, and polish the piece in your voice. You stay in control of the final edit and the final publish button.',
     accent: 'from-blue-500 to-cyan-500',
   },
   {
     icon: '📈',
-    title: 'Your feed gets smarter every day',
-    body: 'Signal learns from what you like, save, and create from. The more you use it, the more it resembles your actual taste. Topic boosts, reaction signals, and engagement patterns all feed back into ranking — no manual tuning needed.',
+    title: 'Bring your own model spend, keep product value separate',
+    body: 'Signal charges for the intelligence workflow and product layer. You choose your own provider, model, and API key for premium generation, so execution cost stays transparent and under your control.',
     accent: 'from-emerald-500 to-teal-500',
   },
 ]
@@ -44,6 +44,20 @@ const FORMATS = [
   { icon: '📝', label: 'Blog Post' },
   { icon: '🎥', label: 'YouTube Long' },
   { icon: '⚡', label: 'YouTube Short' },
+]
+
+const WHO_ITS_FOR = [
+  'AI creators and writers who need a daily point of view',
+  'Consultants and advisors tracking AI shifts for clients',
+  'Founder-operators who want signal, not feed overload',
+  'Internal AI teams that need a reusable intelligence workflow',
+]
+
+const WHY_PAY = [
+  'It replaces scattered RSS readers, AI news tabs, and copy-paste prompting.',
+  'It turns reading, ranking, synthesis, and drafting into one repeatable workflow.',
+  'It explains why an article surfaced, what model was used, and what was cached versus freshly generated.',
+  'It keeps model spend under your control with your own provider and API key.',
 ]
 
 export default function LandingPage() {
@@ -75,23 +89,31 @@ export default function LandingPage() {
         <div className="max-w-4xl mx-auto text-center relative">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-violet-950/60 border border-violet-800/60 text-violet-300 text-xs font-medium mb-8">
             <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
-            GenAI Intelligence Operating System
+            Personalized AI intelligence + writing operating system
           </div>
 
           <h1 className="text-5xl sm:text-6xl md:text-7xl font-black tracking-tight leading-[1.05] mb-6">
             <span className="bg-gradient-to-br from-white via-white to-zinc-400 bg-clip-text text-transparent">
-              Stop drowning
+              Your personalized
             </span>
             <br />
             <span className="bg-gradient-to-r from-violet-400 via-blue-400 to-cyan-400 bg-clip-text text-transparent">
-              in AI noise.
+              AI intelligence + writing OS
             </span>
           </h1>
 
           <p className="text-lg sm:text-xl text-zinc-400 max-w-2xl mx-auto leading-relaxed mb-10">
-            Signal watches the GenAI landscape daily, surfaces what actually matters to you,
-            and turns those insights into publish-ready content — in minutes.
+            Track the AI sources you trust, get daily and weekly narrative briefings, discover timely ideas,
+            and generate publish-ready drafts in your own voice — using your own model provider and API key.
           </p>
+
+          <div className="mb-10 flex flex-wrap items-center justify-center gap-2 text-xs font-semibold text-zinc-300">
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">Personalized source-based feed</span>
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">Daily + weekly briefings</span>
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">Topic ideas + outlines</span>
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">Multi-agent drafting in your voice</span>
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">Bring your own provider + key</span>
+          </div>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link
@@ -130,7 +152,7 @@ export default function LandingPage() {
               Built for the practitioners who shape what GenAI becomes
             </h2>
             <p className="text-zinc-400 text-lg max-w-2xl mx-auto">
-              Not a news aggregator. Not a generic writing tool. Signal is an intelligence OS — purpose-built for people building with and writing about agentic AI.
+              Not a news aggregator. Not a generic writing tool. Signal is the product layer between raw AI information and work you can actually act on or publish.
             </p>
           </div>
 
@@ -145,6 +167,36 @@ export default function LandingPage() {
                 <p className="text-sm text-zinc-400 leading-relaxed">{body}</p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="py-24 px-6 bg-zinc-900/40">
+        <div className="max-w-6xl mx-auto grid gap-6 lg:grid-cols-2">
+          <div className="rounded-3xl border border-white/5 bg-zinc-950 p-8">
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-400">Why Signal is worth paying for</p>
+            <h2 className="mt-3 text-3xl font-black text-white">You are paying for workflow leverage, not just model access</h2>
+            <div className="mt-6 space-y-3">
+              {WHY_PAY.map(item => (
+                <div key={item} className="flex gap-3 text-sm leading-6 text-zinc-300">
+                  <span className="mt-1 text-violet-400">✓</span>
+                  <span>{item}</span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-6 text-sm text-zinc-500">Signal subscription covers the product experience. Your own provider key covers premium model execution.</p>
+          </div>
+          <div className="rounded-3xl border border-white/5 bg-zinc-950 p-8">
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-400">Who it is for</p>
+            <h2 className="mt-3 text-3xl font-black text-white">Built for people who need an AI point of view every day</h2>
+            <div className="mt-6 space-y-3">
+              {WHO_ITS_FOR.map(item => (
+                <div key={item} className="flex gap-3 text-sm leading-6 text-zinc-300">
+                  <span className="mt-1 text-cyan-400">→</span>
+                  <span>{item}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>

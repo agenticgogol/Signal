@@ -8,7 +8,7 @@ import { useAuthSession } from '@/lib/useAuthSession'
 
 type Format = 'linkedin' | 'substack' | 'thread' | 'blog' | 'youtube_long' | 'youtube_short'
 type Step = 1 | 2 | 3 | 4 | 5
-type SourceMode = 'outline' | 'feed' | 'custom'
+type SourceMode = 'outline' | 'feed' | 'notebook' | 'custom'
 type AgentStatus = 'pending' | 'running' | 'complete' | 'error'
 
 interface AgentStep {
@@ -19,6 +19,23 @@ interface FeedArticle {
   id: string; title: string; url: string; blend_score: number; topic_tags?: string[]
 }
 
+interface NotebookOption {
+  id: string
+  title: string
+  description?: string | null
+}
+
+interface NotebookItemOption {
+  id: string
+  source_type: 'url' | 'note'
+  source_url: string | null
+  title: string
+  summary: string | null
+  why_it_matters: string | null
+  topic_tags: string[]
+  status: string
+}
+
 interface FrozenOutline {
   id: string; topic: string; format: string; created_at: string
   outline: { hook: string; angle: string; sections: { title: string }[] }
@@ -27,6 +44,11 @@ interface FrozenOutline {
 interface OutlineData {
   topic: string; format: string
   outline: { hook: string; angle: string; audience: string; sections: { title: string; points: string[] }[] }
+}
+
+interface ModelSettingsPayload {
+  provider: string
+  model: string
 }
 
 const FORMATS: { id: Format; label: string; icon: string; guidance: string }[] = [
@@ -91,7 +113,7 @@ function Stepper({ current }: { current: Step }) {
 
 function CreatePageInner() {
   const searchParams = useSearchParams()
-  const { user } = useAuthSession()
+  const { session, user } = useAuthSession()
   const [step, setStep] = useState<Step>(1)
   const userId = user?.id ?? process.env.NEXT_PUBLIC_USER_ID ?? ''
 
@@ -102,6 +124,10 @@ function CreatePageInner() {
   const [outlineData, setOutlineData] = useState<OutlineData | null>(null)
   const [feedArticles, setFeedArticles] = useState<FeedArticle[]>([])
   const [selectedArticleIds, setSelectedArticleIds] = useState<Set<string>>(new Set())
+  const [notebooks, setNotebooks] = useState<NotebookOption[]>([])
+  const [selectedNotebookId, setSelectedNotebookId] = useState('')
+  const [notebookItems, setNotebookItems] = useState<NotebookItemOption[]>([])
+  const [selectedNotebookItemIds, setSelectedNotebookItemIds] = useState<Set<string>>(new Set())
   const [customBriefInput, setCustomBriefInput] = useState('')
 
   // Step 2
@@ -131,7 +157,9 @@ function CreatePageInner() {
   const [pendingPaidGenerate, setPendingPaidGenerate] = useState(false)
   const [voiceActive, setVoiceActive] = useState(false)
   const [plan, setPlan] = useState<'free' | 'pro'>('free')
-  const [hasModelAccess, setHasModelAccess] = useState(false)
+  const [canUsePaidFeatures, setCanUsePaidFeatures] = useState(false)
+  const [modelProvider, setModelProvider] = useState('')
+  const [modelName, setModelName] = useState('')
 
   // ── Load frozen outlines on mount ──────────────────────────────────────────
   useEffect(() => {
@@ -154,10 +182,34 @@ function CreatePageInner() {
         const json = await response.json()
         if (!response.ok) throw new Error(json.error ?? 'Could not load profile')
         setPlan(json.plan === 'pro' ? 'pro' : 'free')
-        setHasModelAccess(Boolean(json.hasModelAccess))
+        setCanUsePaidFeatures(Boolean(json.canUsePaidFeatures))
       })
-      .catch(() => { setPlan('free'); setHasModelAccess(false) })
+      .catch(() => { setPlan('free'); setCanUsePaidFeatures(false) })
   }, [userId])
+
+  useEffect(() => {
+    if (!session?.access_token || !userId) return
+    fetch(`/api/data/llm-settings?userId=${userId}`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then(async response => {
+        const json = await response.json() as ModelSettingsPayload & { error?: string }
+        if (!response.ok) throw new Error(json.error ?? 'Could not load model settings')
+        setModelProvider(json.provider ?? '')
+        setModelName(json.model ?? '')
+      })
+      .catch(() => { setModelProvider(''); setModelName('') })
+  }, [session?.access_token, userId])
+
+  useEffect(() => {
+    if (!session?.access_token || !userId) return
+    fetch(`/api/data/knowledge-notebooks?userId=${encodeURIComponent(userId)}`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then(r => r.json())
+      .then(json => setNotebooks(json.notebooks ?? []))
+      .catch(() => setNotebooks([]))
+  }, [session?.access_token, userId])
 
   // ── Load feed articles when sourceMode = 'feed' ───────────────────────────
   useEffect(() => {
@@ -186,6 +238,20 @@ function CreatePageInner() {
       .catch(() => {})
   }, [sourceMode, userId])
 
+  useEffect(() => {
+    if (sourceMode !== 'notebook' || !session?.access_token || !userId || !selectedNotebookId) return
+    fetch(`/api/data/knowledge-notebook?userId=${encodeURIComponent(userId)}&notebookId=${encodeURIComponent(selectedNotebookId)}`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then(r => r.json())
+      .then(json => {
+        const nextItems: NotebookItemOption[] = (json.items ?? []).filter((item: NotebookItemOption) => item.status === 'ready')
+        setNotebookItems(nextItems)
+        setSelectedNotebookItemIds(new Set(nextItems.slice(0, 3).map(item => item.id)))
+      })
+      .catch(() => { setNotebookItems([]); setSelectedNotebookItemIds(new Set()) })
+  }, [sourceMode, session?.access_token, userId, selectedNotebookId])
+
   // ── Handle URL params ──────────────────────────────────────────────────────
   useEffect(() => {
     const oid = searchParams.get('outline_id')
@@ -207,6 +273,10 @@ function CreatePageInner() {
         }).catch(() => {})
     } else if (src === 'feed') {
       setSourceMode('feed')
+    } else if (src === 'notebook') {
+      setSourceMode('notebook')
+      const notebookId = searchParams.get('notebook_id')
+      if (notebookId) setSelectedNotebookId(notebookId)
     }
     if (fmtParam) setFormat(fmtParam)
   }, [searchParams])
@@ -249,6 +319,22 @@ function CreatePageInner() {
       parts.push(`Source articles:\n${selected.map(a => `- ${a.title} (${a.url})`).join('\n')}`)
     }
 
+    if (sourceMode === 'notebook' && selectedNotebookItemIds.size > 0) {
+      const selected = notebookItems.filter(item => selectedNotebookItemIds.has(item.id))
+      selected.forEach(item => {
+        let domain = ''
+        const url = item.source_url || `signal://knowledge/${item.id}`
+        try { domain = new URL(url).hostname.replace('www.', '') } catch { domain = 'signal-knowledge' }
+        sources.push({ title: item.title, url, domain })
+      })
+      parts.push(`Notebook context:\n${selected.map(item => {
+        const source = item.source_url || 'Private note'
+        const summary = item.summary ? `Summary: ${item.summary}` : ''
+        const why = item.why_it_matters ? `Why it matters: ${item.why_it_matters}` : ''
+        return `- ${item.title} (${source})\n${summary}\n${why}`.trim()
+      }).join('\n\n')}`)
+    }
+
     return { brief: parts.join('\n'), sources }
   }
 
@@ -262,6 +348,7 @@ function CreatePageInner() {
 
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
       if (token) headers['x-admin-token'] = token
 
       const response = await fetch('/api/generate', {
@@ -303,7 +390,7 @@ function CreatePageInner() {
   }
 
   const handleGenerateClick = () => {
-    if (hasModelAccess) {
+    if (canUsePaidFeatures) {
       setPendingPaidGenerate(true)
       setShowPaidConfirm(true)
     } else {
@@ -484,7 +571,7 @@ function CreatePageInner() {
       {showPaidConfirm && (
         <ActionConfirmModal
           title="Confirm API usage"
-          description="This will call external APIs and spend your Pro plan allowance. No admin credentials are needed."
+          description="This will call your configured provider and use your stored account API key. No admin credentials are needed."
           confirmLabel="Proceed"
           action="generate content"
           onConfirm={() => {
@@ -512,7 +599,10 @@ function CreatePageInner() {
           {voiceActive ? <a href="/voice" className="rounded-full border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/40 px-2.5 py-1 text-[11px] font-bold text-green-700 dark:text-green-300">🎙️ Your voice active</a> : <a href="/voice" className="rounded-full border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1 text-[11px] font-bold text-amber-700 dark:text-amber-300">Set up your voice →</a>}
         </div>
         <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">8-agent pipeline: write → verify claims → critique → humanize → evaluate → simulate audience → polish</p>
-        <p className="text-xs text-zinc-400 mt-1">Pro actions: content generation, voice fingerprinting, and premium export flows.</p>
+        <p className="text-xs text-zinc-400 mt-1">Premium actions require an active subscription plus a configured model API key.</p>
+        <div className="mt-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-xs text-zinc-500 dark:text-zinc-400">
+          <strong className="text-zinc-700 dark:text-zinc-300">Generation provenance:</strong> {canUsePaidFeatures ? `this workflow runs on ${modelProvider || 'your configured provider'}${modelName ? ` · ${modelName}` : ''}` : 'premium generation requires both subscription entitlement and a configured model API key'}. The draft is built only from the source context you select in this flow, then checked and revised by the agent stack. {voiceActive ? 'Your voice fingerprint will be applied.' : 'No voice fingerprint is currently active.'}
+        </div>
       </div>
 
       <Stepper current={step} />
@@ -526,6 +616,7 @@ function CreatePageInner() {
             {[
               { mode: 'outline' as SourceMode, icon: '📋', label: 'From Outline', desc: 'Use a saved frozen outline from Idea Wizard' },
               { mode: 'feed'    as SourceMode, icon: '📰', label: "From Today's Feed", desc: 'Pick 1–3 articles as source context' },
+              { mode: 'notebook' as SourceMode, icon: '📚', label: 'From Notebook', desc: 'Use saved personal knowledge as source context' },
               { mode: 'custom'  as SourceMode, icon: '✏️', label: 'Custom Brief', desc: 'Write your own brief from scratch' },
             ].map(({ mode, icon, label, desc }) => (
               <button key={mode} onClick={() => setSourceMode(mode)}
@@ -630,6 +721,67 @@ function CreatePageInner() {
             </div>
           )}
 
+          {sourceMode === 'notebook' && (
+            <div className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-2xl p-5 mb-6">
+              {notebooks.length === 0 ? (
+                <div className="text-center py-4">
+                  <p className="text-sm text-zinc-500 mb-2">No notebooks yet.</p>
+                  <a href="/knowledge" className="text-sm text-violet-600 hover:underline font-medium">
+                    → Go to Knowledge Base to create one
+                  </a>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                    Select a notebook
+                  </label>
+                  <select
+                    value={selectedNotebookId}
+                    onChange={e => setSelectedNotebookId(e.target.value)}
+                    className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 mb-3"
+                  >
+                    <option value="">— Choose a notebook —</option>
+                    {notebooks.map(n => <option key={n.id} value={n.id}>{n.title}</option>)}
+                  </select>
+                  {!selectedNotebookId ? (
+                    <p className="text-xs text-zinc-400">Choose a notebook to load its processed items.</p>
+                  ) : notebookItems.length === 0 ? (
+                    <p className="text-xs text-zinc-400">No processed notebook items yet. Add links or notes in Knowledge Base first.</p>
+                  ) : (
+                    <div>
+                      <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-3">Select 1–3 notebook items as source context</p>
+                      <div className="space-y-2 max-h-72 overflow-y-auto">
+                        {notebookItems.slice(0, 20).map(item => (
+                          <label key={item.id} className={`flex items-start gap-3 cursor-pointer p-2.5 rounded-xl transition-all ${
+                            selectedNotebookItemIds.has(item.id) ? 'bg-violet-50 dark:bg-violet-900/20' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800'
+                          }`}>
+                            <input
+                              type="checkbox"
+                              checked={selectedNotebookItemIds.has(item.id)}
+                              onChange={() => {
+                                setSelectedNotebookItemIds(prev => {
+                                  const next = new Set(prev)
+                                  if (next.has(item.id)) next.delete(item.id)
+                                  else if (next.size < 3) next.add(item.id)
+                                  return next
+                                })
+                              }}
+                              className="mt-0.5 accent-violet-600 flex-shrink-0"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <span className="text-sm text-zinc-800 dark:text-zinc-200 line-clamp-1">{item.title}</span>
+                              <span className="text-xs text-zinc-400 line-clamp-2">{item.summary || item.why_it_matters || item.source_url || 'Private note'}</span>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Custom brief */}
           {sourceMode === 'custom' && (
             <div className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-2xl p-5 mb-6">
@@ -645,7 +797,7 @@ function CreatePageInner() {
           )}
 
           <button onClick={() => setStep(2)}
-            disabled={sourceMode === 'outline' && !outlineId}
+            disabled={(sourceMode === 'outline' && !outlineId) || (sourceMode === 'notebook' && (!selectedNotebookId || selectedNotebookItemIds.size === 0))}
             className="px-6 py-2.5 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white rounded-xl font-medium text-sm transition-colors">
             Next →
           </button>
@@ -733,7 +885,7 @@ function CreatePageInner() {
             <button onClick={() => setStep(2)} className="px-4 py-2 text-sm font-medium text-zinc-600 border border-zinc-200 rounded-xl hover:bg-zinc-50 transition-colors">← Back</button>
             <button onClick={handleGenerateClick}
               className="px-6 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-medium text-sm transition-colors">
-              {hasModelAccess ? '🔒 Generate Content →' : '🔒 Subscription or API key required →'}
+              {canUsePaidFeatures ? 'Generate Content →' : '🔒 Subscription + API key required →'}
             </button>
           </div>
         </div>
@@ -815,7 +967,7 @@ function CreatePageInner() {
           <div className="flex flex-wrap gap-3">
             <button onClick={() => {
               setStep(4)
-              if (hasModelAccess) {
+              if (canUsePaidFeatures) {
                 setPendingPaidGenerate(true)
                 setShowPaidConfirm(true)
               } else {

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { requirePaidFeature } from '@/lib/featureAccess'
 import { generateJsonForUser } from '@/lib/llmClient'
+import { getNotebookContext } from '@/lib/knowledge'
 
 const OUTLINE_SCHEMA = {
   type: 'object',
@@ -31,12 +32,20 @@ const OUTLINE_SCHEMA = {
 } as const
 
 export async function POST(req: NextRequest) {
-  const { topic, audience, angle, focusAreas, userId } = await req.json()
+  const { topic, audience, angle, focusAreas, userId, notebookId } = await req.json()
   if (!userId) {
     return Response.json({ error: 'userId is required' }, { status: 400 })
   }
   const paidGate = await requirePaidFeature(req, userId, 'AI outlines')
   if (paidGate) return paidGate
+
+  let notebookContext = ''
+  if (typeof notebookId === 'string' && notebookId.trim()) {
+    const notebookItems = await getNotebookContext({ userId, notebookId, limit: 6 })
+    notebookContext = notebookItems
+      .map(item => `- ${item.title}\nSummary: ${item.summary}\nWhy it matters: ${item.why}\nTopics: ${item.topicTags.join(', ')}`)
+      .join('\n')
+  }
 
   const prompt = `You are an expert content strategist. Generate a detailed content outline for a GenAI practitioner's content.
 
@@ -44,6 +53,8 @@ Topic: ${topic}
 Target audience: ${audience}
 Angle: ${angle}
 Focus areas: ${(focusAreas as string[]).join(', ')}
+Notebook context:
+${notebookContext || '(none supplied)'}
 
 Return ONLY a JSON object with this exact structure:
 {

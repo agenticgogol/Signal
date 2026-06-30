@@ -8,11 +8,20 @@ import ThemeToggle from './ThemeToggle'
 import { getSupabase } from '@/lib/supabase'
 import { useAuthSession } from '@/lib/useAuthSession'
 
+interface SetupStatusPayload {
+  checklistComplete: boolean
+  hasSources: boolean
+  hasPaidEntitlement: boolean
+  hasApiKeyConfigured: boolean
+}
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const isLanding = pathname === '/'
   const { session, user } = useAuthSession()
   const [plan, setPlan] = useState<'free' | 'pro'>('free')
+  const [canUsePaidFeatures, setCanUsePaidFeatures] = useState(false)
+  const [setupStatus, setSetupStatus] = useState<SetupStatusPayload | null>(null)
 
   useEffect(() => {
     if (!user?.id) {
@@ -24,9 +33,26 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         const json = await response.json()
         if (!response.ok) throw new Error(json.error ?? 'Could not load profile')
         setPlan(json.plan === 'pro' ? 'pro' : 'free')
+        setCanUsePaidFeatures(Boolean(json.canUsePaidFeatures))
       })
-      .catch(() => setPlan('free'))
+      .catch(() => { setPlan('free'); setCanUsePaidFeatures(false) })
   }, [user?.id])
+
+  useEffect(() => {
+    if (!session?.access_token || !user?.id) {
+      setSetupStatus(null)
+      return
+    }
+    fetch(`/api/data/setup-status?userId=${encodeURIComponent(user.id)}`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then(async response => {
+        const json = await response.json()
+        if (!response.ok) throw new Error(json.error ?? 'Could not load setup status')
+        setSetupStatus(json)
+      })
+      .catch(() => setSetupStatus(null))
+  }, [session?.access_token, user?.id])
 
   if (isLanding) {
     return <>{children}</>
@@ -75,10 +101,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
                 {plan === 'free' ? (
                   <>
-                    <p className="text-[11px] leading-5 text-zinc-500 dark:text-zinc-400">Billing is temporarily disabled. Costly workflows remain protected by the admin wall for this iteration.</p>
+                    <p className="text-[11px] leading-5 text-zinc-500 dark:text-zinc-400">Costly workflows still require the admin wall until this account has a subscription and configured model API key.</p>
                   </>
                 ) : (
-                  <p className="text-[11px] leading-5 text-zinc-500 dark:text-zinc-400">Paid workflows use confirmation only. Admin credentials are no longer required on this account.</p>
+                  <p className="text-[11px] leading-5 text-zinc-500 dark:text-zinc-400">{canUsePaidFeatures ? 'Paid workflows use confirmation only. Admin credentials are no longer required on this account.' : 'This account has subscription entitlement, but costly workflows still need a configured model API key in Settings.'}</p>
                 )}
                 <Link
                   href="/settings"
@@ -86,6 +112,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 >
                   Model settings
                 </Link>
+                {setupStatus && !setupStatus.checklistComplete && (
+                  <Link
+                    href={!setupStatus.hasSources ? '/sources' : !setupStatus.hasPaidEntitlement || !setupStatus.hasApiKeyConfigured ? '/settings' : '/voice'}
+                    className="block w-full rounded-lg bg-violet-600 px-3 py-2 text-center text-xs font-semibold text-white hover:bg-violet-700"
+                  >
+                    Finish setup
+                  </Link>
+                )}
                 <button
                   onClick={signOut}
                   className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"

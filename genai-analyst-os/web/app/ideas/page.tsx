@@ -23,6 +23,11 @@ interface GeneratedIdea {
   why_timely: string
 }
 
+interface NotebookOption {
+  id: string
+  title: string
+}
+
 interface OutlineSection {
   title: string
   points: string[]
@@ -90,10 +95,12 @@ function StepDot({ step, current }: { step: number; current: number }) {
 
 export default function IdeasPage() {
   const router = useRouter()
-  const { user } = useAuthSession()
+  const { session, user } = useAuthSession()
   const userId = user?.id ?? process.env.NEXT_PUBLIC_USER_ID!
   const today = new Date().toISOString().split('T')[0]
   const [plan, setPlan] = useState<'free' | 'pro'>('free')
+  const [modelProvider, setModelProvider] = useState('')
+  const [modelName, setModelName] = useState('')
 
   const [tab, setTab] = useState<'today' | 'wizard'>('today')
 
@@ -110,6 +117,8 @@ export default function IdeasPage() {
   const [audience, setAudience] = useState('')
   const [angle, setAngle] = useState('')
   const [freeText, setFreeText] = useState('')
+  const [notebooks, setNotebooks] = useState<NotebookOption[]>([])
+  const [selectedNotebookId, setSelectedNotebookId] = useState('')
 
   // Step 2 — generated topic ideas
   const [generatedIdeas, setGeneratedIdeas] = useState<GeneratedIdea[]>([])
@@ -127,7 +136,7 @@ export default function IdeasPage() {
   const [showPaidConfirm, setShowPaidConfirm] = useState(false)
   const [pendingPaidAction, setPendingPaidAction] = useState<'ideas' | 'outline' | null>(null)
   const [outlineError, setOutlineError] = useState<string | null>(null)
-  const [hasModelAccess, setHasModelAccess] = useState(false)
+  const [canUsePaidFeatures, setCanUsePaidFeatures] = useState(false)
 
   const fetchIdeas = useCallback(async () => {
     setIdeasLoading(true)
@@ -152,10 +161,34 @@ export default function IdeasPage() {
         const json = await response.json()
         if (!response.ok) throw new Error(json.error ?? 'Could not load profile')
         setPlan(json.plan === 'pro' ? 'pro' : 'free')
-        setHasModelAccess(Boolean(json.hasModelAccess))
+        setCanUsePaidFeatures(Boolean(json.canUsePaidFeatures))
       })
-      .catch(() => { setPlan('free'); setHasModelAccess(false) })
+      .catch(() => { setPlan('free'); setCanUsePaidFeatures(false) })
   }, [userId])
+
+  useEffect(() => {
+    if (!session?.access_token || !userId) return
+    fetch(`/api/data/llm-settings?userId=${userId}`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then(async response => {
+        const json = await response.json()
+        if (!response.ok) throw new Error(json.error ?? 'Could not load model settings')
+        setModelProvider(String(json.provider || ''))
+        setModelName(String(json.model || ''))
+      })
+      .catch(() => { setModelProvider(''); setModelName('') })
+  }, [session?.access_token, userId])
+
+  useEffect(() => {
+    if (!session?.access_token || !userId) return
+    fetch(`/api/data/knowledge-notebooks?userId=${encodeURIComponent(userId)}`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then(r => r.json())
+      .then(json => setNotebooks(json.notebooks ?? []))
+      .catch(() => setNotebooks([]))
+  }, [session?.access_token, userId])
 
   // Pre-fill wizard from "Use This Outline" on a today's idea
   const useIdeaInWizard = (idea: Idea) => {
@@ -173,11 +206,12 @@ export default function IdeasPage() {
     try {
       const allFocus = focusOther ? [...focusAreas, focusOther] : focusAreas
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
       if (token) headers['x-admin-token'] = token
       const res = await fetch('/api/ideas/generate', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ focusAreas: allFocus, audience, angle, freeText, userId }),
+        body: JSON.stringify({ focusAreas: allFocus, audience, angle, freeText, notebookId: selectedNotebookId || null, userId }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Topic generation failed')
@@ -189,7 +223,7 @@ export default function IdeasPage() {
   }
 
   const handleGenerateIdeas = () => {
-    if (hasModelAccess) {
+    if (canUsePaidFeatures) {
       setPendingPaidAction('ideas')
       setShowPaidConfirm(true)
     } else {
@@ -209,11 +243,12 @@ export default function IdeasPage() {
     try {
       const allFocus = focusOther ? [...focusAreas, focusOther] : focusAreas
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
       if (token) headers['x-admin-token'] = token
       const res = await fetch('/api/outline/generate', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ topic, audience, angle, focusAreas: allFocus, userId }),
+        body: JSON.stringify({ topic, audience, angle, focusAreas: allFocus, notebookId: selectedNotebookId || null, userId }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Outline generation failed')
@@ -226,7 +261,7 @@ export default function IdeasPage() {
   }
 
   const handleGenerateOutline = () => {
-    if (hasModelAccess) {
+    if (canUsePaidFeatures) {
       setPendingPaidAction('outline')
       setShowPaidConfirm(true)
     } else {
@@ -282,7 +317,7 @@ export default function IdeasPage() {
       {showPaidConfirm && (
         <ActionConfirmModal
           title="Confirm API usage"
-          description="This will call external APIs and spend your Pro plan allowance. No admin credentials are needed."
+          description="This will call your configured provider and use your stored account API key. No admin credentials are needed."
           confirmLabel="Proceed"
           action={pendingPaidAction === 'ideas' ? 'generate AI topic ideas' : 'generate an AI content outline'}
           onConfirm={() => {
@@ -311,7 +346,10 @@ export default function IdeasPage() {
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
           Today&apos;s AI-curated ideas and your topic discovery wizard
         </p>
-        <p className="text-xs text-gray-400 mt-1">Pro actions: AI topic ideas and outline generation.</p>
+        <p className="text-xs text-gray-400 mt-1">Premium actions require an active subscription plus a configured model API key.</p>
+        <div className="mt-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-xs text-zinc-500 dark:text-zinc-400">
+          <strong className="text-zinc-700 dark:text-zinc-300">Explainability:</strong> Today&apos;s ideas are your saved daily pipeline output. Discover New Topic uses your last 3 days of ranked feed context and, when enabled, runs on {modelProvider || 'your configured provider'}{modelName ? ` · ${modelName}` : ''}.
+        </div>
       </div>
 
       {/* Tab bar */}
@@ -565,6 +603,20 @@ export default function IdeasPage() {
                     placeholder="e.g. 'tool use in production', 'cost of reasoning models', 'eval frameworks'"
                     className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
                   />
+                  <div className="mt-4">
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Optional notebook context</p>
+                    <select
+                      value={selectedNotebookId}
+                      onChange={e => setSelectedNotebookId(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    >
+                      <option value="">No notebook context</option>
+                      {notebooks.map(notebook => (
+                        <option key={notebook.id} value={notebook.id}>{notebook.title}</option>
+                      ))}
+                    </select>
+                    <p className="mt-2 text-xs text-gray-400">If selected, Idea generation and outline creation will use this notebook alongside your recent feed.</p>
+                  </div>
                 </div>
               )}
 
