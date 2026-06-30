@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { resolveSignedInOrAdmin } from '@/lib/serverAuth'
+import { logKnowledgeEvent } from '@/lib/memory'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -30,6 +31,13 @@ export async function GET(req: NextRequest) {
   if (notebookError) return Response.json({ error: notebookError.message }, { status: 500 })
   if (itemsError) return Response.json({ error: itemsError.message }, { status: 500 })
   if (!notebook) return Response.json({ error: 'Notebook not found' }, { status: 404 })
+
+  await logKnowledgeEvent({
+    userId: access.userId,
+    notebookId,
+    eventType: 'open_notebook',
+    metadata: { mode: access.mode },
+  })
 
   return Response.json({ notebook, items: items ?? [], userId: access.userId, mode: access.mode })
 }

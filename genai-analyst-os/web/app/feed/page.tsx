@@ -85,7 +85,7 @@ interface Article {
   og_image_url?: string
   depth_score: number; published_at: string; source_id: string
 }
-interface FeedItem { blend_score: number; feed_date: string; articles: Article | Article[] | null }
+interface FeedItem { blend_score: number; feed_date: string; memory_boost?: number; articles: Article | Article[] | null }
 interface WeeklyItem {
   id: string; url: string; title: string
   blend_score: number; feed_date: string
@@ -138,7 +138,7 @@ interface DigestProvenance {
 interface PipelineConfig { lookbackDays: number; maxPerSource: number }
 type DateRange = 'today' | '7d' | '30d'
 type SortBy   = 'ranking' | 'recency'
-type Tab      = 'feed' | 'library' | 'daily' | 'news' | 'weekly'
+type Tab      = 'feed' | 'chat' | 'daily' | 'news' | 'weekly' | 'library'
 
 interface KnowledgeNotebookFilter {
   id: string
@@ -281,12 +281,13 @@ function PipelineConfigPanel({ config, onChange, onClose }: {
 
 // ── ArticleCard ───────────────────────────────────────────────────────────────
 
-function ArticleCard({ item, reaction, onReact, selected, onSelect, isFresh, relatedKnowledge = [] }: {
+function ArticleCard({ item, reaction, onReact, selected, onSelect, onOpen, isFresh, relatedKnowledge = [] }: {
   item: FeedItem
   reaction?: 'like' | 'dislike'
   onReact: (id: string, r: 'like' | 'dislike') => void
   selected: boolean
   onSelect: (id: string) => void
+  onOpen: (id: string) => void
   isFresh?: boolean
   isEmerging?: boolean
   relatedKnowledge?: RelatedKnowledgeMatch[]
@@ -318,6 +319,7 @@ function ArticleCard({ item, reaction, onReact, selected, onSelect, isFresh, rel
 
       {/* Banner — image if available, else gradient */}
       <a href={article.url} target="_blank" rel="noopener noreferrer"
+        onClick={() => onOpen(article.id)}
         className="relative block h-36 flex-shrink-0 overflow-hidden">
         {imgUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -351,6 +353,7 @@ function ArticleCard({ item, reaction, onReact, selected, onSelect, isFresh, rel
         </div>
 
         <a href={article.url} target="_blank" rel="noopener noreferrer"
+          onClick={() => onOpen(article.id)}
           className="font-semibold text-zinc-900 dark:text-zinc-100 hover:text-violet-600 dark:hover:text-violet-400 transition-colors leading-snug line-clamp-2 text-sm">
           {article.title}
         </a>
@@ -375,7 +378,10 @@ function ArticleCard({ item, reaction, onReact, selected, onSelect, isFresh, rel
                   <div className="h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
                     <div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-blue-500" style={{ width: `${scorePct}%` }} />
                   </div>
-                  <p className="mt-1 text-[11px] text-zinc-400">Blend score combines recency, topic match, source tier, and your learned preference signals.</p>
+                  <p className="mt-1 text-[11px] text-zinc-400">Blend score combines recency, topic match, source tier, your learned preference signals, and recent memory interactions.</p>
+                  {typeof item.memory_boost === 'number' && item.memory_boost !== 0 && (
+                    <p className="mt-1 text-[11px] text-zinc-400">Memory boost: {item.memory_boost > 0 ? '+' : ''}{Math.round(item.memory_boost * 100)}/100 from recent opens, pins, and reactions.</p>
+                  )}
                 </div>
                 {why && (
                   <div>
@@ -611,7 +617,7 @@ function DigestSignalStats({ items }: { items: Array<{ label: string; value: str
   )
 }
 
-function FeedSection({ title, subtitle, items, reactions, onReact, selectedForCreate, onSelect, freshArticleIds, relatedKnowledgeMap }: {
+function FeedSection({ title, subtitle, items, reactions, onReact, selectedForCreate, onSelect, onOpen, freshArticleIds, relatedKnowledgeMap }: {
   title: string
   subtitle: string
   items: FeedItem[]
@@ -619,6 +625,7 @@ function FeedSection({ title, subtitle, items, reactions, onReact, selectedForCr
   onReact: (id: string, r: 'like' | 'dislike') => void
   selectedForCreate: Set<string>
   onSelect: (id: string) => void
+  onOpen: (id: string) => void
   freshArticleIds: Set<string>
   relatedKnowledgeMap?: Record<string, RelatedKnowledgeMatch[]>
 }) {
@@ -643,6 +650,7 @@ function FeedSection({ title, subtitle, items, reactions, onReact, selectedForCr
               onReact={onReact}
               selected={article ? selectedForCreate.has(article.id) : false}
               onSelect={onSelect}
+              onOpen={onOpen}
               isFresh={article ? freshArticleIds.has(article.id) : false}
               relatedKnowledge={article ? relatedKnowledgeMap?.[article.id] ?? [] : []}
             />
@@ -748,7 +756,7 @@ export default function FeedPage() {
     const params = new URLSearchParams(window.location.search)
     const tab = params.get('tab')
     const view = params.get('view')
-    if (tab === 'feed' || tab === 'library' || tab === 'daily' || tab === 'news' || tab === 'weekly') setActiveTab(tab)
+    if (tab === 'feed' || tab === 'chat' || tab === 'daily' || tab === 'news' || tab === 'weekly' || tab === 'library') setActiveTab(tab)
     if (view === 'narrative' || view === 'list') setWeeklyView(view)
 
     try {
@@ -771,7 +779,8 @@ export default function FeedPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(() => {
+  const refreshProfile = useCallback(() => {
+    if (!userId) return
     fetch(`/api/data/profile?userId=${encodeURIComponent(userId)}`)
       .then(async response => {
         const json = await response.json()
@@ -782,11 +791,8 @@ export default function FeedPage() {
       .catch(() => { setPlan('free'); setCanUsePaidFeatures(false) })
   }, [userId])
 
-  useEffect(() => {
-    if (!session?.access_token || !user?.id) {
-      setSetupStatus(null)
-      return
-    }
+  const refreshSetupStatus = useCallback(() => {
+    if (!session?.access_token || !user?.id) { setSetupStatus(null); return }
     fetch(`/api/data/setup-status?userId=${encodeURIComponent(user.id)}`, {
       headers: { Authorization: `Bearer ${session.access_token}` },
     })
@@ -794,9 +800,20 @@ export default function FeedPage() {
         const json = await response.json()
         if (!response.ok) throw new Error(json.error ?? 'Could not load setup status')
         setSetupStatus(json)
+        setPlan(json.hasPaidEntitlement ? 'pro' : 'free')
+        setCanUsePaidFeatures(Boolean(json.canUsePaidFeatures))
       })
       .catch(() => setSetupStatus(null))
   }, [session?.access_token, user?.id])
+
+  useEffect(() => { refreshProfile() }, [refreshProfile])
+  useEffect(() => { refreshSetupStatus() }, [refreshSetupStatus])
+
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') { refreshProfile(); refreshSetupStatus() } }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [refreshProfile, refreshSetupStatus])
 
   function saveConfig(c: PipelineConfig) {
     setPipelineConfig(c)
@@ -1118,12 +1135,13 @@ export default function FeedPage() {
 
   useEffect(() => {
     if (user?.id && knowledgeItems.length === 0) fetchKnowledgeFeed()
+    if (activeTab === 'chat' && user?.id) fetchYesterdayFeed()
     if (activeTab === 'library' && user?.id) fetchKnowledgeFeed()
     if (activeTab === 'news' && newsItems.length === 0) fetchNews()
     if (activeTab === 'daily' && !dailyDigestFetched && !dailyDigestLoading) fetchDailyDigest()
     if (activeTab === 'weekly' && weeklyItems.length === 0) fetchWeekly()
     if (activeTab === 'weekly' && weeklyView === 'narrative' && !narrative && !narrativeLoading) fetchNarrative()
-  }, [activeTab, weeklyView, user?.id, knowledgeItems.length, newsItems.length, weeklyItems.length, dailyDigestFetched, dailyDigestLoading, fetchKnowledgeFeed, fetchNews, fetchWeekly, fetchNarrative, fetchDailyDigest])
+  }, [activeTab, weeklyView, user?.id, knowledgeItems.length, newsItems.length, weeklyItems.length, dailyDigestFetched, dailyDigestLoading, fetchKnowledgeFeed, fetchYesterdayFeed, fetchNews, fetchWeekly, fetchNarrative, fetchDailyDigest])
 
   // ── pipeline trigger ──────────────────────────────────────────────────────
 
@@ -1229,12 +1247,36 @@ export default function FeedPage() {
   }
 
   const handleSelect = (articleId: string) => {
+    const wasSelected = selectedForCreate.has(articleId)
     setSelectedForCreate(prev => {
       const next = new Set(prev)
       if (next.has(articleId)) next.delete(articleId); else next.add(articleId)
       try { sessionStorage.setItem('signal_selected_articles', JSON.stringify([...next])) } catch {}
       return next
     })
+    if (!wasSelected) {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+      const token = getAdminToken()
+      if (!session?.access_token && token) headers['x-admin-token'] = token
+      fetch('/api/memory/article-event', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ userId, articleId, eventType: 'pin' }),
+      }).catch(() => {})
+    }
+  }
+
+  const handleArticleOpen = (articleId: string) => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+    const token = getAdminToken()
+    if (!session?.access_token && token) headers['x-admin-token'] = token
+    fetch('/api/memory/article-event', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ userId, articleId, eventType: 'open' }),
+    }).catch(() => {})
   }
 
   const handleSavePreference = async () => {
@@ -1568,16 +1610,17 @@ export default function FeedPage() {
       )}
 
       {/* ── Tab bar ─────────────────────────────────────────────────────────── */}
-      <div className="flex gap-5 border-b border-zinc-200 dark:border-zinc-800 mb-5">
+      <div className="flex gap-1 overflow-x-auto border-b border-zinc-200 dark:border-zinc-800 mb-5 -mx-1 px-1">
         {([
-          { id: 'feed'   as Tab, label: `Your Feed${articles.length ? ` (${articles.length})` : ''}` },
-          { id: 'library' as Tab, label: `📚 Knowledge Feed${knowledgeItems.length ? ` (${knowledgeItems.length})` : ''}` },
-          { id: 'daily'  as Tab, label: '✦ Daily Digest' },
-          { id: 'news'   as Tab, label: '🌐 AI News Worldover' },
-          { id: 'weekly' as Tab, label: '📰 Weekly Digest' },
+          { id: 'feed'    as Tab, label: `Your Feed${articles.length ? ` (${articles.length})` : ''}` },
+          { id: 'chat'    as Tab, label: '💬 Ask Signal' },
+          { id: 'daily'   as Tab, label: '✦ Daily Digest' },
+          { id: 'weekly'  as Tab, label: '📰 Weekly' },
+          { id: 'news'    as Tab, label: '🌐 Live News' },
+          { id: 'library' as Tab, label: `📚 Knowledge${knowledgeItems.length ? ` (${knowledgeItems.length})` : ''}` },
         ]).map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            className={`pb-3 text-sm font-medium transition-colors whitespace-nowrap ${
+            className={`pb-3 px-1 text-sm font-medium transition-colors whitespace-nowrap ${
               activeTab === tab.id
                 ? 'border-b-2 border-violet-600 text-violet-600'
                 : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'
@@ -1590,76 +1633,15 @@ export default function FeedPage() {
       {/* ══ YOUR FEED TAB ═══════════════════════════════════════════════════ */}
       {activeTab === 'feed' && (
         <div>
-          <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr] mb-5">
-            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400">Recall chat</p>
-                  <h3 className="mt-1 text-base font-bold text-zinc-900 dark:text-zinc-100">Ask about something you read here before</h3>
-                  <p className="mt-1 text-xs text-zinc-400">Searches your feed and knowledge base together, then answers with citations.</p>
-                </div>
-                <span className="text-[11px] rounded-full border border-zinc-200 dark:border-zinc-700 px-2.5 py-1 text-zinc-500 dark:text-zinc-400">Feed + Library</span>
-              </div>
-              <div className="mt-4 flex gap-2">
-                <input
-                  value={recallQuestion}
-                  onChange={e => setRecallQuestion(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') askRecall() }}
-                  placeholder="What was that agent reliability concept I saw last week?"
-                  className="flex-1 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-500"
-                />
-                <button
-                  onClick={() => askRecall()}
-                  disabled={recallLoading || !recallQuestion.trim()}
-                  className="rounded-xl bg-zinc-950 dark:bg-white dark:text-zinc-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-50"
-                >
-                  {recallLoading ? 'Searching…' : 'Ask'}
-                </button>
-              </div>
-              {recallError && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{recallError}</p>}
-              {recallAnswer && (
-                <div className="mt-4 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/40 p-4">
-                  <p className="text-sm leading-6 text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap">{recallAnswer.answer}</p>
-                  <p className="mt-3 text-[11px] text-zinc-400">Matches used: {recallAnswer.feedMatches} from feed · {recallAnswer.knowledgeMatches} from knowledge base</p>
-                  {recallAnswer.citations.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {recallAnswer.citations.slice(0, 4).map((citation, idx) => (
-                        <a key={`${citation.url}-${idx}`} href={citation.url} target="_blank" rel="noopener noreferrer" className="text-xs text-violet-600 dark:text-violet-400 hover:underline">
-                          {citation.title}
-                        </a>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
-              <p className="text-xs font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">Continue from yesterday</p>
-              <h3 className="mt-1 text-base font-bold text-zinc-900 dark:text-zinc-100">Resume the strongest signals you saw before</h3>
-              <p className="mt-1 text-xs text-zinc-400">Quick summaries from yesterday&apos;s top surfaced articles.</p>
-              <div className="mt-4 space-y-3">
-                {yesterdayItems.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-zinc-200 dark:border-zinc-700 p-4 text-xs text-zinc-400">
-                    No yesterday history yet. Once the feed runs across multiple days, your recent memory rail will appear here.
-                  </div>
-                ) : yesterdayItems.slice(0, 3).map((item, idx) => {
-                  const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
-                  if (!article) return null
-                  return (
-                    <a key={`${article.id}-${idx}`} href={article.url} target="_blank" rel="noopener noreferrer" className="block rounded-xl border border-zinc-100 dark:border-zinc-800 p-3 hover:border-violet-300 dark:hover:border-violet-700 transition-colors">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${priorityLabel(item.blend_score).cls}`}>{priorityLabel(item.blend_score).label}</span>
-                        <span className="text-[11px] text-zinc-400">{formatPubDate(article.published_at)}</span>
-                      </div>
-                      <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 leading-snug">{article.title}</p>
-                      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2">{article.why_it_matters || article.tldr_bullets?.[0] || 'Open to revisit the summary.'}</p>
-                    </a>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
+          {/* Compact Ask Signal bar */}
+          <button
+            onClick={() => setActiveTab('chat')}
+            className="w-full mb-5 flex items-center gap-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-left hover:border-violet-300 dark:hover:border-violet-700 transition-colors"
+          >
+            <span className="text-lg">💬</span>
+            <span className="flex-1 text-sm text-zinc-400 dark:text-zinc-500">Ask Signal anything about your feed or knowledge base…</span>
+            <span className="text-xs font-medium text-violet-600 dark:text-violet-400 shrink-0">Ask Signal →</span>
+          </button>
 
           {/* Date range */}
           <div className="flex gap-1 bg-zinc-100 dark:bg-zinc-800/60 p-1 rounded-xl mb-5 w-fit">
@@ -1796,6 +1778,7 @@ export default function FeedPage() {
                   onReact={handleReact}
                   selectedForCreate={selectedForCreate}
                   onSelect={handleSelect}
+                  onOpen={handleArticleOpen}
                   freshArticleIds={freshArticleIds}
                   relatedKnowledgeMap={relatedKnowledgeMap}
                 />
@@ -1809,6 +1792,7 @@ export default function FeedPage() {
                   onReact={handleReact}
                   selectedForCreate={selectedForCreate}
                   onSelect={handleSelect}
+                  onOpen={handleArticleOpen}
                   freshArticleIds={freshArticleIds}
                   relatedKnowledgeMap={relatedKnowledgeMap}
                 />
@@ -1821,6 +1805,7 @@ export default function FeedPage() {
                 onReact={handleReact}
                 selectedForCreate={selectedForCreate}
                 onSelect={handleSelect}
+                onOpen={handleArticleOpen}
                 freshArticleIds={freshArticleIds}
                 relatedKnowledgeMap={relatedKnowledgeMap}
               />
@@ -1832,6 +1817,7 @@ export default function FeedPage() {
                 onReact={handleReact}
                 selectedForCreate={selectedForCreate}
                 onSelect={handleSelect}
+                onOpen={handleArticleOpen}
                 freshArticleIds={freshArticleIds}
                 relatedKnowledgeMap={relatedKnowledgeMap}
               />
@@ -1843,6 +1829,7 @@ export default function FeedPage() {
                 onReact={handleReact}
                 selectedForCreate={selectedForCreate}
                 onSelect={handleSelect}
+                onOpen={handleArticleOpen}
                 freshArticleIds={freshArticleIds}
                 relatedKnowledgeMap={relatedKnowledgeMap}
               />
@@ -1854,10 +1841,81 @@ export default function FeedPage() {
                 onReact={handleReact}
                 selectedForCreate={selectedForCreate}
                 onSelect={handleSelect}
+                onOpen={handleArticleOpen}
                 freshArticleIds={freshArticleIds}
                 relatedKnowledgeMap={relatedKnowledgeMap}
               />
             </>
+          )}
+        </div>
+      )}
+
+      {/* ══ ASK SIGNAL (CHAT) TAB ══════════════════════════════════════════ */}
+      {activeTab === 'chat' && (
+        <div className="max-w-3xl">
+          <div className="mb-6">
+            <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Ask Signal</h2>
+            <p className="text-sm text-zinc-400 mt-1">Search across your feed and knowledge base together. Signal finds relevant articles and notes, then synthesises an answer with citations.</p>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 mb-6">
+            <div className="flex gap-2">
+              <input
+                value={recallQuestion}
+                onChange={e => setRecallQuestion(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') askRecall() }}
+                placeholder="What was that agent reliability concept I saw last week?"
+                className="flex-1 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-500"
+              />
+              <button
+                onClick={() => askRecall()}
+                disabled={recallLoading || !recallQuestion.trim()}
+                className="rounded-xl bg-violet-600 hover:bg-violet-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50 transition-colors"
+              >
+                {recallLoading ? 'Searching…' : 'Ask'}
+              </button>
+            </div>
+            {recallError && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{recallError}</p>}
+            {recallAnswer && (
+              <div className="mt-5 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/40 p-4">
+                <p className="text-sm leading-6 text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap">{recallAnswer.answer}</p>
+                <p className="mt-3 text-[11px] text-zinc-400">Searched: {recallAnswer.feedMatches} feed articles · {recallAnswer.knowledgeMatches} knowledge items</p>
+                {recallAnswer.citations.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {recallAnswer.citations.slice(0, 6).map((citation, idx) => (
+                      <a key={`${citation.url}-${idx}`} href={citation.url} target="_blank" rel="noopener noreferrer"
+                        className="text-xs text-violet-600 dark:text-violet-400 hover:underline border border-violet-200 dark:border-violet-800 rounded-lg px-2 py-1">
+                        {citation.title}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {yesterdayItems.length > 0 && (
+            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
+              <p className="text-xs font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400 mb-1">Continue from yesterday</p>
+              <p className="text-xs text-zinc-400 mb-4">Your strongest signals from yesterday&apos;s feed.</p>
+              <div className="space-y-3">
+                {yesterdayItems.slice(0, 5).map((item, idx) => {
+                  const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
+                  if (!article) return null
+                  return (
+                    <a key={`${article.id}-${idx}`} href={article.url} target="_blank" rel="noopener noreferrer"
+                      className="block rounded-xl border border-zinc-100 dark:border-zinc-800 p-3 hover:border-violet-300 dark:hover:border-violet-700 transition-colors">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${priorityLabel(item.blend_score).cls}`}>{priorityLabel(item.blend_score).label}</span>
+                        <span className="text-[11px] text-zinc-400">{formatPubDate(article.published_at)}</span>
+                      </div>
+                      <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 leading-snug">{article.title}</p>
+                      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2">{article.why_it_matters || article.tldr_bullets?.[0] || ''}</p>
+                    </a>
+                  )
+                })}
+              </div>
+            </div>
           )}
         </div>
       )}

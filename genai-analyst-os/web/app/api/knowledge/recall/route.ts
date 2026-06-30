@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { requirePaidFeature } from '@/lib/featureAccess'
 import { resolveSignedInOrAdmin } from '@/lib/serverAuth'
 import { answerRecallQuestion } from '@/lib/knowledge'
+import { logChatEvent } from '@/lib/memory'
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}))
@@ -20,6 +21,14 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await answerRecallQuestion({ userId: access.userId, question })
+    await logChatEvent({
+      userId: access.userId,
+      scope: 'memory',
+      question,
+      answerSummary: result.answer.slice(0, 600),
+      citations: result.citations,
+      metadata: { feedMatches: result.feedMatches, knowledgeMatches: result.knowledgeMatches, mode: access.mode },
+    })
     return Response.json(result)
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 })

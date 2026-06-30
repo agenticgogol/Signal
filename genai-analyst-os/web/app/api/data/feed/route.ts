@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase'
 import { NextRequest } from 'next/server'
+import { getRecentArticleMemoryBoosts } from '@/lib/memory'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -28,6 +29,7 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await query
     if (error) return Response.json({ error: error.message }, { status: 500 })
+    const boosts = await getRecentArticleMemoryBoosts(userId).catch(() => ({} as Record<string, number>))
     // The same article can be ranked on several feed dates. Range views should
     // show it once, keeping the highest-ranked occurrence.
     const seen = new Set<string>()
@@ -37,7 +39,16 @@ export async function GET(req: NextRequest) {
       if (!articleId || seen.has(articleId)) return false
       seen.add(articleId)
       return true
-    })
+    }).map(item => {
+      const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
+      const articleId = article?.id ? String(article.id) : ''
+      const memoryBoost = articleId ? (boosts[articleId] ?? 0) : 0
+      return {
+        ...item,
+        blend_score: Math.max(0, Math.min(1, Number(item.blend_score) + memoryBoost)),
+        memory_boost: Number(memoryBoost.toFixed(4)),
+      }
+    }).sort((a, b) => Number(b.blend_score) - Number(a.blend_score))
     return Response.json({ items })
   } catch (err) {
     return Response.json({ error: String(err) }, { status: 500 })

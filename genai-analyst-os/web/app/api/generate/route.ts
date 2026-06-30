@@ -11,6 +11,7 @@ import {
 } from '@/lib/agents'
 import { createServiceClient } from '@/lib/supabase'
 import { requirePaidFeature } from '@/lib/featureAccess'
+import { logCreateEvent } from '@/lib/memory'
 import type { VoiceFingerprint } from '@/lib/voice'
 
 export const maxDuration = 300
@@ -126,6 +127,18 @@ export async function POST(req: Request) {
           verifier_report: claimReport,
           audience_feedback: audienceFeedback,
           evaluator_scores: loopScores,
+        })
+        await logCreateEvent({
+          userId,
+          eventType: 'generate_draft',
+          topic: typeof brief === 'string' ? brief.slice(0, 200) : null,
+          format,
+          sourceMode: Array.isArray(sources) && sources.some((source: { url?: string }) => String(source?.url || '').startsWith('signal://knowledge/'))
+            ? 'notebook'
+            : Array.isArray(sources) && sources.length > 0
+              ? 'feed'
+              : 'custom',
+          metadata: { sourceCount: Array.isArray(sources) ? sources.length : 0 },
         })
 
         send('complete', { final })

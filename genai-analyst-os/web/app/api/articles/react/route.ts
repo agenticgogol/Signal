@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase'
 import { NextRequest } from 'next/server'
+import { logArticleEvent } from '@/lib/memory'
 
 // POST: upsert a like/dislike reaction; DELETE: remove reaction
 export async function POST(req: NextRequest) {
@@ -12,6 +13,11 @@ export async function POST(req: NextRequest) {
     .from('article_reactions')
     .upsert({ user_id: userId, article_id: articleId, reaction }, { onConflict: 'user_id,article_id' })
   if (error) return Response.json({ error: error.message }, { status: 500 })
+  await logArticleEvent({
+    userId,
+    articleId,
+    eventType: reaction === 'like' ? 'like' : 'dislike',
+  })
   return Response.json({ ok: true })
 }
 

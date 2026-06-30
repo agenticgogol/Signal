@@ -3,6 +3,7 @@ import { requirePaidFeature } from '@/lib/featureAccess'
 import { resolveSignedInOrAdmin } from '@/lib/serverAuth'
 import { ingestKnowledgeItem } from '@/lib/knowledge'
 import { extractUploadText } from '@/lib/knowledgeFiles'
+import { logKnowledgeEvent } from '@/lib/memory'
 
 export async function POST(req: NextRequest) {
   const form = await req.formData().catch(() => null)
@@ -34,6 +35,14 @@ export async function POST(req: NextRequest) {
       sourceType: 'note',
       title: extracted.title,
       noteText: extracted.text,
+    })
+
+    await logKnowledgeEvent({
+      userId: access.userId,
+      notebookId,
+      knowledgeItemId: item.id,
+      eventType: 'upload_file',
+      metadata: { mode: access.mode, filename: file.name, mimeType: file.type || null },
     })
 
     return Response.json({ item })

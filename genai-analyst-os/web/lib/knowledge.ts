@@ -459,7 +459,7 @@ export async function answerRecallQuestion(params: {
   const from = new Date()
   from.setUTCDate(from.getUTCDate() - 30)
 
-  const [{ data: knowledgeItems, error: knowledgeError }, { data: feedItems, error: feedError }] = await Promise.all([
+  const [{ data: knowledgeItems, error: knowledgeError }, { data: feedItems, error: feedError }, { data: priorChats, error: priorChatError }] = await Promise.all([
     db.from('knowledge_items')
       .select('id, notebook_id, title, source_url, summary, why_it_matters, topic_tags, cleaned_text, processed_at')
       .eq('user_id', params.userId)
@@ -472,10 +472,17 @@ export async function answerRecallQuestion(params: {
       .gte('feed_date', from.toISOString().slice(0, 10))
       .order('blend_score', { ascending: false })
       .limit(120),
+    db.from('user_chat_events')
+      .select('question, answer_summary, created_at')
+      .eq('user_id', params.userId)
+      .in('scope', ['memory', 'notebook'])
+      .order('created_at', { ascending: false })
+      .limit(12),
   ])
 
   if (knowledgeError) throw knowledgeError
   if (feedError) throw feedError
+  if (priorChatError) throw priorChatError
 
   const rankedKnowledge = (knowledgeItems ?? [])
     .map((item: Record<string, unknown>) => {
@@ -533,7 +540,19 @@ export async function answerRecallQuestion(params: {
     throw new Error('I could not find a matching memory in your feed or knowledge base yet.')
   }
 
+  const priorChatMatches = (priorChats ?? [])
+    .map((chat: Record<string, unknown>) => {
+      const priorQuestion = String(chat.question || '')
+      const answerSummary = String(chat.answer_summary || '')
+      const score = overlapScore(params.question, `${priorQuestion}\n${answerSummary}`)
+      return { priorQuestion, answerSummary, score, createdAt: String(chat.created_at || '') }
+    })
+    .filter(chat => chat.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 2)
+
   const memoryContext = [
+    ...priorChatMatches.map((item, index) => `[P${index + 1}] Earlier question: ${item.priorQuestion}\nEarlier answer: ${item.answerSummary}\nAsked: ${item.createdAt}`),
     ...rankedKnowledge.map((item, index) => `[K${index + 1}] ${item.title}\nURL: ${item.url}\nSummary: ${item.summary}\nWhy it matters: ${item.why}\nContext: ${item.context}`),
     ...rankedFeed.map((item, index) => `[F${index + 1}] ${item.title}\nURL: ${item.url}\nSummary: ${item.summary}\nWhy it matters: ${item.why}\nContext: ${item.context}`),
   ].join('\n\n')
@@ -573,5 +592,6 @@ export async function answerRecallQuestion(params: {
     citations: answer.citations,
     feedMatches: rankedFeed.length,
     knowledgeMatches: rankedKnowledge.length,
+    priorChatMatches: priorChatMatches.length,
   }
 }

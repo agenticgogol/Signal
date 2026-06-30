@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { requirePaidFeature } from '@/lib/featureAccess'
 import { resolveSignedInOrAdmin } from '@/lib/serverAuth'
 import { ingestKnowledgeItem } from '@/lib/knowledge'
+import { logKnowledgeEvent } from '@/lib/memory'
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}))
@@ -37,6 +38,13 @@ export async function POST(req: NextRequest) {
       sourceUrl,
       noteText,
       title,
+    })
+    await logKnowledgeEvent({
+      userId: access.userId,
+      notebookId,
+      knowledgeItemId: item.id,
+      eventType: sourceType === 'url' ? 'save_url' : 'save_note',
+      metadata: { mode: access.mode, sourceUrl: sourceUrl || null, title: title || item.title },
     })
     return Response.json({ item })
   } catch (error) {

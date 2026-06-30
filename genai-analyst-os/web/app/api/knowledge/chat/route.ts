@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { requirePaidFeature } from '@/lib/featureAccess'
 import { resolveSignedInOrAdmin } from '@/lib/serverAuth'
 import { answerNotebookQuestion } from '@/lib/knowledge'
+import { logChatEvent, logKnowledgeEvent } from '@/lib/memory'
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}))
@@ -22,6 +23,21 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await answerNotebookQuestion({ userId: access.userId, notebookId, question, includeFeed })
+    await logKnowledgeEvent({
+      userId: access.userId,
+      notebookId,
+      eventType: 'ask_chat',
+      metadata: { includeFeed, mode: access.mode },
+    })
+    await logChatEvent({
+      userId: access.userId,
+      scope: 'notebook',
+      notebookId,
+      question,
+      answerSummary: result.answer.slice(0, 600),
+      citations: result.citations,
+      metadata: { includeFeed, retrievalMode: result.retrievalMode, mode: access.mode },
+    })
     return Response.json(result)
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 })
