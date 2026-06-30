@@ -8,6 +8,31 @@ import { useAuthSession } from '@/lib/useAuthSession'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
+const STOPWORDS = new Set([
+  'the','a','an','and','or','but','of','to','in','on','for','with','is','are','was','were',
+  'this','that','these','those','it','its','as','at','by','from','be','been','being','can',
+  'will','would','should','could','what','why','how','your','you','we','our','their','they',
+  'not','no','do','does','did','have','has','had','more','most','than','into','about','if',
+])
+function tokenize(text: string): Set<string> {
+  return new Set(
+    (text.toLowerCase().match(/[a-z][a-z0-9-]{2,}/g) ?? []).filter(w => !STOPWORDS.has(w))
+  )
+}
+// Word-overlap relevance between an article and a knowledge item. Shared
+// topic tags alone are too coarse a signal — there are only 7 tags in the
+// taxonomy, so two unrelated articles routinely share one, which is what
+// caused "Backed by your library" to attach the same knowledge item to
+// nearly every card with that tag. This requires actual textual overlap.
+function textOverlapScore(a: string, b: string): number {
+  const tokensA = tokenize(a)
+  const tokensB = tokenize(b)
+  if (tokensA.size === 0 || tokensB.size === 0) return 0
+  let shared = 0
+  for (const word of tokensA) if (tokensB.has(word)) shared++
+  return shared / Math.min(tokensA.size, tokensB.size)
+}
+
 function localDateISO(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
@@ -1547,19 +1572,30 @@ export default function FeedPage() {
   const knowledgeTopPicks = knowledgeItems.filter(item => item.blend_score >= 0.72 && !knowledgeFresh.some(f => f.id === item.id)).slice(0, 8)
   const knowledgeExplore = knowledgeItems.filter(item => !knowledgeFresh.some(f => f.id === item.id) && !knowledgeTopPicks.some(f => f.id === item.id))
 
+  // Minimum genuine textual relevance required before showing "Backed by
+  // your library" — a shared topic tag alone is not enough signal (see
+  // textOverlapScore comment above).
+  const MIN_TEXT_OVERLAP = 0.18
+  const MIN_MATCH_SCORE = 0.4
+
   const relatedKnowledgeMap: Record<string, RelatedKnowledgeMatch[]> = {}
   for (const item of filteredArticles) {
     const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
     if (!article) continue
     const articleTags = Array.isArray(article.topic_tags) ? article.topic_tags : []
     if (articleTags.length === 0) continue
+    const articleText = [article.title, article.why_it_matters, ...(article.tldr_bullets ?? [])].filter(Boolean).join(' ')
     const matches = knowledgeItems
       .map(knowledge => {
         const tags = Array.isArray(knowledge.topic_tags) ? knowledge.topic_tags : []
         const overlap = tags.filter(tag => articleTags.includes(tag)).length
         if (overlap === 0) return null
-        const overlapScore = overlap / Math.max(articleTags.length, 1)
-        const matchScore = Math.min(1, (overlapScore * 0.65) + (knowledge.blend_score * 0.35))
+        const knowledgeText = [knowledge.title, knowledge.summary, knowledge.why_it_matters].filter(Boolean).join(' ')
+        const textRelevance = textOverlapScore(articleText, knowledgeText)
+        if (textRelevance < MIN_TEXT_OVERLAP) return null
+        const tagOverlapScore = overlap / Math.max(articleTags.length, 1)
+        const matchScore = Math.min(1, (textRelevance * 0.7) + (tagOverlapScore * 0.2) + (knowledge.blend_score * 0.1))
+        if (matchScore < MIN_MATCH_SCORE) return null
         return {
           notebookId: knowledge.notebook_id,
           notebookTitle: knowledge.notebook_title,
