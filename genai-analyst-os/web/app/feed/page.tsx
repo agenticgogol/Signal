@@ -435,6 +435,7 @@ export default function FeedPage() {
   const [triggerError, setTriggerError] = useState<string | null>(null)
   const [pipelineResult, setPipelineResult] = useState<string | null>(null)
   const [showAdminGate, setShowAdminGate] = useState(false)
+  const [pendingNarrativeRegenerate, setPendingNarrativeRegenerate] = useState(false)
   const [showConfig, setShowConfig] = useState(false)
   const [pipelineConfig, setPipelineConfig] = useState<PipelineConfig>(DEFAULT_CONFIG)
 
@@ -572,13 +573,16 @@ export default function FeedPage() {
     setWeeklyLoading(false)
   }, [userId])
 
-  const fetchNarrative = useCallback(async (regenerate = false) => {
+  const fetchNarrative = useCallback(async (regenerate = false, token?: string) => {
     setNarrativeLoading(true)
     setNarrativeError(null)
     if (regenerate) setNarrative(null)
     try {
+      const headers: Record<string, string> = {}
+      if (regenerate && token) headers['x-admin-token'] = token
       const res = await fetch(`/api/data/narrative?userId=${userId}&days=7`, {
         method: regenerate ? 'POST' : 'GET',
+        headers: Object.keys(headers).length > 0 ? headers : undefined,
       })
       const json = await res.json()
       if (res.ok && json.narrative) {
@@ -594,6 +598,16 @@ export default function FeedPage() {
     } catch (e) { setNarrativeError(String(e)) }
     setNarrativeLoading(false)
   }, [userId])
+
+  const handleNarrativeRegenerate = () => {
+    const token = getAdminToken()
+    if (token) {
+      fetchNarrative(true, token)
+      return
+    }
+    setPendingNarrativeRegenerate(true)
+    setShowAdminGate(true)
+  }
 
   // Initial load
   useEffect(() => {
@@ -799,9 +813,20 @@ export default function FeedPage() {
   return (
     <div className="p-6 max-w-6xl mx-auto">
       {showAdminGate && (
-        <AdminGateModal action="run the feed pipeline"
-          onSuccess={token => { setShowAdminGate(false); doTrigger(token) }}
-          onCancel={() => setShowAdminGate(false)} />
+        <AdminGateModal action={pendingNarrativeRegenerate ? 'regenerate the weekly digest' : 'run the feed pipeline'}
+          onSuccess={token => {
+            setShowAdminGate(false)
+            if (pendingNarrativeRegenerate) {
+              setPendingNarrativeRegenerate(false)
+              fetchNarrative(true, token)
+            } else {
+              doTrigger(token)
+            }
+          }}
+          onCancel={() => {
+            setShowAdminGate(false)
+            setPendingNarrativeRegenerate(false)
+          }} />
       )}
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
@@ -1110,7 +1135,7 @@ export default function FeedPage() {
                 ))}
               </div>
               {weeklyView === 'narrative' && (
-                <button onClick={() => fetchNarrative(true)} disabled={narrativeLoading}
+                <button onClick={handleNarrativeRegenerate} disabled={narrativeLoading}
                   className="text-xs text-violet-600 dark:text-violet-400 px-3 py-1.5 bg-violet-50 dark:bg-violet-950/30 rounded-lg border border-violet-200 dark:border-violet-800 hover:bg-violet-100 transition-colors font-medium disabled:opacity-50">
                   {narrativeLoading ? 'Writing briefing…' : '↺ Regenerate'}
                 </button>
@@ -1131,7 +1156,7 @@ export default function FeedPage() {
                 <div className="text-center py-16 text-zinc-400">
                   <div className="text-5xl mb-4">📭</div>
                   <p className="font-medium text-zinc-600 dark:text-zinc-400">{narrativeError}</p>
-                  <p className="text-sm mt-2">The article feed is available. Use Regenerate to retry the briefing.</p>
+                  <p className="text-sm mt-2">The article feed is available. Regenerate is admin-gated because it triggers a fresh Claude Sonnet briefing.</p>
                 </div>
               ) : narrative ? (
                 <div className="space-y-6 max-w-2xl">
@@ -1177,7 +1202,7 @@ export default function FeedPage() {
                 </div>
               ) : (
                 <div className="text-center py-12 text-zinc-400">
-                  <p className="text-sm">Click Regenerate to write this week&apos;s briefing.</p>
+                  <p className="text-sm">Click Regenerate to write this week&apos;s briefing. It requires the admin password because it incurs LLM cost.</p>
                 </div>
               )}
             </div>
