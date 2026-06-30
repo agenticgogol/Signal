@@ -51,6 +51,14 @@ interface ModelSettingsPayload {
   model: string
 }
 
+interface RecentDraft {
+  topic: string | null
+  format: string | null
+  sourceMode: string | null
+  notebookId: string | null
+  createdAt: string
+}
+
 const FORMATS: { id: Format; label: string; icon: string; guidance: string }[] = [
   { id: 'linkedin',      label: 'LinkedIn',      icon: '💼', guidance: '~1300 chars · hook-first · blank lines between paras' },
   { id: 'substack',      label: 'Substack',      icon: '📧', guidance: '700–1000 words · personal arc · narrative voice' },
@@ -111,6 +119,17 @@ function Stepper({ current }: { current: Step }) {
   )
 }
 
+function formatRelativeTime(iso: string): string {
+  try {
+    const diff = Date.now() - new Date(iso).getTime()
+    const mins = Math.floor(diff / 60000)
+    if (mins < 60) return `${mins}m ago`
+    const hrs = Math.floor(mins / 60)
+    if (hrs < 24) return `${hrs}h ago`
+    return `${Math.floor(hrs / 24)}d ago`
+  } catch { return '' }
+}
+
 function CreatePageInner() {
   const searchParams = useSearchParams()
   const { session, user } = useAuthSession()
@@ -161,6 +180,10 @@ function CreatePageInner() {
   const [modelProvider, setModelProvider] = useState('')
   const [modelName, setModelName] = useState('')
 
+  // Memory-aware defaults
+  const [recentDrafts, setRecentDrafts] = useState<RecentDraft[]>([])
+  const [preferredFormat, setPreferredFormat] = useState<Format | null>(null)
+
   // ── Load frozen outlines on mount ──────────────────────────────────────────
   useEffect(() => {
     fetch(`/api/data/outlines?userId=${userId}`)
@@ -209,6 +232,25 @@ function CreatePageInner() {
       .then(r => r.json())
       .then(json => setNotebooks(json.notebooks ?? []))
       .catch(() => setNotebooks([]))
+  }, [session?.access_token, userId])
+
+  useEffect(() => {
+    if (!session?.access_token || !userId) return
+    fetch(`/api/memory/create-context?userId=${encodeURIComponent(userId)}`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then(r => r.json())
+      .then(json => {
+        setRecentDrafts(json.recentDrafts ?? [])
+        if (json.preferredFormat) {
+          setPreferredFormat(json.preferredFormat as Format)
+          // Silently pre-select the preferred format only if no URL param is driving it
+          if (!new URLSearchParams(window.location.search).get('format')) {
+            setFormat(json.preferredFormat as Format)
+          }
+        }
+      })
+      .catch(() => {})
   }, [session?.access_token, userId])
 
   // ── Load feed articles when sourceMode = 'feed' ───────────────────────────
@@ -611,6 +653,48 @@ function CreatePageInner() {
       {step === 1 && (
         <div>
           <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mb-5">What&apos;s the source of inspiration?</h2>
+
+          {/* Memory-aware: pick up where you left off */}
+          {recentDrafts.length > 0 && (
+            <div className="rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/20 p-4 mb-6">
+              <p className="text-xs font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400 mb-3">Pick up where you left off</p>
+              <div className="flex flex-wrap gap-2">
+                {recentDrafts.map((draft, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      if (draft.format && FORMATS.find(f => f.id === draft.format)) setFormat(draft.format as Format)
+                      if (draft.topic) setTopic(draft.topic)
+                      if (draft.sourceMode === 'notebook' && draft.notebookId) {
+                        setSourceMode('notebook')
+                        setSelectedNotebookId(draft.notebookId)
+                      } else if (draft.sourceMode === 'feed') {
+                        setSourceMode('feed')
+                      } else if (draft.sourceMode === 'custom') {
+                        setSourceMode('custom')
+                      }
+                      setStep(2)
+                    }}
+                    className="flex items-center gap-2 rounded-xl border border-amber-200 dark:border-amber-700 bg-white dark:bg-zinc-900 px-3 py-2 text-left hover:border-amber-400 transition-colors"
+                  >
+                    <span className="text-sm">
+                      {FORMATS.find(f => f.id === draft.format)?.icon ?? '📝'}
+                    </span>
+                    <div>
+                      <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 line-clamp-1">{draft.topic || 'Untitled draft'}</p>
+                      <p className="text-[10px] text-zinc-400">{FORMATS.find(f => f.id === draft.format)?.label ?? draft.format} · {formatRelativeTime(draft.createdAt)}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+              {preferredFormat && (
+                <p className="mt-3 text-[11px] text-amber-600 dark:text-amber-400">
+                  Your most-used format: <strong>{FORMATS.find(f => f.id === preferredFormat)?.label ?? preferredFormat}</strong>
+                </p>
+              )}
+            </div>
+          )}
+
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
             {[

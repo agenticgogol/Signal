@@ -181,6 +181,24 @@ interface RecallAnswer {
   knowledgeMatches: number
 }
 
+interface ChatHistoryItem {
+  id: string
+  question: string
+  answerSummary: string
+  citations: { title: string; url: string }[]
+  scope: string
+  createdAt: string
+}
+
+interface ArticleHistoryItem {
+  articleId: string
+  title: string
+  url: string
+  eventType: string
+  publishedAt: string | null
+  seenAt: string
+}
+
 const DEFAULT_CONFIG: PipelineConfig = { lookbackDays: 7, maxPerSource: 5 }
 
 // ── TagPill ───────────────────────────────────────────────────────────────────
@@ -727,6 +745,9 @@ export default function FeedPage() {
   const [recallLoading, setRecallLoading] = useState(false)
   const [recallError, setRecallError] = useState<string | null>(null)
   const [recallAnswer, setRecallAnswer] = useState<RecallAnswer | null>(null)
+  const [chatHistory, setChatHistory] = useState<ChatHistoryItem[]>([])
+  const [articleHistory, setArticleHistory] = useState<ArticleHistoryItem[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
 
   // Weekly digest tab
   const [weeklyItems, setWeeklyItems] = useState<WeeklyItem[]>([])
@@ -989,6 +1010,27 @@ export default function FeedPage() {
     setRecallLoading(false)
   }, [recallQuestion, session?.access_token, userId])
 
+  const fetchChatHistory = useCallback(async () => {
+    if (!session?.access_token || !user?.id) return
+    setHistoryLoading(true)
+    try {
+      const res = await fetch(`/api/memory/history?userId=${encodeURIComponent(user.id)}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      if (!res.ok) return
+      const json = await res.json()
+      setChatHistory(json.chatHistory ?? [])
+      setArticleHistory(json.articleHistory ?? [])
+    } catch {}
+    setHistoryLoading(false)
+  }, [session?.access_token, user?.id])
+
+  // Refresh history panel after each new recall answer is returned
+  useEffect(() => {
+    if (recallAnswer && activeTab === 'chat') fetchChatHistory()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recallAnswer])
+
   const fetchWeekly = useCallback(async () => {
     setWeeklyLoading(true)
     try {
@@ -1135,13 +1177,13 @@ export default function FeedPage() {
 
   useEffect(() => {
     if (user?.id && knowledgeItems.length === 0) fetchKnowledgeFeed()
-    if (activeTab === 'chat' && user?.id) fetchYesterdayFeed()
+    if (activeTab === 'chat' && user?.id) { fetchYesterdayFeed(); fetchChatHistory() }
     if (activeTab === 'library' && user?.id) fetchKnowledgeFeed()
     if (activeTab === 'news' && newsItems.length === 0) fetchNews()
     if (activeTab === 'daily' && !dailyDigestFetched && !dailyDigestLoading) fetchDailyDigest()
     if (activeTab === 'weekly' && weeklyItems.length === 0) fetchWeekly()
     if (activeTab === 'weekly' && weeklyView === 'narrative' && !narrative && !narrativeLoading) fetchNarrative()
-  }, [activeTab, weeklyView, user?.id, knowledgeItems.length, newsItems.length, weeklyItems.length, dailyDigestFetched, dailyDigestLoading, fetchKnowledgeFeed, fetchYesterdayFeed, fetchNews, fetchWeekly, fetchNarrative, fetchDailyDigest])
+  }, [activeTab, weeklyView, user?.id, knowledgeItems.length, newsItems.length, weeklyItems.length, dailyDigestFetched, dailyDigestLoading, fetchKnowledgeFeed, fetchYesterdayFeed, fetchChatHistory, fetchNews, fetchWeekly, fetchNarrative, fetchDailyDigest])
 
   // ── pipeline trigger ──────────────────────────────────────────────────────
 
@@ -1855,10 +1897,11 @@ export default function FeedPage() {
         <div className="max-w-3xl">
           <div className="mb-6">
             <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Ask Signal</h2>
-            <p className="text-sm text-zinc-400 mt-1">Search across your feed and knowledge base together. Signal finds relevant articles and notes, then synthesises an answer with citations.</p>
+            <p className="text-sm text-zinc-400 mt-1">Search across your feed and knowledge base together. Signal finds relevant articles and notes, then synthesises a grounded answer with citations.</p>
           </div>
 
-          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 mb-6">
+          {/* Search box */}
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 mb-5">
             <div className="flex gap-2">
               <input
                 value={recallQuestion}
@@ -1894,10 +1937,63 @@ export default function FeedPage() {
             )}
           </div>
 
+          {/* Prior questions — click to re-ask */}
+          {!historyLoading && chatHistory.length > 0 && (
+            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 mb-5">
+              <p className="text-xs font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400 mb-3">Recent questions</p>
+              <div className="space-y-2">
+                {chatHistory.slice(0, 8).map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => { setRecallQuestion(item.question); askRecall(item.question) }}
+                    className="w-full text-left rounded-xl border border-zinc-100 dark:border-zinc-800 p-3 hover:border-violet-300 dark:hover:border-violet-700 transition-colors group"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 line-clamp-1 group-hover:text-violet-700 dark:group-hover:text-violet-300 transition-colors">{item.question}</p>
+                      <span className="text-[10px] text-zinc-400 shrink-0 mt-0.5">{formatRelativeTime(item.createdAt)}</span>
+                    </div>
+                    {item.answerSummary && (
+                      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2">{item.answerSummary}</p>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Article history — "you saw this on X date" */}
+          {!historyLoading && articleHistory.length > 0 && (
+            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 mb-5">
+              <p className="text-xs font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400 mb-3">Your reading history</p>
+              <div className="space-y-2">
+                {articleHistory.slice(0, 10).map(item => (
+                  <a
+                    key={item.articleId}
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-start gap-3 rounded-xl border border-zinc-100 dark:border-zinc-800 p-3 hover:border-violet-300 dark:hover:border-violet-700 transition-colors"
+                  >
+                    <span className="mt-0.5 text-base leading-none shrink-0">
+                      {item.eventType === 'pin' ? '📌' : item.eventType === 'like' ? '👍' : '📖'}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 line-clamp-2 leading-snug">{item.title}</p>
+                      <p className="text-[11px] text-zinc-400 mt-0.5">
+                        You {item.eventType === 'pin' ? 'pinned' : item.eventType === 'like' ? 'liked' : 'opened'} this · {formatRelativeTime(item.seenAt)}
+                      </p>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Continue from yesterday */}
           {yesterdayItems.length > 0 && (
             <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
-              <p className="text-xs font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400 mb-1">Continue from yesterday</p>
-              <p className="text-xs text-zinc-400 mb-4">Your strongest signals from yesterday&apos;s feed.</p>
+              <p className="text-xs font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400 mb-1">Continue from yesterday</p>
+              <p className="text-xs text-zinc-400 mb-4">Strongest signals from yesterday&apos;s feed.</p>
               <div className="space-y-3">
                 {yesterdayItems.slice(0, 5).map((item, idx) => {
                   const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
