@@ -15,6 +15,7 @@ interface SettingsPayload {
 export default function SettingsPage() {
   const { session, user, loading } = useAuthSession()
   const userId = user?.id ?? ''
+  const [plan, setPlan] = useState<'free' | 'pro'>('free')
 
   const [providerOptions, setProviderOptions] = useState<ProviderOption[]>([])
   const [provider, setProvider] = useState<SupportedProvider>('anthropic')
@@ -28,6 +29,19 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null)
   const [digestEmail, setDigestEmail] = useState('')
   const [dailyDigestEnabled, setDailyDigestEnabled] = useState(false)
+
+  useEffect(() => {
+    if (!session?.access_token || !userId) return
+    fetch(`/api/data/profile?userId=${encodeURIComponent(userId)}`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then(async response => {
+        const json = await response.json()
+        if (!response.ok) throw new Error(json.error ?? 'Could not load profile')
+        setPlan(json.plan === 'pro' ? 'pro' : 'free')
+      })
+      .catch(() => setPlan('free'))
+  }, [session?.access_token, userId])
 
   useEffect(() => {
     if (!session?.access_token || !userId) return
@@ -210,14 +224,19 @@ export default function SettingsPage() {
 
             <button
               onClick={save}
-              disabled={saving || !model.trim()}
+              disabled={saving || !model.trim() || plan !== 'pro'}
               className="rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-violet-700 disabled:opacity-40"
             >
-              {saving ? 'Saving...' : 'Save model settings'}
+              {saving ? 'Saving...' : plan === 'pro' ? 'Save model settings' : 'Subscription required'}
             </button>
 
             {status && <div className="rounded-xl border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30 p-3 text-sm text-green-700 dark:text-green-300">{status}</div>}
             {error && <div className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-700 dark:text-red-300">{error}</div>}
+            {plan !== 'pro' && (
+              <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/30 p-4 text-sm leading-6 text-amber-900 dark:text-amber-200">
+                Model provider and API key settings are locked until this account has an active subscription. Once a key is configured here, costly workflows no longer require the admin username and password.
+              </div>
+            )}
           </div>
         </section>
 

@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
   try {
     const { data, error } = await createServiceClient()
       .from('user_profiles')
-      .select('plan, updated_at')
+      .select('plan, updated_at, llm_api_key')
       .eq('id', userId)
       .maybeSingle()
 
@@ -16,6 +16,8 @@ export async function GET(req: NextRequest) {
     return Response.json({
       plan: data?.plan ?? 'free',
       isPro: data?.plan === 'pro',
+      hasApiKeyConfigured: Boolean(String(data?.llm_api_key || '').trim()),
+      hasModelAccess: data?.plan === 'pro' || Boolean(String(data?.llm_api_key || '').trim()),
       updatedAt: data?.updated_at ?? null,
     })
   } catch (error) {

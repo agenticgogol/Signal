@@ -38,6 +38,7 @@ export default function VoicePage() {
   const [error, setError] = useState<string | null>(null)
   const [plan, setPlan] = useState<'free' | 'pro'>('free')
   const [showPaidConfirm, setShowPaidConfirm] = useState(false)
+  const [hasModelAccess, setHasModelAccess] = useState(false)
 
   useEffect(() => {
     fetch(`/api/data/voice?userId=${encodeURIComponent(userId)}`)
@@ -56,8 +57,9 @@ export default function VoicePage() {
         const json = await response.json()
         if (!response.ok) throw new Error(json.error ?? 'Could not load profile')
         setPlan(json.plan === 'pro' ? 'pro' : 'free')
+        setHasModelAccess(Boolean(json.hasModelAccess))
       })
-      .catch(() => {})
+      .catch(() => { setPlan('free'); setHasModelAccess(false) })
   }, [userId])
 
   const validPosts = posts.map(post => post.trim()).filter(Boolean)
@@ -87,7 +89,7 @@ export default function VoicePage() {
   }
 
   const handleAnalyze = () => {
-    if (plan === 'pro') setShowPaidConfirm(true)
+    if (hasModelAccess) setShowPaidConfirm(true)
     else setShowAdminGate(true)
   }
 
@@ -139,7 +141,7 @@ export default function VoicePage() {
         </div>
         <div className="mt-5 flex flex-wrap items-center gap-3">
           {posts.length < 5 && <button onClick={() => setPosts(current => [...current, ''])} className="rounded-xl border border-zinc-200 dark:border-zinc-700 px-4 py-2.5 text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:border-violet-300">+ Add sample</button>}
-          <button onClick={handleAnalyze} disabled={!canAnalyze || analyzing} className="rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40">{analyzing ? 'Analyzing your voice…' : fingerprint ? (plan === 'pro' ? 'Re-analyze Voice' : 'Admin: Re-analyze Voice') : (plan === 'pro' ? 'Analyze My Voice' : 'Admin: Analyze My Voice')}</button>
+          <button onClick={handleAnalyze} disabled={!canAnalyze || analyzing} className="rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40">{analyzing ? 'Analyzing your voice…' : fingerprint ? (hasModelAccess ? 'Re-analyze Voice' : 'Admin: Re-analyze Voice') : (hasModelAccess ? 'Analyze My Voice' : 'Admin: Analyze My Voice')}</button>
           {!canAnalyze && <p className="text-xs text-zinc-400">Complete at least three samples to continue.</p>}
         </div>
         {error && <div className="mt-4 rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-700 dark:text-red-300">{error}</div>}

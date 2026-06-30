@@ -131,6 +131,7 @@ function CreatePageInner() {
   const [pendingPaidGenerate, setPendingPaidGenerate] = useState(false)
   const [voiceActive, setVoiceActive] = useState(false)
   const [plan, setPlan] = useState<'free' | 'pro'>('free')
+  const [hasModelAccess, setHasModelAccess] = useState(false)
 
   // ── Load frozen outlines on mount ──────────────────────────────────────────
   useEffect(() => {
@@ -153,8 +154,9 @@ function CreatePageInner() {
         const json = await response.json()
         if (!response.ok) throw new Error(json.error ?? 'Could not load profile')
         setPlan(json.plan === 'pro' ? 'pro' : 'free')
+        setHasModelAccess(Boolean(json.hasModelAccess))
       })
-      .catch(() => {})
+      .catch(() => { setPlan('free'); setHasModelAccess(false) })
   }, [userId])
 
   // ── Load feed articles when sourceMode = 'feed' ───────────────────────────
@@ -301,7 +303,7 @@ function CreatePageInner() {
   }
 
   const handleGenerateClick = () => {
-    if (plan === 'pro') {
+    if (hasModelAccess) {
       setPendingPaidGenerate(true)
       setShowPaidConfirm(true)
     } else {
@@ -731,7 +733,7 @@ function CreatePageInner() {
             <button onClick={() => setStep(2)} className="px-4 py-2 text-sm font-medium text-zinc-600 border border-zinc-200 rounded-xl hover:bg-zinc-50 transition-colors">← Back</button>
             <button onClick={handleGenerateClick}
               className="px-6 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-medium text-sm transition-colors">
-              {plan === 'pro' ? '🔒 Generate Content →' : '🔒 Pro: Generate Content →'}
+              {hasModelAccess ? '🔒 Generate Content →' : '🔒 Subscription or API key required →'}
             </button>
           </div>
         </div>
@@ -813,7 +815,7 @@ function CreatePageInner() {
           <div className="flex flex-wrap gap-3">
             <button onClick={() => {
               setStep(4)
-              if (plan === 'pro') {
+              if (hasModelAccess) {
                 setPendingPaidGenerate(true)
                 setShowPaidConfirm(true)
               } else {

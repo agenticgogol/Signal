@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { getUserAccessProfile } from '@/lib/featureAccess'
 import { defaultModelFor, normalizeProvider, PROVIDER_OPTIONS } from '@/lib/llmConfig'
 import { createServiceClient } from '@/lib/supabase'
 import { requireSignedInUser } from '@/lib/serverAuth'
@@ -39,6 +40,14 @@ export async function POST(req: NextRequest) {
 
   const signedIn = await requireSignedInUser(req, userId)
   if (signedIn instanceof Response) return signedIn
+
+  const access = await getUserAccessProfile(userId)
+  if (access?.plan !== 'pro') {
+    return Response.json({
+      error: 'Model settings can only be changed by subscribed users.',
+      upgrade_required: true,
+    }, { status: 402 })
+  }
 
   const provider = normalizeProvider(body.provider)
   const model = String(body.model || '').trim() || defaultModelFor(provider)

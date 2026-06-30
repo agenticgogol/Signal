@@ -127,6 +127,7 @@ export default function IdeasPage() {
   const [showPaidConfirm, setShowPaidConfirm] = useState(false)
   const [pendingPaidAction, setPendingPaidAction] = useState<'ideas' | 'outline' | null>(null)
   const [outlineError, setOutlineError] = useState<string | null>(null)
+  const [hasModelAccess, setHasModelAccess] = useState(false)
 
   const fetchIdeas = useCallback(async () => {
     setIdeasLoading(true)
@@ -151,8 +152,9 @@ export default function IdeasPage() {
         const json = await response.json()
         if (!response.ok) throw new Error(json.error ?? 'Could not load profile')
         setPlan(json.plan === 'pro' ? 'pro' : 'free')
+        setHasModelAccess(Boolean(json.hasModelAccess))
       })
-      .catch(() => {})
+      .catch(() => { setPlan('free'); setHasModelAccess(false) })
   }, [userId])
 
   // Pre-fill wizard from "Use This Outline" on a today's idea
@@ -187,7 +189,7 @@ export default function IdeasPage() {
   }
 
   const handleGenerateIdeas = () => {
-    if (plan === 'pro') {
+    if (hasModelAccess) {
       setPendingPaidAction('ideas')
       setShowPaidConfirm(true)
     } else {
@@ -224,7 +226,7 @@ export default function IdeasPage() {
   }
 
   const handleGenerateOutline = () => {
-    if (plan === 'pro') {
+    if (hasModelAccess) {
       setPendingPaidAction('outline')
       setShowPaidConfirm(true)
     } else {

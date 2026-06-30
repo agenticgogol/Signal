@@ -478,6 +478,7 @@ export default function FeedPage() {
   const { user } = useAuthSession()
   const userId = user?.id ?? process.env.NEXT_PUBLIC_USER_ID!
   const [plan, setPlan] = useState<'free' | 'pro'>('free')
+  const [hasModelAccess, setHasModelAccess] = useState(false)
   const [sourceCount, setSourceCount] = useState<number | null>(null)
   const [seedingSources, setSeedingSources] = useState(false)
   const [seededSources, setSeededSources] = useState(false)
@@ -581,8 +582,9 @@ export default function FeedPage() {
         const json = await response.json()
         if (!response.ok) throw new Error(json.error ?? 'Could not load profile')
         setPlan(json.plan === 'pro' ? 'pro' : 'free')
+        setHasModelAccess(Boolean(json.hasModelAccess))
       })
-      .catch(() => {})
+      .catch(() => { setPlan('free'); setHasModelAccess(false) })
   }, [userId])
 
   function saveConfig(c: PipelineConfig) {
@@ -785,7 +787,7 @@ export default function FeedPage() {
   }, [userId])
 
   const promptForCostlyAction = (action: 'feed' | 'narrative' | 'daily') => {
-    if (plan === 'pro') {
+    if (hasModelAccess) {
       setPendingPaidAction(action)
       setShowPaidConfirm(true)
     } else {
@@ -1167,7 +1169,7 @@ export default function FeedPage() {
               ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />Starting…</>
               : pipelineStarted
               ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />Running {fmtElapsed(elapsed)}</>
-              : <>{plan === 'pro' ? '⚡ Get Latest Feed' : '🔒 Pro: Get Latest Feed'}</>}
+              : <>{hasModelAccess ? '⚡ Get Latest Feed' : '🔒 Subscription or API key required'}</>}
           </button>
         </div>
       </div>
@@ -1443,7 +1445,7 @@ export default function FeedPage() {
               </button>
               <button onClick={handleDailyDigestRegenerate} disabled={dailyDigestLoading}
                 className="text-xs text-violet-600 dark:text-violet-400 px-3 py-1.5 bg-white dark:bg-zinc-900 rounded-lg border border-violet-200 dark:border-violet-800 hover:bg-violet-50 dark:hover:bg-violet-950/20 transition-colors font-medium disabled:opacity-50">
-                {dailyDigestLoading ? 'Writing…' : plan === 'pro' ? '↺ Regenerate' : '🔒 Pro: Regenerate'}
+                {dailyDigestLoading ? 'Writing…' : hasModelAccess ? '↺ Regenerate' : '🔒 Subscription or API key required'}
               </button>
             </div>
           </div>
@@ -1626,7 +1628,7 @@ export default function FeedPage() {
               {weeklyView === 'narrative' && (
                 <button onClick={handleNarrativeRegenerate} disabled={narrativeLoading}
                   className="text-xs text-violet-600 dark:text-violet-400 px-3 py-1.5 bg-violet-50 dark:bg-violet-950/30 rounded-lg border border-violet-200 dark:border-violet-800 hover:bg-violet-100 transition-colors font-medium disabled:opacity-50">
-                  {narrativeLoading ? 'Writing briefing…' : plan === 'pro' ? '↺ Regenerate' : '🔒 Pro: Regenerate'}
+                  {narrativeLoading ? 'Writing briefing…' : hasModelAccess ? '↺ Regenerate' : '🔒 Subscription or API key required'}
                 </button>
               )}
             </div>
