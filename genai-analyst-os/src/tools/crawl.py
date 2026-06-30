@@ -8,7 +8,7 @@ from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import TypedDict
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 
 # ---------------------------------------------------------------------------
@@ -28,6 +28,7 @@ class RawArticle(TypedDict):
     full_text: str
     published_at: str  # ISO 8601
     source_id: str
+    og_image_url: str  # best image from RSS media/enclosures, empty if none
 
 
 # ---------------------------------------------------------------------------
@@ -47,16 +48,17 @@ def _load_mock_articles() -> list[RawArticle]:
                 full_text=a.get("full_text", ""),
                 published_at=a["published_at"],
                 source_id=a["source_id"],
+                og_image_url=a.get("og_image_url", ""),
             )
             for a in articles[:3]
         ]
     return [
         RawArticle(url="https://example.com/post/1", title="Mock Article 1",
-                   full_text="Mock full text.", published_at="2026-06-28T10:00:00Z", source_id="src-01"),
+                   full_text="Mock full text.", published_at="2026-06-28T10:00:00Z", source_id="src-01", og_image_url=""),
         RawArticle(url="https://example.com/post/2", title="Mock Article 2",
-                   full_text="Mock full text.", published_at="2026-06-28T12:00:00Z", source_id="src-02"),
+                   full_text="Mock full text.", published_at="2026-06-28T12:00:00Z", source_id="src-02", og_image_url=""),
         RawArticle(url="https://example.com/post/3", title="Mock Article 3",
-                   full_text="Mock full text.", published_at="2026-06-28T14:00:00Z", source_id="src-03"),
+                   full_text="Mock full text.", published_at="2026-06-28T14:00:00Z", source_id="src-03", og_image_url=""),
     ]
 
 
@@ -79,6 +81,31 @@ def _parse_date(raw: str) -> str:
         return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     except Exception:
         return ""
+
+
+def _first_content_image(html: str, article_url: str) -> str:
+    """Return the first usable image embedded in an RSS summary/content body."""
+    if not html:
+        return ""
+    from html.parser import HTMLParser
+
+    class ImageParser(HTMLParser):
+        src = ""
+
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            if tag.lower() != "img" or self.src:
+                return
+            values = dict(attrs)
+            candidate = values.get("src") or values.get("data-src") or ""
+            if candidate and not candidate.startswith("data:"):
+                self.src = urljoin(article_url, candidate)
+
+    parser = ImageParser()
+    try:
+        parser.feed(html)
+    except Exception:
+        return ""
+    return parser.src
 
 
 def crawl_sources(user_id: str, sources: list[UserSource]) -> list[RawArticle]:
@@ -123,12 +150,33 @@ def crawl_sources(user_id: str, sources: list[UserSource]) -> list[RawArticle]:
                     content_list[0].get("value", "") if content_list
                     else entry.get("summary", "")
                 )
+                # Extract best image from RSS media/enclosure fields (no extra HTTP request)
+                og_image_url = ""
+                media_thumbnails = entry.get("media_thumbnail", [])
+                media_content = entry.get("media_content", [])
+                enclosures = entry.get("enclosures", [])
+                if media_thumbnails:
+                    og_image_url = media_thumbnails[0].get("url", "")
+                elif media_content:
+                    for mc in media_content:
+                        if "image" in mc.get("type", "") or mc.get("url", "").lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+                            og_image_url = mc.get("url", "")
+                            break
+                elif enclosures:
+                    for enc in enclosures:
+                        if "image" in enc.get("type", ""):
+                            og_image_url = enc.get("url", "")
+                            break
+                if not og_image_url:
+                    og_image_url = _first_content_image(full_text, url)
+
                 results.append(RawArticle(
                     url=url,
                     title=entry.get("title", ""),
                     full_text=full_text,
                     published_at=_parse_date(entry.get("published") or entry.get("updated") or ""),
                     source_id=source["id"],
+                    og_image_url=og_image_url,
                 ))
         except httpx.TimeoutException:
             # log and continue — partial crawl is acceptable

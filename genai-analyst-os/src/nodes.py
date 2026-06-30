@@ -78,7 +78,10 @@ def crawler(state: PipelineState) -> dict:
             db = get_client()
 
             # Open a crawl_runs row so monitoring can detect hung crawls
-            run_resp = db.table("crawl_runs").insert({"status": "running"}).execute()
+            run_resp = db.table("crawl_runs").insert({
+                "status": "running",
+                "user_id": state.user_id,
+            }).execute()
             crawl_run_id = run_resp.data[0]["id"] if run_resp.data else ""
 
             # Load user's sources from Supabase if none passed via state
@@ -168,6 +171,7 @@ def summarise(state: PipelineState) -> dict:
                 "depth_score":     result["depth_score"],
                 "why_it_matters":  result.get("why_it_matters") or None,
                 "key_takeaways":   result.get("key_takeaways") or None,
+                "og_image_url":    article.get("og_image_url") or None,
                 "embedding":       vec_str,
                 "published_at":    article.get("published_at") or None,
                 "source_id":       article.get("source_id") or None,
@@ -278,6 +282,24 @@ def rank(state: PipelineState) -> dict:
         except Exception as exc:
             errors.append({"node": "rank", "message": f"user_feed_items insert failed: {exc}", "skipped": False})
             logger.error("rank_insert_failed", error=str(exc))
+
+    # An empty crawl still has to close its run. Otherwise UI/status monitoring
+    # sees a permanently-running job and can never report "0 new articles".
+    if not _IS_MOCK() and not feed_items and state.crawl_run_id:
+        from src.db import get_client
+        try:
+            get_client().table("crawl_runs").update({
+                "completed_at": datetime.now(tz=timezone.utc).isoformat(),
+                "status": "degraded" if errors else "completed",
+                "articles_fetched": len(state.raw_articles),
+                "articles_new": 0,
+                "articles_failed": 0,
+                "users_ranked": 0,
+                "users_ideas_generated": 0,
+                "error_log": errors,
+            }).eq("id", state.crawl_run_id).execute()
+        except Exception as exc:
+            logger.warning("empty_crawl_run_close_failed", error=str(exc))
 
     output = {"feed_items": feed_items, "topic_weights": weights, "errors": errors}
     logger.info("node_end", node="rank", session_id=state.user_id, output_keys=list(output.keys()))

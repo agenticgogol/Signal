@@ -45,6 +45,7 @@ export async function GET(req: NextRequest) {
         }
       })
       .filter(Boolean)
+      .filter((item, index, all) => all.findIndex(candidate => candidate?.id === item?.id) === index)
 
     return Response.json({ items })
   } catch (err) {

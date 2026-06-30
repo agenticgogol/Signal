@@ -8,8 +8,8 @@ export async function POST(req: Request) {
   let maxPerSource = '5'
   try {
     const body = await req.json()
-    if (body.lookbackDays) lookbackDays = String(body.lookbackDays)
-    if (body.maxPerSource) maxPerSource = String(body.maxPerSource)
+    if ([1, 3, 7, 14].includes(Number(body.lookbackDays))) lookbackDays = String(body.lookbackDays)
+    if ([1, 3, 5, 10].includes(Number(body.maxPerSource))) maxPerSource = String(body.maxPerSource)
   } catch {}
 
   const res = await fetch(

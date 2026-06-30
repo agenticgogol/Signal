@@ -83,6 +83,9 @@ create table if not exists public.articles (
     tldr_bullets    jsonb,                                  -- string[]
     topic_tags      jsonb,                                  -- string[] from 11-item taxonomy
     depth_score     integer check (depth_score between 1 and 5),
+    why_it_matters  text,
+    key_takeaways   text[],
+    og_image_url    text,
     embedding       vector(384),                            -- gte-small via pgai
     published_at    timestamptz,
     source_id       uuid references public.user_sources(id) on delete set null,
@@ -190,6 +193,7 @@ create table if not exists public.processed_stripe_events (
 
 create table if not exists public.crawl_runs (
     id                      uuid primary key default uuid_generate_v4(),
+    user_id                 uuid references public.user_profiles(id) on delete set null,
     started_at              timestamptz not null default now(),
     completed_at            timestamptz,                    -- null = still running or failed
     status                  text not null default 'running'

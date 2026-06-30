@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
     const db = createServiceClient()
     let query = db
       .from('user_feed_items')
-      .select('blend_score, feed_date, articles(id, url, title, tldr_bullets, topic_tags, depth_score, published_at, source_id)')
+      .select('blend_score, feed_date, articles(id, url, title, tldr_bullets, topic_tags, depth_score, why_it_matters, key_takeaways, og_image_url, published_at, source_id)')
       .eq('user_id', userId)
       .order('blend_score', { ascending: false })
       .limit(120)
@@ -28,7 +28,17 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await query
     if (error) return Response.json({ error: error.message }, { status: 500 })
-    return Response.json({ items: data ?? [] })
+    // The same article can be ranked on several feed dates. Range views should
+    // show it once, keeping the highest-ranked occurrence.
+    const seen = new Set<string>()
+    const items = (data ?? []).filter(item => {
+      const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
+      const articleId = article?.id
+      if (!articleId || seen.has(articleId)) return false
+      seen.add(articleId)
+      return true
+    })
+    return Response.json({ items })
   } catch (err) {
     return Response.json({ error: String(err) }, { status: 500 })
   }
