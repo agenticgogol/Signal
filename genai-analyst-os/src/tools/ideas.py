@@ -110,8 +110,10 @@ def generate_daily_ideas(
         return _load_mock_ideas(top_articles)
 
     from src.llm.provider import call_llm
+    from src.user_llm import get_user_llm_settings
 
     valid_ids = {a["id"] for a in top_articles}
+    user_llm = get_user_llm_settings(user_id)
 
     article_block = "\n".join(
         f"---\narticle_id: {a['id']}\ntitle: {a['title']}\n"
@@ -132,7 +134,14 @@ def generate_daily_ideas(
 
     for attempt in range(2):
         try:
-            resp = call_llm(messages=messages, system=system, tier="primary")
+            resp = call_llm(
+                messages=messages,
+                system=system,
+                tier="primary",
+                provider=user_llm.provider,
+                model=user_llm.model,
+                api_key=user_llm.api_key,
+            )
             raw = resp.choices[0].message.content or ""
             data = json.loads(raw)
             if not isinstance(data, list):

@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { AdminGateModal, getAdminToken } from '@/components/AdminGate'
+import { ActionConfirmModal, AdminGateModal } from '@/components/AdminGate'
 import type { VoiceFingerprint } from '@/lib/voice'
+import { useAuthSession } from '@/lib/useAuthSession'
 
 const EMPTY_POSTS = ['', '', '']
 
@@ -27,7 +28,8 @@ function Chips({ items, empty = 'No strong pattern detected' }: { items: string[
 }
 
 export default function VoicePage() {
-  const userId = process.env.NEXT_PUBLIC_USER_ID!
+  const { user } = useAuthSession()
+  const userId = user?.id ?? process.env.NEXT_PUBLIC_USER_ID!
   const [posts, setPosts] = useState<string[]>(EMPTY_POSTS)
   const [fingerprint, setFingerprint] = useState<VoiceFingerprint | null>(null)
   const [loadingProfile, setLoadingProfile] = useState(true)
@@ -35,6 +37,7 @@ export default function VoicePage() {
   const [showAdminGate, setShowAdminGate] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [plan, setPlan] = useState<'free' | 'pro'>('free')
+  const [showPaidConfirm, setShowPaidConfirm] = useState(false)
 
   useEffect(() => {
     fetch(`/api/data/voice?userId=${encodeURIComponent(userId)}`)
@@ -84,14 +87,26 @@ export default function VoicePage() {
   }
 
   const handleAnalyze = () => {
-    const token = getAdminToken()
-    if (token || plan === 'pro') analyze(token ?? undefined)
+    if (plan === 'pro') setShowPaidConfirm(true)
     else setShowAdminGate(true)
   }
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 pb-20">
-      {showAdminGate && <AdminGateModal action="unlock writing voice analysis" onSuccess={token => { setShowAdminGate(false); analyze(token) }} onCancel={() => setShowAdminGate(false)} />}
+      {showAdminGate && <AdminGateModal persistSession={false} action="unlock writing voice analysis" onSuccess={token => { setShowAdminGate(false); analyze(token) }} onCancel={() => setShowAdminGate(false)} />}
+      {showPaidConfirm && (
+        <ActionConfirmModal
+          title="Confirm API usage"
+          description="This will call external APIs and spend your Pro plan allowance. No admin credentials are needed."
+          confirmLabel="Proceed"
+          action="analyze your writing voice"
+          onConfirm={() => {
+            setShowPaidConfirm(false)
+            analyze()
+          }}
+          onCancel={() => setShowPaidConfirm(false)}
+        />
+      )}
 
       <div className="relative overflow-hidden rounded-3xl border border-violet-200/70 dark:border-violet-800/60 bg-gradient-to-br from-violet-50 via-white to-blue-50 dark:from-violet-950/40 dark:via-zinc-900 dark:to-blue-950/30 p-7 md:p-9">
         <div className="absolute -right-12 -top-20 h-60 w-60 rounded-full bg-violet-300/20 blur-3xl" />
@@ -124,7 +139,7 @@ export default function VoicePage() {
         </div>
         <div className="mt-5 flex flex-wrap items-center gap-3">
           {posts.length < 5 && <button onClick={() => setPosts(current => [...current, ''])} className="rounded-xl border border-zinc-200 dark:border-zinc-700 px-4 py-2.5 text-sm font-medium text-zinc-600 dark:text-zinc-300 hover:border-violet-300">+ Add sample</button>}
-          <button onClick={handleAnalyze} disabled={!canAnalyze || analyzing} className="rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40">{analyzing ? 'Analyzing your voice…' : fingerprint ? (plan === 'pro' ? 'Re-analyze Voice' : 'Pro: Re-analyze Voice') : (plan === 'pro' ? 'Analyze My Voice' : 'Pro: Analyze My Voice')}</button>
+          <button onClick={handleAnalyze} disabled={!canAnalyze || analyzing} className="rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-40">{analyzing ? 'Analyzing your voice…' : fingerprint ? (plan === 'pro' ? 'Re-analyze Voice' : 'Admin: Re-analyze Voice') : (plan === 'pro' ? 'Analyze My Voice' : 'Admin: Analyze My Voice')}</button>
           {!canAnalyze && <p className="text-xs text-zinc-400">Complete at least three samples to continue.</p>}
         </div>
         {error && <div className="mt-4 rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-700 dark:text-red-300">{error}</div>}
@@ -153,7 +168,7 @@ export default function VoicePage() {
       )}
 
       <div className="mt-8 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/30 p-5 text-sm leading-6 text-amber-900 dark:text-amber-200"><strong>Privacy and control:</strong> your pasted samples are sent to Claude for analysis but are not stored by Signal. Only the extracted fingerprint is saved to your profile. Re-analyzing replaces the previous fingerprint.</div>
-      <div className="mt-4 rounded-2xl border border-violet-200 dark:border-violet-800 bg-violet-50/70 dark:bg-violet-950/30 p-5 text-sm leading-6 text-violet-900 dark:text-violet-200"><strong>Pro feature:</strong> voice analysis is a paid action because it runs Claude Sonnet and stores a reusable writing constitution.</div>
+      <div className="mt-4 rounded-2xl border border-violet-200 dark:border-violet-800 bg-violet-50/70 dark:bg-violet-950/30 p-5 text-sm leading-6 text-violet-900 dark:text-violet-200"><strong>Pro feature:</strong> voice analysis is a paid action because it runs Claude Sonnet and stores a reusable writing constitution. Free users can unlock it with admin credentials each time.</div>
     </div>
   )
 }

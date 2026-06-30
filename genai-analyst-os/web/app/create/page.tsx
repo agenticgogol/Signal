@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { AdminGateModal, getAdminToken } from '@/components/AdminGate'
+import { ActionConfirmModal, AdminGateModal } from '@/components/AdminGate'
 import { PLATFORM_SPECS } from '@/lib/platformSpecs'
+import { useAuthSession } from '@/lib/useAuthSession'
 
 type Format = 'linkedin' | 'substack' | 'thread' | 'blog' | 'youtube_long' | 'youtube_short'
 type Step = 1 | 2 | 3 | 4 | 5
@@ -90,8 +91,9 @@ function Stepper({ current }: { current: Step }) {
 
 function CreatePageInner() {
   const searchParams = useSearchParams()
+  const { user } = useAuthSession()
   const [step, setStep] = useState<Step>(1)
-  const userId = process.env.NEXT_PUBLIC_USER_ID ?? ''
+  const userId = user?.id ?? process.env.NEXT_PUBLIC_USER_ID ?? ''
 
   // Step 1
   const [sourceMode, setSourceMode] = useState<SourceMode>('outline')
@@ -124,6 +126,8 @@ function CreatePageInner() {
   // Admin gate
   const [showAdminGate, setShowAdminGate] = useState(false)
   const [pendingGenerate, setPendingGenerate] = useState(false)
+  const [showPaidConfirm, setShowPaidConfirm] = useState(false)
+  const [pendingPaidGenerate, setPendingPaidGenerate] = useState(false)
   const [voiceActive, setVoiceActive] = useState(false)
   const [plan, setPlan] = useState<'free' | 'pro'>('free')
 
@@ -296,9 +300,13 @@ function CreatePageInner() {
   }
 
   const handleGenerateClick = () => {
-    const token = getAdminToken()
-    if (token || plan === 'pro') { doGenerate(token ?? undefined) }
-    else { setPendingGenerate(true); setShowAdminGate(true) }
+    if (plan === 'pro') {
+      setPendingPaidGenerate(true)
+      setShowPaidConfirm(true)
+    } else {
+      setPendingGenerate(true)
+      setShowAdminGate(true)
+    }
   }
 
   const handleSSEEvent = (event: string, payload: Record<string, unknown>) => {
@@ -367,12 +375,32 @@ function CreatePageInner() {
 
       {showAdminGate && (
         <AdminGateModal
+          persistSession={false}
           action="unlock content generation"
           onSuccess={token => {
             setShowAdminGate(false)
             if (pendingGenerate) { setPendingGenerate(false); doGenerate(token) }
           }}
           onCancel={() => { setShowAdminGate(false); setPendingGenerate(false) }}
+        />
+      )}
+      {showPaidConfirm && (
+        <ActionConfirmModal
+          title="Confirm API usage"
+          description="This will call external APIs and spend your Pro plan allowance. No admin credentials are needed."
+          confirmLabel="Proceed"
+          action="generate content"
+          onConfirm={() => {
+            setShowPaidConfirm(false)
+            if (pendingPaidGenerate) {
+              setPendingPaidGenerate(false)
+              doGenerate()
+            }
+          }}
+          onCancel={() => {
+            setShowPaidConfirm(false)
+            setPendingPaidGenerate(false)
+          }}
         />
       )}
 
@@ -690,9 +718,13 @@ function CreatePageInner() {
           <div className="flex flex-wrap gap-3">
             <button onClick={() => {
               setStep(4)
-              const token = getAdminToken()
-              if (token || plan === 'pro') doGenerate(token ?? undefined)
-              else { setPendingGenerate(true); setShowAdminGate(true) }
+              if (plan === 'pro') {
+                setPendingPaidGenerate(true)
+                setShowPaidConfirm(true)
+              } else {
+                setPendingGenerate(true)
+                setShowAdminGate(true)
+              }
             }} disabled={isGenerating}
               className="px-4 py-2.5 text-sm font-medium border border-zinc-200 rounded-xl hover:bg-zinc-50 transition-colors disabled:opacity-50">
               ⟳ Regenerate

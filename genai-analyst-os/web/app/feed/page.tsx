@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { TAG_COLORS, TAG_LABELS } from '@/lib/tagColors'
-import { AdminGateModal, getAdminToken } from '@/components/AdminGate'
+import { ActionConfirmModal, AdminGateModal } from '@/components/AdminGate'
+import { useAuthSession } from '@/lib/useAuthSession'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -102,10 +103,25 @@ interface NarrativeData {
 interface NarrativeMeta {
   cached: boolean; generatedAt: string | null; articleCount: number
 }
+interface DailyDigestData {
+  headline: string
+  signal: string
+  highlights: { title: string; why: string }[]
+  takeaway: string
+}
+interface DigestRecord {
+  digest_date?: string
+  week_start?: string
+  article_count: number
+  dominant_topics: string[]
+  generated_at: string
+  emailed_at?: string | null
+  narrative?: DailyDigestData
+}
 interface PipelineConfig { lookbackDays: number; maxPerSource: number }
 type DateRange = 'today' | '7d' | '30d'
 type SortBy   = 'ranking' | 'recency'
-type Tab      = 'feed' | 'news' | 'weekly'
+type Tab      = 'feed' | 'daily' | 'news' | 'weekly'
 
 const DEFAULT_CONFIG: PipelineConfig = { lookbackDays: 7, maxPerSource: 5 }
 
@@ -146,7 +162,8 @@ function FeedInfoTooltip() {
           <p className="font-semibold text-zinc-900 dark:text-zinc-100 text-sm">How Signal builds your feed</p>
           <p><strong className="text-zinc-700 dark:text-zinc-300">Your Feed:</strong> Crawls your saved RSS sources within the lookback window. Articles scored by recency + topic match + source tier → Must Read / Top Pick / Good Read / Explore.</p>
           <p><strong className="text-zinc-700 dark:text-zinc-300">AI News:</strong> Live headlines directly from 6 curated sources (The Decoder, TechCrunch, VentureBeat, MIT Tech Review, Import AI, Last Week in AI) — no pipeline needed.</p>
-          <p><strong className="text-zinc-700 dark:text-zinc-300">Weekly Digest:</strong> A narrative briefing generated from your top articles of the week by Claude Sonnet.</p>
+          <p><strong className="text-zinc-700 dark:text-zinc-300">Daily Digest:</strong> One story-like morning brief generated overnight from your strongest ranked articles, with optional email delivery.</p>
+          <p><strong className="text-zinc-700 dark:text-zinc-300">Weekly Digest:</strong> A narrative briefing generated from your top articles of the week using your configured model provider.</p>
           <p><strong className="text-zinc-700 dark:text-zinc-300">Pro actions:</strong> Get Latest Feed, Weekly Digest Regenerate, Create, Ideas, Outline, and Voice analysis. Free preview stays read-only until you unlock access.</p>
           <p className="text-amber-700 dark:text-amber-400 font-medium">⚠ If you see no enrichment (Why it matters / Takeaways), run this SQL in Supabase:<br/><code className="font-mono text-[10px]">ALTER TABLE articles ADD COLUMN IF NOT EXISTS why_it_matters TEXT;<br/>ALTER TABLE articles ADD COLUMN IF NOT EXISTS key_takeaways TEXT[];<br/>ALTER TABLE articles ADD COLUMN IF NOT EXISTS og_image_url TEXT;</code></p>
           <button onClick={() => setOpen(false)} className="text-violet-600 dark:text-violet-400 font-medium hover:underline">Close</button>
@@ -213,6 +230,7 @@ function ArticleCard({ item, reaction, onReact, selected, onSelect, isFresh }: {
   selected: boolean
   onSelect: (id: string) => void
   isFresh?: boolean
+  isEmerging?: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
   const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
@@ -248,7 +266,7 @@ function ArticleCard({ item, reaction, onReact, selected, onSelect, isFresh }: {
           className="absolute inset-0 opacity-90 group-hover:opacity-100 transition-opacity" />
         {/* Always-visible gradient overlay on top of image for legibility */}
         {imgUrl && <div style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 60%)' }} className="absolute inset-0" />}
-        {isFresh && (
+        {(isFresh) && (
           <span className="absolute top-2 left-2 bg-green-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow z-10">
             ✦ Fresh
           </span>
@@ -272,32 +290,46 @@ function ArticleCard({ item, reaction, onReact, selected, onSelect, isFresh }: {
           {article.title}
         </a>
 
-        {/* Why it matters — always visible when present */}
-        {why && (
-          <p className="text-xs text-violet-700 dark:text-violet-300 leading-relaxed">{why}</p>
-        )}
-
-        {/* Expandable key takeaways */}
-        {takeaways.length > 0 ? (
-          <div>
-            {expanded && (
-              <ul className="space-y-1 mb-1.5">
-                {takeaways.map((t, i) => (
-                  <li key={i} className="flex items-start gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                    <span className="flex-shrink-0 w-4 h-4 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-400 flex items-center justify-center text-[10px] font-semibold mt-0.5">{i+1}</span>
-                    {t}
-                  </li>
-                ))}
-              </ul>
-            )}
+        {(why || takeaways.length > 0 || bullets.length > 0) ? (
+          <div className="rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/50 p-3">
             <button onClick={() => setExpanded(e => !e)}
-              className="text-xs text-zinc-400 hover:text-violet-500 dark:hover:text-violet-400 font-medium transition-colors">
-              {expanded ? '▲ Hide takeaways' : `▼ ${takeaways.length} key takeaways`}
+              className="w-full flex items-center justify-between gap-3 text-left">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Signal notes</p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                  {why ? 'Why this matters' : 'Key takeaways'}{takeaways.length > 0 ? ` · ${takeaways.length} takeaways` : ''}
+                </p>
+              </div>
+              <span className="text-xs text-violet-600 dark:text-violet-400 font-medium">{expanded ? 'Hide' : 'Open'}</span>
             </button>
+            {expanded && (
+              <div className="mt-3 space-y-3">
+                {why && (
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400 mb-1">Why this matters</p>
+                    <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed">{why}</p>
+                  </div>
+                )}
+                {takeaways.length > 0 && (
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">Key takeaways</p>
+                    <ul className="space-y-1.5">
+                      {takeaways.map((t, i) => (
+                        <li key={i} className="flex items-start gap-1.5 text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed">
+                          <span className="flex-shrink-0 w-4 h-4 rounded-full bg-white dark:bg-zinc-900 text-zinc-400 flex items-center justify-center text-[10px] font-semibold mt-0.5">{i+1}</span>
+                          {t}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {!why && takeaways.length === 0 && bullets.length > 0 && (
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">{bullets[0]}</p>
+                )}
+              </div>
+            )}
           </div>
-        ) : !why && bullets.length > 0 && (
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 leading-relaxed">{bullets[0]}</p>
-        )}
+        ) : null}
 
         {/* Footer */}
         <div className="mt-auto pt-1 flex items-center justify-between gap-2">
@@ -400,10 +432,51 @@ function NewsCard({ item }: { item: NewsItem }) {
   )
 }
 
+function FeedSection({ title, subtitle, items, reactions, onReact, selectedForCreate, onSelect, freshArticleIds }: {
+  title: string
+  subtitle: string
+  items: FeedItem[]
+  reactions: Record<string, 'like' | 'dislike'>
+  onReact: (id: string, r: 'like' | 'dislike') => void
+  selectedForCreate: Set<string>
+  onSelect: (id: string) => void
+  freshArticleIds: Set<string>
+}) {
+  if (items.length === 0) return null
+  return (
+    <section className="mb-8">
+      <div className="mb-3 flex items-end justify-between gap-3">
+        <div>
+          <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">{title}</h3>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">{subtitle}</p>
+        </div>
+        <span className="text-xs text-zinc-400">{items.length}</span>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {items.map((item, idx) => {
+          const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
+          return (
+            <ArticleCard
+              key={`${title}-${idx}`}
+              item={item}
+              reaction={article ? reactions[article.id] : undefined}
+              onReact={onReact}
+              selected={article ? selectedForCreate.has(article.id) : false}
+              onSelect={onSelect}
+              isFresh={article ? freshArticleIds.has(article.id) : false}
+            />
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function FeedPage() {
-  const userId = process.env.NEXT_PUBLIC_USER_ID!
+  const { user } = useAuthSession()
+  const userId = user?.id ?? process.env.NEXT_PUBLIC_USER_ID!
   const [plan, setPlan] = useState<'free' | 'pro'>('free')
 
   // Tabs
@@ -437,7 +510,9 @@ export default function FeedPage() {
   const [triggerError, setTriggerError] = useState<string | null>(null)
   const [pipelineResult, setPipelineResult] = useState<string | null>(null)
   const [showAdminGate, setShowAdminGate] = useState(false)
-  const [pendingNarrativeRegenerate, setPendingNarrativeRegenerate] = useState(false)
+  const [showPaidConfirm, setShowPaidConfirm] = useState(false)
+  const [pendingFreeAction, setPendingFreeAction] = useState<'feed' | 'narrative' | null>(null)
+  const [pendingPaidAction, setPendingPaidAction] = useState<'feed' | 'narrative' | null>(null)
   const [showConfig, setShowConfig] = useState(false)
   const [pipelineConfig, setPipelineConfig] = useState<PipelineConfig>(DEFAULT_CONFIG)
 
@@ -455,6 +530,13 @@ export default function FeedPage() {
   const [narrativeError, setNarrativeError] = useState<string | null>(null)
   const [narrativeMeta, setNarrativeMeta] = useState<NarrativeMeta | null>(null)
   const [weeklyView, setWeeklyView] = useState<'narrative' | 'list'>('narrative')
+  const [dailyDigest, setDailyDigest] = useState<DailyDigestData | null>(null)
+  const [dailyDigestMeta, setDailyDigestMeta] = useState<DigestRecord | null>(null)
+  const [dailyDigestRecent, setDailyDigestRecent] = useState<DigestRecord[]>([])
+  const [dailyDigestArchive, setDailyDigestArchive] = useState<DigestRecord[]>([])
+  const [weeklyArchive, setWeeklyArchive] = useState<DigestRecord[]>([])
+  const [dailyDigestLoading, setDailyDigestLoading] = useState(false)
+  const [dailyDigestError, setDailyDigestError] = useState<string | null>(null)
 
   const pollRef           = useRef<ReturnType<typeof setInterval> | null>(null)
   const elapsedRef        = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -466,7 +548,7 @@ export default function FeedPage() {
     const params = new URLSearchParams(window.location.search)
     const tab = params.get('tab')
     const view = params.get('view')
-    if (tab === 'feed' || tab === 'news' || tab === 'weekly') setActiveTab(tab)
+    if (tab === 'feed' || tab === 'daily' || tab === 'news' || tab === 'weekly') setActiveTab(tab)
     if (view === 'narrative' || view === 'list') setWeeklyView(view)
 
     try {
@@ -611,14 +693,40 @@ export default function FeedPage() {
     setNarrativeLoading(false)
   }, [userId])
 
-  const handleNarrativeRegenerate = () => {
-    const token = getAdminToken()
-    if (token || plan === 'pro') {
-      fetchNarrative(true, token ?? undefined)
-      return
+  const fetchDailyDigest = useCallback(async () => {
+    setDailyDigestLoading(true)
+    setDailyDigestError(null)
+    try {
+      const [digestRes, archiveRes] = await Promise.all([
+        fetch(`/api/data/daily-digest?userId=${userId}`),
+        fetch(`/api/data/digest-archives?userId=${userId}`),
+      ])
+      const digestJson = await digestRes.json()
+      const archiveJson = await archiveRes.json()
+      if (!digestRes.ok) throw new Error(digestJson.error ?? 'Could not load daily digest')
+      setDailyDigest((digestJson.current?.narrative ?? null) as DailyDigestData | null)
+      setDailyDigestMeta(digestJson.current ?? null)
+      setDailyDigestRecent(digestJson.recent ?? [])
+      setDailyDigestArchive(archiveJson.dailyArchive ?? [])
+      setWeeklyArchive(archiveJson.weeklyArchive ?? [])
+    } catch (e) {
+      setDailyDigestError(String(e))
     }
-    setPendingNarrativeRegenerate(true)
-    setShowAdminGate(true)
+    setDailyDigestLoading(false)
+  }, [userId])
+
+  const promptForCostlyAction = (action: 'feed' | 'narrative') => {
+    if (plan === 'pro') {
+      setPendingPaidAction(action)
+      setShowPaidConfirm(true)
+    } else {
+      setPendingFreeAction(action)
+      setShowAdminGate(true)
+    }
+  }
+
+  const handleNarrativeRegenerate = () => {
+    promptForCostlyAction('narrative')
   }
 
   // Initial load
@@ -640,9 +748,10 @@ export default function FeedPage() {
 
   useEffect(() => {
     if (activeTab === 'news' && newsItems.length === 0) fetchNews()
+    if (activeTab === 'daily' && !dailyDigest && !dailyDigestLoading) fetchDailyDigest()
     if (activeTab === 'weekly' && weeklyItems.length === 0) fetchWeekly()
     if (activeTab === 'weekly' && weeklyView === 'narrative' && !narrative && !narrativeLoading) fetchNarrative()
-  }, [activeTab, weeklyView, newsItems.length, weeklyItems.length, fetchNews, fetchWeekly, fetchNarrative])
+  }, [activeTab, weeklyView, newsItems.length, weeklyItems.length, dailyDigest, dailyDigestLoading, fetchNews, fetchWeekly, fetchNarrative, fetchDailyDigest])
 
   // ── pipeline trigger ──────────────────────────────────────────────────────
 
@@ -732,8 +841,7 @@ export default function FeedPage() {
   }
 
   const handleTrigger = () => {
-    const token = getAdminToken()
-    if (token || plan === 'pro') doTrigger(token ?? undefined); else setShowAdminGate(true)
+    promptForCostlyAction('feed')
   }
 
   const handleReact = async (articleId: string, r: 'like' | 'dislike') => {
@@ -804,6 +912,65 @@ export default function FeedPage() {
     return new Date(bA?.published_at ?? 0).getTime() - new Date(aA?.published_at ?? 0).getTime()
   })
 
+  const publishedMs = (item: FeedItem) => {
+    const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
+    return new Date(article?.published_at ?? 0).getTime() || 0
+  }
+  const recentCutoff = Date.now() - 36 * 60 * 60 * 1000
+  const emergingTopicCounts: Record<string, number> = {}
+  for (const item of filteredArticles) {
+    if (publishedMs(item) < recentCutoff) continue
+    const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
+    for (const tag of (article?.topic_tags ?? [])) emergingTopicCounts[tag] = (emergingTopicCounts[tag] ?? 0) + 1
+  }
+  const emergingTopics = new Set(
+    Object.keys(emergingTopicCounts)
+      .sort((a, b) => emergingTopicCounts[b] - emergingTopicCounts[a])
+      .slice(0, 3),
+  )
+
+  const emergingNow = filteredArticles.filter(item => {
+    const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
+    return publishedMs(item) >= recentCutoff
+      && item.blend_score >= 0.55
+      && (article?.topic_tags ?? []).some(tag => emergingTopics.has(tag))
+  }).slice(0, 4)
+
+  const emergingIds = new Set(
+    emergingNow.map(item => (Array.isArray(item.articles) ? item.articles[0] : item.articles)?.id).filter(Boolean) as string[],
+  )
+
+  const groupedArticles = filteredArticles.filter(item => {
+    const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
+    return article ? !emergingIds.has(article.id) : true
+  })
+  const freshSection = groupedArticles.filter(item => {
+    const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
+    return (article && freshArticleIds.has(article.id)) || publishedMs(item) >= recentCutoff
+  })
+  const freshIds = new Set(
+    freshSection.map(item => (Array.isArray(item.articles) ? item.articles[0] : item.articles)?.id).filter(Boolean) as string[],
+  )
+  const remainingAfterFresh = groupedArticles.filter(item => {
+    const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
+    return article ? !freshIds.has(article.id) : true
+  })
+  const topPickSection = remainingAfterFresh.filter(item => item.blend_score >= 0.72)
+  const topPickIds = new Set(
+    topPickSection.map(item => (Array.isArray(item.articles) ? item.articles[0] : item.articles)?.id).filter(Boolean) as string[],
+  )
+  const goodReadSection = remainingAfterFresh.filter(item => {
+    const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
+    return (!article || !topPickIds.has(article.id)) && item.blend_score >= 0.52 && item.blend_score < 0.72
+  })
+  const goodReadIds = new Set(
+    goodReadSection.map(item => (Array.isArray(item.articles) ? item.articles[0] : item.articles)?.id).filter(Boolean) as string[],
+  )
+  const exploreSection = remainingAfterFresh.filter(item => {
+    const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
+    return !article || (!topPickIds.has(article.id) && !goodReadIds.has(article.id))
+  })
+
   // Weekly grouped by topic
   const weeklyByTopic: Record<string, WeeklyItem[]> = {}
   for (const item of weeklyItems) {
@@ -828,11 +995,14 @@ export default function FeedPage() {
   return (
     <div className="p-6 max-w-6xl mx-auto">
       {showAdminGate && (
-        <AdminGateModal action={pendingNarrativeRegenerate ? 'regenerate the weekly digest' : 'run the feed pipeline'}
+        <AdminGateModal
+          persistSession={false}
+          action={pendingFreeAction === 'narrative' ? 'regenerate the weekly digest' : 'run the feed pipeline'}
           onSuccess={token => {
             setShowAdminGate(false)
-            if (pendingNarrativeRegenerate) {
-              setPendingNarrativeRegenerate(false)
+            const action = pendingFreeAction
+            setPendingFreeAction(null)
+            if (action === 'narrative') {
               fetchNarrative(true, token)
             } else {
               doTrigger(token)
@@ -840,8 +1010,27 @@ export default function FeedPage() {
           }}
           onCancel={() => {
             setShowAdminGate(false)
-            setPendingNarrativeRegenerate(false)
+            setPendingFreeAction(null)
           }} />
+      )}
+      {showPaidConfirm && (
+        <ActionConfirmModal
+          title="Confirm API usage"
+          description="This will call external APIs and spend your Pro plan allowance. No admin credentials are needed."
+          confirmLabel="Proceed"
+          action={pendingPaidAction === 'narrative' ? 'regenerate the weekly digest' : 'run the feed pipeline'}
+          onConfirm={() => {
+            const action = pendingPaidAction
+            setShowPaidConfirm(false)
+            setPendingPaidAction(null)
+            if (action === 'narrative') fetchNarrative(true)
+            else doTrigger()
+          }}
+          onCancel={() => {
+            setShowPaidConfirm(false)
+            setPendingPaidAction(null)
+          }}
+        />
       )}
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
@@ -939,6 +1128,7 @@ export default function FeedPage() {
       <div className="flex gap-5 border-b border-zinc-200 dark:border-zinc-800 mb-5">
         {([
           { id: 'feed'   as Tab, label: `Your Feed${articles.length ? ` (${articles.length})` : ''}` },
+          { id: 'daily'  as Tab, label: '✦ Daily Digest' },
           { id: 'news'   as Tab, label: '🌐 AI News Worldover' },
           { id: 'weekly' as Tab, label: '📰 Weekly Digest' },
         ]).map(tab => (
@@ -1058,20 +1248,173 @@ export default function FeedPage() {
                 {freshCount > 0 && ` · ✦ ${freshCount} fresh`}
                 {' '}· 📌 pin to Create
               </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {filteredArticles.map((item, idx) => {
-                  const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
-                  return (
-                    <ArticleCard key={idx} item={item}
-                      reaction={article ? reactions[article.id] : undefined}
-                      onReact={handleReact}
-                      selected={article ? selectedForCreate.has(article.id) : false}
-                      onSelect={handleSelect}
-                      isFresh={article ? freshArticleIds.has(article.id) : false} />
-                  )
-                })}
-              </div>
+              {emergingNow.length > 0 && (
+                <FeedSection
+                  title="Emerging now"
+                  subtitle="Fast-moving topics with strong relevance and fresh publication signals."
+                  items={emergingNow}
+                  reactions={reactions}
+                  onReact={handleReact}
+                  selectedForCreate={selectedForCreate}
+                  onSelect={handleSelect}
+                  freshArticleIds={freshArticleIds}
+                />
+              )}
+              <FeedSection
+                title="Fresh"
+                subtitle="New or newly surfaced articles most likely to matter right now."
+                items={freshSection}
+                reactions={reactions}
+                onReact={handleReact}
+                selectedForCreate={selectedForCreate}
+                onSelect={handleSelect}
+                freshArticleIds={freshArticleIds}
+              />
+              <FeedSection
+                title="Top picks"
+                subtitle="Highest-confidence matches based on relevance, recency, source quality, and learned preference signals."
+                items={topPickSection}
+                reactions={reactions}
+                onReact={handleReact}
+                selectedForCreate={selectedForCreate}
+                onSelect={handleSelect}
+                freshArticleIds={freshArticleIds}
+              />
+              <FeedSection
+                title="Good reads"
+                subtitle="Solid coverage worth scanning once the priority stack is done."
+                items={goodReadSection}
+                reactions={reactions}
+                onReact={handleReact}
+                selectedForCreate={selectedForCreate}
+                onSelect={handleSelect}
+                freshArticleIds={freshArticleIds}
+              />
+              <FeedSection
+                title="Explore"
+                subtitle="Long-tail discoveries and lower-confidence matches that may still surprise you."
+                items={exploreSection}
+                reactions={reactions}
+                onReact={handleReact}
+                selectedForCreate={selectedForCreate}
+                onSelect={handleSelect}
+                freshArticleIds={freshArticleIds}
+              />
             </>
+          )}
+        </div>
+      )}
+
+      {/* ══ DAILY DIGEST TAB ═══════════════════════════════════════════════ */}
+      {activeTab === 'daily' && (
+        <div>
+          <div className="flex items-center justify-between mb-5">
+            <div>
+              <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Today&apos;s consolidated story</p>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                One story-like daily brief generated overnight from your strongest ranked articles
+                {dailyDigestMeta?.generated_at && ` · generated ${formatRelativeTime(dailyDigestMeta.generated_at)}`}
+                {dailyDigestMeta?.emailed_at && ' · emailed'}
+              </p>
+            </div>
+            <button onClick={fetchDailyDigest} disabled={dailyDigestLoading}
+              className="text-xs text-violet-600 dark:text-violet-400 px-3 py-1.5 bg-violet-50 dark:bg-violet-950/30 rounded-lg border border-violet-200 dark:border-violet-800 hover:bg-violet-100 transition-colors font-medium disabled:opacity-50">
+              {dailyDigestLoading ? 'Loading…' : '↺ Refresh view'}
+            </button>
+          </div>
+
+          {dailyDigestLoading ? (
+            <div className="space-y-4">
+              <div className="h-10 bg-zinc-100 dark:bg-zinc-800 rounded-2xl animate-pulse w-2/3" />
+              <div className="h-48 bg-zinc-100 dark:bg-zinc-800 rounded-2xl animate-pulse" />
+            </div>
+          ) : dailyDigestError ? (
+            <div className="text-center py-16 text-zinc-400">
+              <div className="text-5xl mb-4">📭</div>
+              <p className="font-medium text-zinc-600 dark:text-zinc-400">{dailyDigestError}</p>
+              <p className="text-sm mt-2">Daily digests are generated by the overnight pipeline and can also be delivered by email if enabled in Settings.</p>
+            </div>
+          ) : dailyDigest ? (
+            <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
+              <div className="space-y-6">
+                <div className="border-l-4 border-emerald-500 pl-4">
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold uppercase tracking-wide mb-1">The day in one line</p>
+                  <p className="text-lg font-bold text-zinc-900 dark:text-zinc-100 leading-snug">{dailyDigest.headline}</p>
+                </div>
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-5">
+                  <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">The signal today</p>
+                  <div className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed whitespace-pre-wrap">{dailyDigest.signal}</div>
+                </div>
+                <div className="bg-emerald-50 dark:bg-emerald-950/20 rounded-2xl border border-emerald-200 dark:border-emerald-800 p-5">
+                  <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 uppercase tracking-wide mb-3">Why this matters</p>
+                  <p className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">{dailyDigest.takeaway}</p>
+                </div>
+              </div>
+              <div className="space-y-5">
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-5">
+                  <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">Daily highlights</p>
+                  <div className="space-y-3">
+                    {dailyDigest.highlights.map((item, idx) => (
+                      <div key={idx} className="rounded-xl border border-zinc-100 dark:border-zinc-800 p-3">
+                        <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{item.title}</p>
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{item.why}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-5">
+                  <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">Recent daily briefs</p>
+                  <div className="space-y-2">
+                    {dailyDigestRecent.map((item, idx) => (
+                      <div key={idx} className="flex items-center justify-between gap-3 rounded-xl border border-zinc-100 dark:border-zinc-800 px-3 py-2">
+                        <div>
+                          <p className="text-xs font-medium text-zinc-800 dark:text-zinc-200">{formatPubDate(item.digest_date)}</p>
+                          <p className="text-[11px] text-zinc-400">{item.article_count} articles · {(item.dominant_topics ?? []).slice(0, 2).join(' · ')}</p>
+                        </div>
+                        <span className="text-[11px] text-zinc-400">{formatRelativeTime(item.generated_at)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {(dailyDigestArchive.length > 0 || weeklyArchive.length > 0) && (
+                  <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-5">
+                    <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">Archives</p>
+                    {dailyDigestArchive.length > 0 && (
+                      <div className="mb-4">
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-400 mb-2">Daily archive · older than 7 days</p>
+                        <div className="space-y-2">
+                          {dailyDigestArchive.slice(0, 6).map((item, idx) => (
+                            <div key={idx} className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
+                              <span>{formatPubDate(item.digest_date)}</span>
+                              <span>{item.article_count} articles</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {weeklyArchive.length > 0 && (
+                      <div>
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-400 mb-2">Weekly archive · older than 8 weeks</p>
+                        <div className="space-y-2">
+                          {weeklyArchive.slice(0, 6).map((item, idx) => (
+                            <div key={idx} className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
+                              <span>Week of {formatPubDate(item.week_start)}</span>
+                              <span>{item.article_count} articles</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-16 text-zinc-400">
+              <div className="text-5xl mb-4">✦</div>
+              <p className="font-medium text-zinc-600 dark:text-zinc-400">No daily digest yet</p>
+              <p className="text-sm mt-2">Run the overnight feed pipeline or trigger the latest feed so Signal has ranked evidence to condense into a daily story.</p>
+            </div>
           )}
         </div>
       )}
@@ -1138,7 +1481,7 @@ export default function FeedPage() {
             <div>
               <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Last 7 days · intelligence briefing</p>
               <p className="text-xs text-zinc-400 mt-0.5">
-                Claude Sonnet connects your top articles with worldwide AI coverage
+                Your configured model connects your top articles with worldwide AI coverage
                 {narrativeMeta?.generatedAt && ` · ${narrativeMeta.cached ? 'cached' : 'generated'} ${formatRelativeTime(narrativeMeta.generatedAt)}`}
                 {narrativeMeta?.articleCount ? ` · ${narrativeMeta.articleCount} articles` : ''}
               </p>
@@ -1176,7 +1519,7 @@ export default function FeedPage() {
                 <div className="text-center py-16 text-zinc-400">
                   <div className="text-5xl mb-4">📭</div>
                   <p className="font-medium text-zinc-600 dark:text-zinc-400">{narrativeError}</p>
-                  <p className="text-sm mt-2">The article feed is available. Regenerate is a Pro action because it triggers a fresh Claude Sonnet briefing.</p>
+                  <p className="text-sm mt-2">The article feed is available. Regenerate is a Pro action because it triggers a fresh personalized briefing on your configured model provider.</p>
                 </div>
               ) : narrative ? (
                 <div className="space-y-6 max-w-2xl">

@@ -1,7 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { createServiceClient } from './supabase'
 import { PLATFORM_SPECS } from './platformSpecs'
 import { buildVoiceConstitution, type VoiceFingerprint } from './voice'
+import { generateTextForUser } from './llmClient'
 
 export { PLATFORM_SPECS }
 
@@ -10,8 +10,6 @@ export interface SourceArticle {
   url: string
   domain: string
 }
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
 // ── Citation format per platform ───────────────────────────────────────────────
 
@@ -67,6 +65,7 @@ function formatSourceList(sources: SourceArticle[]): string {
 // ── Agent functions ────────────────────────────────────────────────────────────
 
 export async function runOrchestratorAgent(
+  userId: string,
   brief: string,
   format: string,
   pov?: string,
@@ -81,36 +80,31 @@ export async function runOrchestratorAgent(
     ? `\n\nSOURCE ARTICLES to ground this content:\n${sources.map((s, i) => `${i + 1}. "${s.title}" — ${s.url}`).join('\n')}`
     : ''
 
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1500,
-    system: 'You are a content strategist for a senior GenAI practitioner. Produce a structured content plan as JSON.',
-    messages: [{
-      role: 'user',
-      content: `Brief: ${brief}${platformContext}${pov ? `\nAuthor POV: ${pov}` : ''}${sourceContext}
+  const text = await generateTextForUser({
+    userId,
+    maxTokens: 1500,
+    system: 'You are a content strategist for a senior GenAI practitioner. Produce a structured content plan as JSON. Return only valid JSON, no markdown fences.',
+    prompt: `Brief: ${brief}${platformContext}${pov ? `\nAuthor POV: ${pov}` : ''}${sourceContext}
 
 Produce a JSON object with:
 - angle: string (the unique take)
 - key_claims: array of objects, each with:
     - claim: string (the specific assertion to make)
-    - source_url: string (URL from the source list above that backs this claim — use "" if none)
-    - source_title: string (title of that source — use "" if none)
-    - source_domain: string (domain only — e.g. "arxiv.org" — use "" if none)
+    - source_url: string (URL from the source list above that backs this claim - use "" if none)
+    - source_title: string (title of that source - use "" if none)
+    - source_domain: string (domain only - e.g. "arxiv.org" - use "" if none)
 - target_persona: string
 - tone: string
-- hook_idea: string (opening line idea — must be specific, not generic)
+- hook_idea: string (opening line idea - must be specific, not generic)
 - platform_notes: string (specific structural guidance for ${spec?.name ?? format})
-- avoid_these_cliches: string[]
-
-Return only valid JSON, no markdown fences.`,
-    }],
+- avoid_these_cliches: string[]`,
   })
-  const text = response.content[0].type === 'text' ? response.content[0].text : ''
   const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/)
   return jsonMatch ? jsonMatch[1].trim() : text.trim()
 }
 
 export async function runWriterAgent(
+  userId: string,
   orchestratorBrief: string,
   format: string,
   sources: SourceArticle[] = [],
@@ -142,19 +136,16 @@ Write ONLY the final content — no meta-commentary, no "here is your post", no 
 
   const sourceContext = formatSourceList(sources)
 
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 2500,
+  return generateTextForUser({
+    userId,
+    maxTokens: 2500,
     system: systemPrompt,
-    messages: [{
-      role: 'user',
-      content: `Content plan:\n${orchestratorBrief}${sourceContext}\n\nWrite the ${spec?.name ?? format} content now. Every opinion and factual claim must be grounded in one of the sources above with a citation in the format specified.`,
-    }],
+    prompt: `Content plan:\n${orchestratorBrief}${sourceContext}\n\nWrite the ${spec?.name ?? format} content now. Every opinion and factual claim must be grounded in one of the sources above with a citation in the format specified.`,
   })
-  return response.content[0].type === 'text' ? response.content[0].text : ''
 }
 
 export async function runCriticAgent(
+  userId: string,
   draft: string,
   orchestratorBrief: string,
   format: string,
@@ -169,9 +160,9 @@ export async function runCriticAgent(
     ? `\nAVAILABLE SOURCES:\n${sources.map(s => `• ${s.title} — ${s.url}`).join('\n')}`
     : ''
 
-  const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1400,
+  return generateTextForUser({
+    userId,
+    maxTokens: 1400,
     system: `You are a fact-checker and content critic for a GenAI practitioner's content.
 
 Review for:
@@ -187,15 +178,12 @@ Output format:
 CITATION GAPS (list every uncited factual claim or opinion — these MUST be fixed)
 OTHER ISSUES (numbered list, be specific about what line/phrase needs fixing)
 TOP 3 REWRITES (exact suggestions: "Change [X] to [Y] because [reason]")`,
-    messages: [{
-      role: 'user',
-      content: `Content plan: ${orchestratorBrief}${sourceList}\n\nDraft:\n${draft}`,
-    }],
+    prompt: `Content plan: ${orchestratorBrief}${sourceList}\n\nDraft:\n${draft}`,
   })
-  return response.content[0].type === 'text' ? response.content[0].text : ''
 }
 
 export async function runHumanizerAgent(
+  userId: string,
   draft: string,
   critique: string,
   format: string,
@@ -209,9 +197,9 @@ export async function runHumanizerAgent(
     ? `\n\nSOURCES available for any remaining uncited claims:\n${sources.map(s => `• ${s.title} — ${s.url}`).join('\n')}`
     : ''
 
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 2500,
+  return generateTextForUser({
+    userId,
+    maxTokens: 2500,
     system: `You are a ghostwriter specializing in humanizing AI-generated content for ${spec?.name ?? format}.
 
 Apply ALL of:
@@ -228,12 +216,8 @@ Apply ALL of:
 ${citationGuide(format)}
 
 Return ONLY the rewritten content. No meta-commentary, no "Here is the revised version:", just the content.${buildVoiceConstitution(voiceFingerprint)}`,
-    messages: [{
-      role: 'user',
-      content: `Draft:\n${draft}\n\nCritique:\n${critique}${sourceContext}\n\nFormat: ${spec?.name ?? format}`,
-    }],
+    prompt: `Draft:\n${draft}\n\nCritique:\n${critique}${sourceContext}\n\nFormat: ${spec?.name ?? format}`,
   })
-  return response.content[0].type === 'text' ? response.content[0].text : ''
 }
 
 // ── Claim Verifier ─────────────────────────────────────────────────────────────
@@ -241,6 +225,7 @@ Return ONLY the rewritten content. No meta-commentary, no "Here is the revised v
 // source's TL;DR bullets actually support it. Flags hallucinated citations.
 
 export async function runClaimVerifierAgent(
+  userId: string,
   draft: string,
   sources: SourceArticle[],
   brief: string
@@ -251,9 +236,9 @@ export async function runClaimVerifierAgent(
     .map(s => `SOURCE: "${s.title}" (${s.url})\n  → Available evidence: [from feed TL;DR bullets stored in pipeline]`)
     .join('\n\n')
 
-  const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1200,
+  return generateTextForUser({
+    userId,
+    maxTokens: 1200,
     system: `You are a fact-checker verifying that each claim in a draft is actually supported by the cited source.
 
 For each claim+citation pair you find in the draft:
@@ -270,12 +255,8 @@ CLAIM VERIFICATION REPORT
 [HALLUCINATED] "exact claim text" → cited URL not in source list — must be corrected
 
 VERDICT: X of Y claims verified. [PASS / NEEDS REVISION]`,
-    messages: [{
-      role: 'user',
-      content: `Brief: ${brief}\n\nAvailable sources:\n${sourceDigest}\n\nDraft to verify:\n${draft}`,
-    }],
+    prompt: `Brief: ${brief}\n\nAvailable sources:\n${sourceDigest}\n\nDraft to verify:\n${draft}`,
   })
-  return response.content[0].type === 'text' ? response.content[0].text : ''
 }
 
 // ── Evaluator ──────────────────────────────────────────────────────────────────
@@ -291,6 +272,7 @@ export interface EvaluatorResult {
 }
 
 export async function runEvaluatorAgent(
+  userId: string,
   content: string,
   format: string,
   brief: string,
@@ -298,9 +280,9 @@ export async function runEvaluatorAgent(
 ): Promise<EvaluatorResult> {
   const spec = PLATFORM_SPECS[format]
 
-  const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1000,
+  const raw = await generateTextForUser({
+    userId,
+    maxTokens: 1000,
     system: `You are a content quality evaluator. Score this ${spec?.name ?? format} content on 5 criteria, each 1-10:
 
 1. HOOK STRENGTH (1-10): Does the opening line grab a practitioner immediately? 7+ = specific and compelling. Below 7 = generic or vague.
@@ -315,13 +297,8 @@ Return ONLY valid JSON:
   "failed": ["hook", "voice"],  // criteria scoring < 7, empty array if all pass
   "writer_instructions": "Specific rewrite instructions for the Writer — what exactly to fix, with examples. Empty string if all pass."
 }`,
-    messages: [{
-      role: 'user',
-      content: `Brief: ${brief}\n\nContent (loop ${loopNumber}):\n${content}`,
-    }],
+    prompt: `Brief: ${brief}\n\nContent (loop ${loopNumber}):\n${content}`,
   })
-
-  const raw = response.content[0].type === 'text' ? response.content[0].text : '{}'
   const cleaned = raw.replace(/^```[a-z]*\n?/, '').replace(/\n?```$/, '').trim()
 
   try {
@@ -353,14 +330,15 @@ Return ONLY valid JSON:
 // The Humanizer uses this as a final-pass brief.
 
 export async function runAudienceSimAgent(
+  userId: string,
   content: string,
   format: string
 ): Promise<string> {
   const spec = PLATFORM_SPECS[format]
 
-  const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 800,
+  return generateTextForUser({
+    userId,
+    maxTokens: 800,
     system: `You are simulating 3 different readers of a ${spec?.name ?? format} post.
 
 Read the content as each persona and give their honest reaction:
@@ -375,18 +353,15 @@ Objection: [one specific thing they'd push back on]
 Question: [one thing they'd want answered that isn't in the content]
 
 Keep each response to 2 lines max. Be specific about what line/claim triggered the reaction.`,
-    messages: [{
-      role: 'user',
-      content: `Content:\n${content}`,
-    }],
+    prompt: `Content:\n${content}`,
   })
-  return response.content[0].type === 'text' ? response.content[0].text : ''
 }
 
 // ── Audience-aware Humanizer ───────────────────────────────────────────────────
 // Final humanizer pass that also addresses audience sim objections.
 
 export async function runFinalPolishAgent(
+  userId: string,
   content: string,
   audienceFeedback: string,
   format: string,
@@ -399,9 +374,9 @@ export async function runFinalPolishAgent(
     ? `\nSOURCES if any claims still need citation:\n${sources.map(s => `• ${s.title} — ${s.url}`).join('\n')}`
     : ''
 
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 2500,
+  return generateTextForUser({
+    userId,
+    maxTokens: 2500,
     system: `You are making the final polish pass on a ${spec?.name ?? format} post.
 
 Three different reader personas just read this and gave feedback. Your job is to address their objections in the existing text — not add sections, but fix the specific lines that caused the reactions.
@@ -413,12 +388,8 @@ Rules:
 ${sourceContext}
 
 Return ONLY the revised content. No preamble.${buildVoiceConstitution(voiceFingerprint)}`,
-    messages: [{
-      role: 'user',
-      content: `Content:\n${content}\n\nAudience feedback to address:\n${audienceFeedback}`,
-    }],
+    prompt: `Content:\n${content}\n\nAudience feedback to address:\n${audienceFeedback}`,
   })
-  return response.content[0].type === 'text' ? response.content[0].text : content
 }
 
 export async function persistJob(

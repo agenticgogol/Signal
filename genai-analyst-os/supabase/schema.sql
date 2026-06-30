@@ -32,6 +32,11 @@ create table if not exists public.user_profiles (
     style_seed          text not null default 'practitioner'
                             check (style_seed in ('practitioner', 'technical', 'business', 'beginner-friendly')),
     voice_fingerprint   jsonb,
+    llm_provider        text check (llm_provider in ('anthropic', 'openai', 'groq', 'openrouter')),
+    llm_model           text,
+    llm_api_key         text,
+    digest_email        text,
+    daily_digest_enabled boolean not null default false,
     topic_weights       jsonb not null default '{
         "agents": 0.5, "evals": 0.5, "fine-tuning": 0.5, "rag": 0.5,
         "multimodal": 0.5, "reasoning": 0.5, "infrastructure": 0.5,
@@ -46,6 +51,9 @@ create table if not exists public.user_profiles (
 
 comment on table public.user_profiles is
     'One row per user. topic_weights drives relevance ranking; plan enforces feature limits.';
+
+comment on column public.user_profiles.llm_api_key is
+    'Per-user API key for the selected LLM provider. Stored server-side as an application-encrypted payload.';
 
 
 -- ---------------------------------------------------------------------------
@@ -230,6 +238,26 @@ create table if not exists public.weekly_digests (
 alter table public.weekly_digests enable row level security;
 
 
+-- ---------------------------------------------------------------------------
+-- daily_digests
+-- Cached daily narrative plus email delivery state.
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.daily_digests (
+    id                uuid primary key default uuid_generate_v4(),
+    user_id           uuid not null references public.user_profiles(id) on delete cascade,
+    digest_date       date not null default current_date,
+    narrative         jsonb not null,
+    article_count     integer not null default 0,
+    dominant_topics   text[] not null default '{}',
+    generated_at      timestamptz not null default now(),
+    emailed_at        timestamptz,
+    unique (user_id, digest_date)
+);
+
+alter table public.daily_digests enable row level security;
+
+
 -- =============================================================================
 -- INDEXES
 -- =============================================================================
@@ -253,6 +281,12 @@ create index if not exists feed_items_user_date_idx
 create index if not exists ideas_user_date_idx
     on public.daily_ideas (user_id, idea_date desc, position asc);
 
+create index if not exists weekly_digests_user_week_idx
+    on public.weekly_digests (user_id, week_start desc);
+
+create index if not exists daily_digests_user_date_idx
+    on public.daily_digests (user_id, digest_date desc);
+
 -- user_feedback: history lookup for weight recomputation
 create index if not exists feedback_user_idx on public.user_feedback (user_id, created_at desc);
 
@@ -275,6 +309,8 @@ alter table public.user_feed_items      enable row level security;
 alter table public.user_feedback        enable row level security;
 alter table public.daily_ideas          enable row level security;
 alter table public.drafts               enable row level security;
+alter table public.weekly_digests       enable row level security;
+alter table public.daily_digests        enable row level security;
 alter table public.processed_stripe_events enable row level security;
 alter table public.crawl_runs           enable row level security;
 

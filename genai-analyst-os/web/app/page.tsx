@@ -4,13 +4,13 @@ const VALUE_PROPS = [
   {
     icon: '🧠',
     title: 'Know what matters — before everyone else',
-    body: 'Signal monitors 50+ curated sources: research papers, engineering blogs, product launches, and industry takes. Every article is scored, tagged, and ranked against your interests. You read the 5 that matter, not the 50 that exist.',
+    body: 'Signal monitors 50+ curated sources: research papers, engineering blogs, product launches, and industry takes. Every article is scored, tagged, and ranked against your interests. You read the 5 that matter, not the 50 that exist, and start your day with a daily narrative digest if you want it in email.',
     accent: 'from-violet-500 to-indigo-500',
   },
   {
     icon: '✍️',
     title: 'From insight to publish-ready content in minutes',
-    body: 'Pick an article, pick a format — LinkedIn post, Substack essay, blog, YouTube script, or Twitter thread. An 8-agent workflow (Orchestrator, Writer, Verifier, Critic, Humanizer, Evaluator, Audience Sim, Final Polish) turns raw ideas into polished drafts with your voice.',
+    body: 'Pick an article, pick a format — LinkedIn post, Substack essay, blog, YouTube script, or Twitter thread. An 8-agent workflow (Orchestrator, Writer, Verifier, Critic, Humanizer, Evaluator, Audience Sim, Final Polish) turns raw ideas into polished drafts with your voice and your chosen model stack.',
     accent: 'from-blue-500 to-cyan-500',
   },
   {
@@ -24,14 +24,16 @@ const VALUE_PROPS = [
 const HOW_IT_WORKS = [
   { step: '01', label: 'Curated Feed', desc: 'Signal pulls from your sources daily. Every article gets TL;DR bullets, topic tags, and a depth score.' },
   { step: '02', label: 'Ranked for You', desc: 'A blend score surfaces the articles that match your interests and reaction history at the top.' },
-  { step: '03', label: 'Idea Generation', desc: 'Signal suggests content angles from the week\'s top articles — opinionated takes ready to build on.' },
-  { step: '04', label: 'Agentic Creation', desc: 'The eight-agent loop drafts, checks claims, critiques, humanizes, scores, stress-tests, and polishes. You review, refine, and publish.' },
+  { step: '03', label: 'Digest + Ideas', desc: 'Signal turns ranked evidence into a daily story and suggests content angles from the strongest articles — opinionated takes ready to build on.' },
+  { step: '04', label: 'Agentic Creation', desc: 'The eight-agent loop drafts, checks claims, critiques, humanizes, scores, stress-tests, and polishes using your own provider, model, and API key. You review, refine, and publish.' },
 ]
 
 const CAPABILITIES = [
   { label: 'Sources monitored', value: '50+' },
   { label: 'Content formats', value: '6' },
   { label: 'Agent pipeline stages', value: '8' },
+  { label: 'LLM providers supported', value: '4' },
+  { label: 'Digest cadences', value: '2' },
   { label: 'Topics tracked', value: '7' },
 ]
 
@@ -110,7 +112,7 @@ export default function LandingPage() {
 
       {/* Stats strip */}
       <section className="border-y border-white/5 bg-white/2">
-        <div className="max-w-5xl mx-auto px-6 py-8 grid grid-cols-2 md:grid-cols-4 gap-8">
+        <div className="max-w-6xl mx-auto px-6 py-8 grid grid-cols-2 md:grid-cols-6 gap-8">
           {CAPABILITIES.map(({ label, value }) => (
             <div key={label} className="text-center">
               <p className="text-3xl font-black bg-gradient-to-r from-violet-400 to-blue-400 bg-clip-text text-transparent">{value}</p>

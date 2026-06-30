@@ -3,8 +3,8 @@ import { Arrow, Callout, FeatureCard, FlowNode, GuideHero, GuideSection, Screens
 
 const toc = [
   ['quick-start', 'Quick start'], ['feed', 'Your Feed'], ['news', 'AI News'],
-  ['digest', 'Weekly Digest'], ['ideas', 'Idea Wizard'], ['content-workflow', 'Content Studio'],
-  ['voice', 'My Voice'], ['create', 'Create walkthrough'], ['formats', 'Formats'], ['sources', 'Sources'], ['faq', 'FAQ'],
+  ['daily-digest', 'Daily Digest'], ['digest', 'Weekly Digest'], ['ideas', 'Idea Wizard'], ['content-workflow', 'Content Studio'],
+  ['voice', 'My Voice'], ['settings', 'Settings'], ['create', 'Create walkthrough'], ['formats', 'Formats'], ['sources', 'Sources'], ['faq', 'FAQ'],
 ]
 
 export default function UserGuidePage() {
@@ -22,7 +22,7 @@ export default function UserGuidePage() {
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
           <StepCard number={1} title="Choose sources" action="Sources → Add" result="Signal detects and stores the publication's RSS feed." />
           <StepCard number={2} title="Build the feed" action="Feed → ⚡ Get Latest Feed" result="Articles are collected, summarized, tagged, scored, and ranked." />
-          <StepCard number={3} title="Find the signal" action="AI News or Weekly Digest" result="See worldwide context or a connected weekly narrative." />
+          <StepCard number={3} title="Find the signal" action="Daily Digest, AI News, or Weekly Digest" result="See the overnight story, live worldwide context, or the connected weekly narrative." />
           <StepCard number={4} title="Create your angle" action="📌 article → Ideas → Create" result="Turn evidence plus your POV bullets into a draft you control." />
         </div>
       </GuideSection>
@@ -46,7 +46,14 @@ export default function UserGuidePage() {
         </div>
       </GuideSection>
 
-      <GuideSection id="digest" eyebrow="Synthesis" title="Weekly Digest: the connected story behind the links" description="Claude Sonnet reads your strongest deduplicated articles alongside worldwide coverage, then identifies the central theme, tensions, three developments to watch, and a practitioner action.">
+      <GuideSection id="daily-digest" eyebrow="Morning brief" title="Daily Digest: one story worth reading before you open anything else" description="The overnight pipeline now condenses your strongest ranked articles into a single daily brief. It is designed to read like a sharp editorial note, not a list of links.">
+        <div className="grid gap-5 lg:grid-cols-[1.45fr_1fr]">
+          <Callout title="What you get"><p>A headline, the day&apos;s connected story, 3-4 standout highlights, and a clear &quot;why this matters&quot; takeaway. If you enable digest delivery in Settings, Signal emails it once per day.</p></Callout>
+          <Callout title="Archive behavior" tone="green"><p>The app keeps recent daily digests close at hand and moves older ones into archive views after 7 days. Weekly digests move into archive views after 8 weeks.</p></Callout>
+        </div>
+      </GuideSection>
+
+      <GuideSection id="digest" eyebrow="Synthesis" title="Weekly Digest: the connected story behind the links" description="Your configured model reads your strongest deduplicated articles alongside worldwide coverage, then identifies the central theme, tensions, three developments to watch, and a practitioner action.">
         <div className="grid gap-5 lg:grid-cols-[1.45fr_1fr]">
           <ScreenshotFrame src="/guides/weekly-digest.png" alt="Signal Weekly Digest article view" number={3} caption="Narrative connects the stories; List exposes the underlying enriched evidence. Later narrative visits use the weekly cache; Regenerate explicitly refreshes it." />
           <div className="space-y-4">
@@ -69,7 +76,7 @@ export default function UserGuidePage() {
           <FlowNode icon="🔒" title="Freeze" subtitle="save and open in Create" tone="green" />
         </div>
         <Callout title="Why freeze an outline?" tone="amber"><p>Freezing saves the version you deliberately reviewed. Create loads that exact hook, angle, audience, and section structure rather than silently regenerating it.</p></Callout>
-        <Callout title="LLM cost controls"><p>Generating topic ideas and building an outline both require admin credentials. One successful login is retained for the current browser tab session.</p></Callout>
+        <Callout title="LLM cost controls"><p>Guests and free accounts must pass the admin wall every time they trigger topic ideas or outline generation. Paid signed-in users only confirm API usage, and the call runs on their configured provider.</p></Callout>
       </GuideSection>
 
       <GuideSection id="content-workflow" eyebrow="Content generation" title="The Content Studio: evidence in, reviewed content out" description="Create is not a single prompt. It assembles your evidence and point of view, applies platform rules, streams an eight-agent quality workflow, and hands the final text back for human editing.">
@@ -100,10 +107,22 @@ export default function UserGuidePage() {
         </div>
         <div className="mt-6 grid gap-4 md:grid-cols-3">
           <StepCard number={1} title="Choose representative work" action="My Voice → paste 3–5 complete posts" result="Use pieces with your real rhythm, opinions, and transitions—not content written by someone else." />
-          <StepCard number={2} title="Analyze" action="Analyze My Voice and pass the admin wall" result="Claude identifies high-level style while Signal computes sentence metrics directly from the text." />
+          <StepCard number={2} title="Analyze" action="Analyze My Voice and confirm access" result="Your configured model identifies high-level style while Signal computes sentence metrics directly from the text." />
           <StepCard number={3} title="Generate normally" action="Open Create and look for Your voice active" result="The style constitution automatically follows the brief into all drafting and polishing loops." />
         </div>
         <Callout title="What it does not do" tone="amber"><p>Voice Fingerprinting is not model training or fine-tuning, and it does not memorize your posts. It is a structured set of writing constraints injected at generation time.</p></Callout>
+      </GuideSection>
+
+      <GuideSection id="settings" eyebrow="Account control" title="Settings: choose the model stack behind your paid workflows" description="Signal lets each signed-in account bring its own provider, model, and API key. That keeps product access separate from model spend and lets you optimize for quality, speed, or open-weight models.">
+        <div className="grid gap-5 lg:grid-cols-[1.35fr_1fr]">
+          <Callout title="What you configure"><p>Open <strong>Settings</strong> from the left rail, then choose a provider, model name, and API key. Supported providers currently include Anthropic, OpenAI, Groq, and OpenRouter.</p></Callout>
+          <Callout title="What it affects" tone="green"><p>Your configured model is used by Daily Digest generation, Weekly Digest regeneration, Discover New Topic, outline generation, Voice Fingerprinting, and the full Create multi-agent workflow.</p></Callout>
+        </div>
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
+          <StepCard number={1} title="Sign in" action="Create or log into your account" result="Only signed-in accounts can attach subscription state and private model credentials." />
+          <StepCard number={2} title="Subscribe" action="Use the account card or popup checkout" result="Paid accounts bypass the admin wall and use confirmation-only for costly actions." />
+          <StepCard number={3} title="Connect model" action="Settings → provider, model, API key" result="Signal runs paid generation against your account-level LLM configuration." />
+        </div>
       </GuideSection>
 
       <GuideSection id="create" eyebrow="Click-by-click" title="Create: your POV is the differentiating ingredient" description="The POV field is currently optional, but Signal should not invent your conviction. The strongest results combine selected evidence with a specific author perspective.">

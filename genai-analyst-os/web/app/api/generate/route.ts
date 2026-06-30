@@ -48,7 +48,7 @@ export async function POST(req: Request) {
       try {
         // ── Step 1: Orchestrator ────────────────────────────────────────────
         send('agent_start', { agent: 'orchestrator' })
-        const orchestratorBrief = await runOrchestratorAgent(brief, format, pov, sources)
+        const orchestratorBrief = await runOrchestratorAgent(userId, brief, format, pov, sources)
         send('agent_complete', { agent: 'orchestrator', output: orchestratorBrief })
 
         let currentDraft = ''
@@ -70,28 +70,28 @@ export async function POST(req: Request) {
             : orchestratorBrief
 
           send('agent_start', { agent: 'writer', loop })
-          currentDraft = await runWriterAgent(writerContext, format, sources, voiceFingerprint)
+          currentDraft = await runWriterAgent(userId, writerContext, format, sources, voiceFingerprint)
           send('agent_complete', { agent: 'writer', output: currentDraft, loop })
 
           // Step 3: Claim Verifier
           send('agent_start', { agent: 'verifier', loop })
-          claimReport = await runClaimVerifierAgent(currentDraft, sources, brief)
+          claimReport = await runClaimVerifierAgent(userId, currentDraft, sources, brief)
           send('agent_complete', { agent: 'verifier', output: claimReport, loop })
 
           // Step 4: Critic (receives both verifier report and draft)
           send('agent_start', { agent: 'critic', loop })
           const criticInput = `${orchestratorBrief}\n\nCLAIM VERIFICATION REPORT:\n${claimReport}`
-          currentCritique = await runCriticAgent(currentDraft, criticInput, format, sources)
+          currentCritique = await runCriticAgent(userId, currentDraft, criticInput, format, sources)
           send('agent_complete', { agent: 'critic', output: currentCritique, loop })
 
           // Step 5: Humanizer
           send('agent_start', { agent: 'humanizer', loop })
-          currentHumanized = await runHumanizerAgent(currentDraft, currentCritique, format, sources, voiceFingerprint)
+          currentHumanized = await runHumanizerAgent(userId, currentDraft, currentCritique, format, sources, voiceFingerprint)
           send('agent_complete', { agent: 'humanizer', output: currentHumanized, loop })
 
           // Step 6: Evaluator — score the humanized output
           send('agent_start', { agent: 'evaluator', loop })
-          const evalResult = await runEvaluatorAgent(currentHumanized, format, brief, loop)
+          const evalResult = await runEvaluatorAgent(userId, currentHumanized, format, brief, loop)
           loopScores = evalResult.scoresSummary
           send('agent_complete', {
             agent: 'evaluator',
@@ -113,12 +113,12 @@ export async function POST(req: Request) {
 
         // ── Step 7: Audience Simulation ─────────────────────────────────────
         send('agent_start', { agent: 'audience_sim' })
-        const audienceFeedback = await runAudienceSimAgent(currentHumanized, format)
+        const audienceFeedback = await runAudienceSimAgent(userId, currentHumanized, format)
         send('agent_complete', { agent: 'audience_sim', output: audienceFeedback })
 
         // ── Step 8: Final Polish (addresses audience objections) ─────────────
         send('agent_start', { agent: 'final_polish' })
-        const final = await runFinalPolishAgent(currentHumanized, audienceFeedback, format, sources, voiceFingerprint)
+        const final = await runFinalPolishAgent(userId, currentHumanized, audienceFeedback, format, sources, voiceFingerprint)
         send('agent_complete', { agent: 'final_polish', output: final })
 
         // Persist

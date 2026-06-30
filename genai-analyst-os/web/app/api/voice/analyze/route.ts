@@ -1,12 +1,10 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
 import { requirePaidFeature } from '@/lib/featureAccess'
 import type { VoiceFingerprint } from '@/lib/voice'
+import { generateJsonForUser } from '@/lib/llmClient'
 
 export const maxDuration = 60
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
 const VOICE_SCHEMA = {
   type: 'object',
@@ -78,6 +76,10 @@ function clampScore(value: unknown) {
   return Number.isFinite(number) ? Math.min(10, Math.max(1, Math.round(number))) : 5
 }
 
+function toStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(item => String(item).trim()).filter(Boolean) : []
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
@@ -102,27 +104,39 @@ export async function POST(req: NextRequest) {
     if (paidGate) return paidGate
 
     const samples = posts.map((post: string, index: number) => `--- SAMPLE ${index + 1} ---\n${post}`).join('\n\n')
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 2600,
-      output_config: { format: { type: 'json_schema', schema: VOICE_SCHEMA } },
-      system: `You are a forensic writing-style analyst. Infer repeatable stylistic choices from the author's samples, not their factual content. Be conservative: report a pattern only when it appears across multiple samples. Never copy long phrases. "words_to_avoid" should capture conspicuously absent AI clichés or diction that conflicts with the author's established voice. Tone scores are integers from 1 (low) to 10 (high). Return 4–8 practical voice principles that a ghostwriter can execute.`,
-      messages: [{ role: 'user', content: `Analyze these ${posts.length} posts and extract the author's reusable voice fingerprint.\n\n${samples}` }],
+    const analysis = await generateJsonForUser<Record<string, unknown>>({
+      userId,
+      system: `You are a forensic writing-style analyst. Infer repeatable stylistic choices from the author's samples, not their factual content. Be conservative: report a pattern only when it appears across multiple samples. Never copy long phrases. "words_to_avoid" should capture conspicuously absent AI clichés or diction that conflicts with the author's established voice. Tone scores are integers from 1 (low) to 10 (high). Return 4-8 practical voice principles that a ghostwriter can execute.`,
+      prompt: `Analyze these ${posts.length} posts and extract the author's reusable voice fingerprint.\n\n${samples}`,
+      schema: VOICE_SCHEMA,
+      maxTokens: 2600,
     })
-
-    if (response.stop_reason === 'max_tokens') throw new Error('Voice analysis exceeded its output budget')
-    const block = response.content.find(item => item.type === 'text')
-    const analysis = block?.type === 'text' ? JSON.parse(block.text) : null
     if (!analysis) throw new Error('Voice Analyst returned no structured result')
 
+    const certainty = typeof analysis.certainty === 'object' && analysis.certainty ? analysis.certainty as Record<string, unknown> : {}
+    const paragraphPatterns = typeof analysis.paragraph_patterns === 'object' && analysis.paragraph_patterns ? analysis.paragraph_patterns as Record<string, unknown> : {}
+    const tone = typeof analysis.tone_dimensions === 'object' && analysis.tone_dimensions ? analysis.tone_dimensions as Record<string, unknown> : {}
+
     const fingerprint: VoiceFingerprint = {
-      ...analysis,
-      tone_dimensions: {
-        directness: clampScore(analysis.tone_dimensions?.directness),
-        warmth: clampScore(analysis.tone_dimensions?.warmth),
-        technicality: clampScore(analysis.tone_dimensions?.technicality),
-        humor: clampScore(analysis.tone_dimensions?.humor),
+      signature_phrases: toStringArray(analysis.signature_phrases),
+      transitions: toStringArray(analysis.transitions),
+      certainty: {
+        unhedged_topics: toStringArray(certainty.unhedged_topics),
+        qualified_topics: toStringArray(certainty.qualified_topics),
+        hedging_patterns: toStringArray(certainty.hedging_patterns),
       },
+      paragraph_patterns: {
+        openings: toStringArray(paragraphPatterns.openings),
+        closings: toStringArray(paragraphPatterns.closings),
+      },
+      words_to_avoid: toStringArray(analysis.words_to_avoid),
+      tone_dimensions: {
+        directness: clampScore(tone.directness),
+        warmth: clampScore(tone.warmth),
+        technicality: clampScore(tone.technicality),
+        humor: clampScore(tone.humor),
+      },
+      voice_principles: toStringArray(analysis.voice_principles),
       sentence_length: sentenceMetrics(posts),
       sample_count: posts.length,
       analyzed_at: new Date().toISOString(),

@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { href: '/create',  label: 'Create',  icon: '✍️'  },
   { href: '/voice',   label: 'My Voice', icon: '🎙️' },
   { href: '/sources', label: 'Sources', icon: '🔗' },
+  { href: '/settings', label: 'Settings', icon: '⚙️' },
   { href: '/user-guide', label: 'User Guide', icon: '🧭', divider: true },
   { href: '/implementation-guide', label: 'Implementation', icon: '🛠️' },
 ]

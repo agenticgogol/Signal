@@ -1,9 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { createServiceClient } from '@/lib/supabase'
 import { NextRequest } from 'next/server'
 import { requirePaidFeature } from '@/lib/featureAccess'
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+import { generateJsonForUser } from '@/lib/llmClient'
 
 const TOPIC_IDEAS_SCHEMA = {
   type: 'array',
@@ -69,16 +67,15 @@ Return ONLY a JSON array with exactly this structure:
 ]`
 
   try {
-    const response = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1400,
-      output_config: { format: { type: 'json_schema', schema: TOPIC_IDEAS_SCHEMA } },
-      messages: [{ role: 'user', content: prompt }],
+    const ideas: unknown = await generateJsonForUser({
+      userId,
+      system: 'You are a content strategist for a GenAI practitioner.',
+      prompt,
+      schema: TOPIC_IDEAS_SCHEMA,
+      maxTokens: 1400,
     })
-    const text = response.content[0].type === 'text' ? response.content[0].text : '[]'
-    const ideas: unknown = JSON.parse(text)
     if (!Array.isArray(ideas) || ideas.length !== 5) {
-      throw new Error('Claude did not return exactly five topic ideas')
+      throw new Error('Model did not return exactly five topic ideas')
     }
     return Response.json({ ideas })
   } catch (err) {

@@ -27,6 +27,7 @@ class PipelineState:
     # --- ideas phase ---
     style_seed: str = "practitioner"
     daily_ideas: list[dict] = field(default_factory=list)   # IdeaAngle dicts
+    daily_digest: dict | None = None
 
     # --- draft phase ---
     selected_angle: dict | None = None

@@ -26,6 +26,7 @@ from src.tools.crawl import crawl_sources, resolve_rss_url, UserSource
 from src.tools.summarise import summarise_article, embed_article
 from src.tools.score import score_article
 from src.tools.ideas import generate_daily_ideas, ArticleSummary
+from src.tools.digests import generate_daily_digest, send_daily_digest_email
 from src.tools.feedback import update_topic_weights
 
 logger = structlog.get_logger()
@@ -312,7 +313,7 @@ def rank(state: PipelineState) -> dict:
 # ---------------------------------------------------------------------------
 
 def ideas(state: PipelineState) -> dict:
-    """Generate 5 daily ideas; in real mode inserts into daily_ideas and closes crawl_runs."""
+    """Generate 5 daily ideas and today's digest; in real mode persists both and closes crawl_runs."""
     logger.info("node_start", node="ideas", session_id=state.user_id)
     _start("ideas", f"feed_items={len(state.feed_items)}, style={state.style_seed}")
 
@@ -337,6 +338,7 @@ def ideas(state: PipelineState) -> dict:
 
     errors = list(state.errors)
     result_ideas = generate_daily_ideas(state.user_id, top_articles, state.style_seed)
+    daily_digest = generate_daily_digest(state.user_id, top_articles, state.style_seed)
 
     if len(result_ideas) < 5:
         errors.append({"node": "ideas", "message": f"only {len(result_ideas)} ideas returned after retry", "skipped": True})
@@ -369,6 +371,49 @@ def ideas(state: PipelineState) -> dict:
             except Exception as exc:
                 errors.append({"node": "ideas", "message": f"daily_ideas insert failed: {exc}", "skipped": False})
 
+        if daily_digest:
+            topic_counts: dict[str, int] = {}
+            for article in top_articles:
+                for tag in article.get("topic_tags", []):
+                    topic_counts[tag] = topic_counts.get(tag, 0) + 1
+            dominant_topics = [tag for tag, _count in sorted(topic_counts.items(), key=lambda x: x[1], reverse=True)[:3]]
+            try:
+                db.table("daily_digests").upsert({
+                    "user_id": state.user_id,
+                    "digest_date": today,
+                    "narrative": daily_digest,
+                    "article_count": len(top_articles),
+                    "dominant_topics": dominant_topics,
+                    "generated_at": datetime.now(tz=timezone.utc).isoformat(),
+                }, on_conflict="user_id,digest_date").execute()
+            except Exception as exc:
+                errors.append({"node": "daily_digest", "message": f"daily_digests upsert failed: {exc}", "skipped": False})
+
+            try:
+                profile_resp = (
+                    db.table("user_profiles")
+                    .select("daily_digest_enabled, digest_email")
+                    .eq("id", state.user_id)
+                    .maybe_single()
+                    .execute()
+                )
+                profile = profile_resp.data or {}
+                if profile.get("daily_digest_enabled") and profile.get("digest_email"):
+                    sent = send_daily_digest_email(
+                        to_email=str(profile["digest_email"]),
+                        digest=daily_digest,
+                        article_count=len(top_articles),
+                        dominant_topics=dominant_topics,
+                    )
+                    if sent:
+                        db.table("daily_digests").update({
+                            "emailed_at": datetime.now(tz=timezone.utc).isoformat(),
+                        }).eq("user_id", state.user_id).eq("digest_date", today).execute()
+                    else:
+                        errors.append({"node": "daily_digest_email", "message": "digest email send skipped or failed", "skipped": True})
+            except Exception as exc:
+                errors.append({"node": "daily_digest_email", "message": f"digest email failed: {exc}", "skipped": True})
+
         # Close crawl_runs row
         if state.crawl_run_id:
             status = "degraded" if errors else "completed"
@@ -386,7 +431,11 @@ def ideas(state: PipelineState) -> dict:
             except Exception as exc:
                 logger.warning("crawl_run_close_failed", error=str(exc))
 
-    output = {"daily_ideas": [dict(i) for i in result_ideas], "errors": errors}
+    output = {
+        "daily_ideas": [dict(i) for i in result_ideas],
+        "daily_digest": dict(daily_digest) if daily_digest else None,
+        "errors": errors,
+    }
     logger.info("node_end", node="ideas", session_id=state.user_id, output_keys=list(output.keys()))
     _end("ideas", f"ideas={len(result_ideas)}")
     return output

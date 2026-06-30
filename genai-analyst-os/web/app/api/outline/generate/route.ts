@@ -1,8 +1,6 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest } from 'next/server'
 import { requirePaidFeature } from '@/lib/featureAccess'
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+import { generateJsonForUser } from '@/lib/llmClient'
 
 const OUTLINE_SCHEMA = {
   type: 'object',
@@ -61,16 +59,15 @@ Return ONLY a JSON object with this exact structure:
 Include 4-6 sections. Each section should have 3-4 bullet points.`
 
   try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 2048,
-      output_config: { format: { type: 'json_schema', schema: OUTLINE_SCHEMA } },
-      messages: [{ role: 'user', content: prompt }],
+    const outline = await generateJsonForUser<Record<string, unknown>>({
+      userId,
+      system: 'You are an expert content strategist.',
+      prompt,
+      schema: OUTLINE_SCHEMA,
+      maxTokens: 2048,
     })
-    const text = response.content[0].type === 'text' ? response.content[0].text : '{}'
-    const outline = JSON.parse(text)
     if (!Array.isArray(outline.sections) || outline.sections.length < 4 || outline.sections.length > 6) {
-      throw new Error('Claude returned an outline outside the required 4–6 section range')
+      throw new Error('Model returned an outline outside the required 4–6 section range')
     }
     return Response.json({ outline })
   } catch (err) {

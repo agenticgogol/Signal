@@ -4,7 +4,7 @@ const stack = [
   ['▲', 'Next.js 16', 'App Router, server routes, React 19, Tailwind CSS 4'],
   ['⚡', 'GitHub Actions', 'Manual dispatch plus daily schedule; isolated Python runner'],
   ['🧠', 'LangGraph', 'Crawler → summarise → rank → ideas state machine'],
-  ['✦', 'Claude', 'Haiku enrichment, Sonnet ideas/digests/drafts'],
+  ['✦', 'User-selected LLMs', 'Anthropic, OpenAI, Groq, or OpenRouter per account'],
   ['◈', 'Supabase', 'Postgres, Auth-ready profiles, RLS, service APIs'],
   ['⌁', 'pgvector', '384-dimensional embeddings and relevance scoring'],
   ['◉', 'RSS / Atom', 'User-controlled sources plus worldwide news radar'],
@@ -15,6 +15,9 @@ const apiRows = [
   ['/api/pipeline/trigger', 'POST', 'Dispatches the GitHub workflow with bounded crawl settings'],
   ['/api/pipeline/status', 'GET', 'Tracks the current user run through crawl_runs'],
   ['/api/data/feed', 'GET', 'Returns deduplicated ranked feed items'],
+  ['/api/data/daily-digest', 'GET', 'Reads the latest daily story plus recent and archived daily digests'],
+  ['/api/data/digest-archives', 'GET', 'Returns older daily and weekly digest archive lists'],
+  ['/api/data/digest-settings', 'GET / POST', 'Stores daily digest email preferences and delivery address'],
   ['/api/data/ai-news', 'GET', 'Parallel live RSS aggregation; no LLM'],
   ['/api/data/narrative', 'GET / POST', 'Reads weekly cache or explicitly regenerates structured output'],
   ['/api/ideas/generate', 'POST', 'Uses recent feed context and preferences to propose five topics'],
@@ -31,7 +34,7 @@ export default function ImplementationGuidePage() {
     <div className="mx-auto max-w-6xl p-6 md:p-8 pb-24">
       <GuideHero eyebrow="Engineering Field Guide" title="How Signal turns a noisy web into an auditable intelligence workflow"
         description="This guide maps the runtime architecture, agent graph, data model, model tiers, API boundaries, reliability decisions, and deployment controls. It is written for maintainers who need to understand not only what runs, but why the system is shaped this way."
-        chips={['Next.js + Python', 'Supabase + pgvector', 'Claude tiering', 'GitHub Actions', 'Human-in-the-loop']} />
+        chips={['Next.js + Python', 'Supabase + pgvector', 'Per-user LLM routing', 'GitHub Actions', 'Human-in-the-loop']} />
 
       <GuideSection id="architecture" eyebrow="System map" title="Three paths, one intelligence layer" description="The scheduled path builds durable personalized intelligence. The immediate path serves live worldwide headlines. The creation path turns selected evidence and human direction into reviewed platform-native content.">
         <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
@@ -69,14 +72,14 @@ export default function ImplementationGuidePage() {
         </div>
       </GuideSection>
 
-      <GuideSection id="agent" eyebrow="Agent graph" title="The daily pipeline, node by node" description="The graph is deterministic around model calls: bounded inputs, persisted state, per-item failure tolerance, and a terminal run record.">
+      <GuideSection id="agent" eyebrow="Agent graph" title="The daily pipeline, node by node" description="The graph is deterministic around model calls: bounded inputs, persisted state, per-item failure tolerance, and a terminal run record. Shared article enrichment stays platform-owned; user-specific creation and digest layers use account-level provider settings.">
         <div className="grid gap-4 lg:grid-cols-5">
           {[
             ['1', 'Crawler', 'Load each user’s sources, resolve RSS, enforce lookback and entry caps, extract feed artwork.'],
-            ['2', 'Summarise', 'Claude Haiku returns TL;DR, taxonomy tags, depth, why-it-matters, and takeaways.'],
+            ['2', 'Summarise', 'The platform fallback model returns TL;DR, taxonomy tags, depth, why-it-matters, and takeaways once per article.'],
             ['3', 'Embed', 'A 384-d vector represents article meaning for preference-aware retrieval.'],
             ['4', 'Rank', 'Blend recency, topic similarity, and source tier; upsert the dated user feed.'],
-            ['5', 'Ideas', 'Claude Sonnet proposes exactly five schema-checked evidence-backed angles.'],
+            ['5', 'Ideas', 'The configured account model proposes exactly five schema-checked evidence-backed angles and the story-like daily digest.'],
           ].map(([n, title, text]) => (
             <div key={n} className="relative rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 pt-10">
               <span className="absolute left-5 top-0 -translate-y-1/2 rounded-full bg-violet-600 px-3 py-1.5 text-xs font-black text-white">NODE {n}</span>
@@ -143,7 +146,7 @@ export default function ImplementationGuidePage() {
           <FeatureCard icon="⚖️" title="Precedence rules">Citation accuracy comes first, platform requirements second, and personal rhythm applies everywhere those constraints leave room.</FeatureCard>
         </div>
         <div className="mt-5 grid gap-4 md:grid-cols-2">
-          <Callout title="Privacy boundary"><p>The API validates 3–5 bounded samples, sends them once to Claude, and persists only the structured fingerprint. Raw post text is not inserted into Signal’s database.</p></Callout>
+          <Callout title="Privacy boundary"><p>The API validates 3–5 bounded samples, sends them once to the user-selected provider, and persists only the structured fingerprint. Raw post text is not inserted into Signal’s database.</p></Callout>
           <Callout title="Safe fallback" tone="green"><p>Profiles without a fingerprint receive the existing platform-aware prompts unchanged. A failed profile lookup does not block content generation.</p></Callout>
         </div>
       </GuideSection>
@@ -176,16 +179,16 @@ export default function ImplementationGuidePage() {
         </div>
       </GuideSection>
 
-      <GuideSection id="digest" eyebrow="Optimized synthesis" title="Why Weekly Digest is slower—and how caching changes the curve" description="Synthesis is intentionally heavier than headline retrieval because it compares personalized evidence with outside framing.">
+      <GuideSection id="digest" eyebrow="Optimized synthesis" title="Daily and Weekly Digests: cached stories, not disposable summaries" description="Synthesis is intentionally heavier than headline retrieval because it turns ranked evidence into a connected narrative. Daily digests are generated in the nightly pipeline; weekly digests are cached and regenerated on demand.">
         <div className="grid gap-4 md:grid-cols-4">
-          <FlowNode icon="🗃️" title="Cache check" subtitle="user + UTC week" tone="green" />
-          <FlowNode icon="12" title="Top evidence" subtitle="deduplicated articles" tone="blue" />
-          <FlowNode icon="8" title="World context" subtitle="live RSS headlines" tone="amber" />
-          <FlowNode icon="✓" title="JSON Schema" subtitle="3 watches, valid fields" />
+          <FlowNode icon="🌅" title="Daily Digest" subtitle="nightly pipeline story" tone="green" />
+          <FlowNode icon="🗃️" title="Weekly cache" subtitle="user + UTC week" tone="blue" />
+          <FlowNode icon="12" title="Top evidence" subtitle="deduplicated ranked articles" tone="amber" />
+          <FlowNode icon="✉️" title="Email delivery" subtitle="optional once-per-day send" />
         </div>
         <div className="mt-5 grid gap-4 md:grid-cols-2">
-          <Callout title="GET: fast default">Returns the current week’s cached narrative when available. A cache miss performs one generation and persists the result.</Callout>
-          <Callout title="POST: deliberate refresh" tone="green">The Regenerate button bypasses cache, refreshes outside context, validates structured output, and replaces the weekly row.</Callout>
+          <Callout title="Daily digest path">The nightly pipeline writes one daily digest row per user, optionally emails it, keeps recent items close for 7 days, and treats older rows as archive material.</Callout>
+          <Callout title="Weekly digest path" tone="green">The Regenerate button bypasses cache, refreshes outside context, validates structured output, and replaces the current week&apos;s row. Older generated weeks naturally become archive entries after 8 weeks.</Callout>
         </div>
       </GuideSection>
 
@@ -198,12 +201,12 @@ export default function ImplementationGuidePage() {
           </div>
           <div className="my-3 text-center text-zinc-300 dark:text-zinc-700">↓</div>
           <div className="grid gap-3 md:grid-cols-4 text-center">
-            {['user_feed_items', 'article_reactions', 'daily_ideas', 'weekly_digests', 'content_outlines', 'generation_jobs', 'generation_artifacts'].map(name => <div key={name} className="rounded-xl border border-zinc-200 dark:border-zinc-700 p-3 text-xs font-bold text-zinc-700 dark:text-zinc-300">{name}</div>)}
+            {['user_feed_items', 'article_reactions', 'daily_ideas', 'daily_digests', 'weekly_digests', 'content_outlines', 'generation_jobs', 'generation_artifacts'].map(name => <div key={name} className="rounded-xl border border-zinc-200 dark:border-zinc-700 p-3 text-xs font-bold text-zinc-700 dark:text-zinc-300">{name}</div>)}
           </div>
         </div>
       </GuideSection>
 
-      <GuideSection id="api" eyebrow="Interfaces" title="API boundary map" description="Browser-facing routes isolate credentials and normalize access to Supabase, GitHub, Anthropic, and external feeds.">
+      <GuideSection id="api" eyebrow="Interfaces" title="API boundary map" description="Browser-facing routes isolate credentials and normalize access to Supabase, GitHub, per-user model providers, and external feeds.">
         <div className="overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
           <div className="grid grid-cols-[1.2fr_.55fr_2fr] gap-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-zinc-400"><span>Route</span><span>Method</span><span>Responsibility</span></div>
           {apiRows.map(([route, method, job]) => <div key={route} className="grid grid-cols-[1.2fr_.55fr_2fr] gap-4 border-b last:border-0 border-zinc-100 dark:border-zinc-800/70 px-4 py-3 text-xs"><code className="text-violet-600 dark:text-violet-400">{route}</code><span className="font-bold text-zinc-600 dark:text-zinc-300">{method}</span><span className="text-zinc-500 dark:text-zinc-400">{job}</span></div>)}
@@ -214,17 +217,17 @@ export default function ImplementationGuidePage() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <FeatureCard icon="⏱️" title="Run tracking">Every user run opens a <code>crawl_runs</code> row. UI polling distinguishes queued, running, completed, degraded, and timeout states.</FeatureCard>
           <FeatureCard icon="🧯" title="Failure isolation">Feed failures do not erase good items. Model failures produce explicit empty/error states rather than malformed partial data.</FeatureCard>
-          <FeatureCard icon="🔒" title="Secret boundaries">Service role, GitHub PAT, and model keys stay server-side. Feed runs plus Create, topic, outline, and voice analysis independently validate the admin token; the modal is not the security boundary.</FeatureCard>
+          <FeatureCard icon="🔒" title="Secret boundaries">Service role, GitHub PAT, Stripe secrets, and model keys stay server-side. Free and guest users still require admin credentials per costly action, while paid signed-in users authenticate with Supabase and run on their own provider settings.</FeatureCard>
           <FeatureCard icon="📏" title="Bounded work">UI choices, server validation, RSS timeouts, source caps, article limits, and response schemas bound latency and spend.</FeatureCard>
           <FeatureCard icon="🧬" title="Deduplication">URL uniqueness protects global articles; API range views deduplicate repeated dated rankings before rendering.</FeatureCard>
-          <FeatureCard icon="🗂️" title="Cache strategy">Global enrichment is reused for all users; weekly synthesis is reused until explicit regeneration.</FeatureCard>
+          <FeatureCard icon="🗂️" title="Cache strategy">Global enrichment is reused for all users; daily digests are written nightly per user; weekly synthesis is reused until explicit regeneration.</FeatureCard>
         </div>
       </GuideSection>
 
       <GuideSection id="deploy" eyebrow="Runbook" title="Deployment checklist" description="Apply database changes before deploying code that selects or writes the new fields.">
         <div className="grid gap-4 md:grid-cols-2">
           <Callout title="Supabase"><ol className="list-decimal space-y-1.5 pl-4"><li>Apply migrations in numeric order.</li><li>Confirm pgvector and UUID extensions.</li><li>Set service-role credentials only on trusted runtimes.</li><li>Inspect <code>crawl_runs</code> after a smoke run.</li></ol></Callout>
-          <Callout title="GitHub + Vercel" tone="green"><ol className="list-decimal space-y-1.5 pl-4"><li>Set Anthropic and Supabase GitHub secrets.</li><li>Set GitHub PAT and server secrets in Vercel.</li><li>Dispatch a 1-day / 1-entry smoke run.</li><li>Verify feed, digest cache, and status polling.</li></ol></Callout>
+          <Callout title="GitHub + Vercel" tone="green"><ol className="list-decimal space-y-1.5 pl-4"><li>Set Supabase, Stripe, GitHub PAT, and server secrets in Vercel.</li><li>Set fallback model keys only if you want a non-user-specific default path.</li><li>Dispatch a 1-day / 1-entry smoke run.</li><li>Verify feed, digest cache, status polling, and paid account model settings.</li></ol></Callout>
         </div>
       </GuideSection>
     </div>

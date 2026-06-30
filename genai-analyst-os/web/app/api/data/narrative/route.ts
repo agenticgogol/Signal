@@ -1,13 +1,11 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest } from 'next/server'
 import { fetchAiNews } from '@/lib/aiNews'
 import { createServiceClient } from '@/lib/supabase'
 import { TAG_LABELS } from '@/lib/tagColors'
 import { requirePaidFeature } from '@/lib/featureAccess'
+import { generateJsonForUser } from '@/lib/llmClient'
 
 export const maxDuration = 60
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
 interface Narrative {
   headline: string
@@ -136,22 +134,13 @@ async function handle(req: NextRequest, force: boolean) {
       `[W${index + 1}] ${item.title} — ${item.source}\n${item.description.slice(0, 220)}\nURL: ${item.url}`
     ).join('\n\n')
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4000,
-      output_config: {
-        format: { type: 'json_schema', schema: NARRATIVE_SCHEMA },
-      },
+    const parsed: unknown = await generateJsonForUser({
+      userId,
       system: `You are a senior AI analyst writing a concise weekly intelligence newsletter for GenAI practitioners. Connect stories into a coherent argument; do not list or merely summarize them. Compare the user's sources with worldwide AI coverage, identify agreement and tension, and explain practical implications. Return exactly three items in watch. Cite evidence inline as "Article title (URL)". Treat RSS snippets as context rather than proof. Be analytical, direct, specific, and free of hype.`,
-      messages: [{
-        role: 'user',
-        content: `Dominant topics: ${dominantTopics.join(', ')}\n\nUSER'S TOP ARTICLES:\n${articleBriefs}\n\nWORLDWIDE AI NEWS:\n${worldBriefs || 'No external headlines available.'}\n\nProduce the weekly intelligence briefing.`,
-      }],
+      prompt: `Dominant topics: ${dominantTopics.join(', ')}\n\nUSER'S TOP ARTICLES:\n${articleBriefs}\n\nWORLDWIDE AI NEWS:\n${worldBriefs || 'No external headlines available.'}\n\nProduce the weekly intelligence briefing.`,
+      schema: NARRATIVE_SCHEMA,
+      maxTokens: 4000,
     })
-
-    if (response.stop_reason === 'max_tokens') throw new Error('Digest exceeded its output budget.')
-    const block = response.content.find(item => item.type === 'text')
-    const parsed: unknown = block?.type === 'text' ? JSON.parse(block.text) : null
     if (!isNarrative(parsed)) throw new Error('Claude returned an invalid digest structure.')
 
     const generatedAt = new Date().toISOString()

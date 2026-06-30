@@ -20,6 +20,10 @@ _MODELS: dict[str, dict[str, str]] = {
         "primary": "groq/llama-3.3-70b-versatile",
         "cheap": "groq/llama-3.1-8b-instant",
     },
+    "openrouter": {
+        "primary": "openrouter/openai/gpt-4.1-mini",
+        "cheap": "openrouter/openai/gpt-4.1-mini",
+    },
 }
 
 _MOCK_RESPONSE = "MOCK_LLM response: this is a canned reply for testing."
@@ -34,6 +38,23 @@ def get_model(tier: str = "primary") -> str:
     return _MODELS.get(provider, _MODELS["anthropic"])[tier]
 
 
+def _provider_api_base(provider: str) -> str | None:
+    if provider == "openrouter":
+        return "https://openrouter.ai/api/v1"
+    return None
+
+
+def resolve_model(provider: str, model: str, tier: str) -> str:
+    raw = (model or "").strip()
+    if raw.startswith(("anthropic/", "openai/", "groq/", "openrouter/")):
+        return raw
+    if raw:
+        if provider == "openrouter":
+            return f"openrouter/{raw}"
+        return f"{provider}/{raw}"
+    return _MODELS.get(provider, _MODELS["anthropic"])[tier]
+
+
 def _is_mock() -> bool:
     return os.getenv("MOCK_LLM", "false").lower() == "true"
 
@@ -44,6 +65,9 @@ def call_llm(
     tools: list[dict[str, Any]] | None = None,
     tier: str = "primary",
     stream: bool = False,
+    provider: str | None = None,
+    model: str | None = None,
+    api_key: str | None = None,
 ) -> Any:
     if _is_mock():
         class _MockResponse:
@@ -55,11 +79,17 @@ def call_llm(
             choices = [_Choice()]
         return _MockResponse()
 
-    model = get_model(tier)
+    resolved_provider = provider or get_provider()
+    resolved_model = resolve_model(resolved_provider, model or "", tier)
     all_messages = (
         [{"role": "system", "content": system}] + messages if system else messages
     )
-    kwargs: dict[str, Any] = {"model": model, "messages": all_messages, "stream": stream}
+    kwargs: dict[str, Any] = {"model": resolved_model, "messages": all_messages, "stream": stream}
+    if api_key:
+        kwargs["api_key"] = api_key
+    api_base = _provider_api_base(resolved_provider)
+    if api_base:
+        kwargs["api_base"] = api_base
     if tools:
         kwargs["tools"] = tools
     response = litellm.completion(**kwargs)
@@ -68,7 +98,7 @@ def call_llm(
         from src.api.log_stream import put_event
         put_event({
             "type": "llm_cost",
-            "model": model,
+            "model": resolved_model,
             "input_tokens": response.usage.prompt_tokens,
             "output_tokens": response.usage.completion_tokens,
             "cost_usd": round(cost, 6),
@@ -82,17 +112,27 @@ def stream_llm(
     messages: list[dict[str, Any]],
     system: str | None = None,
     tier: str = "primary",
+    provider: str | None = None,
+    model: str | None = None,
+    api_key: str | None = None,
 ) -> Generator[str, None, None]:
     if _is_mock():
         for word in _MOCK_RESPONSE.split():
             yield word + " "
         return
 
-    model = get_model(tier)
+    resolved_provider = provider or get_provider()
+    resolved_model = resolve_model(resolved_provider, model or "", tier)
     all_messages = (
         [{"role": "system", "content": system}] + messages if system else messages
     )
-    response = litellm.completion(model=model, messages=all_messages, stream=True)
+    kwargs: dict[str, Any] = {"model": resolved_model, "messages": all_messages, "stream": True}
+    if api_key:
+        kwargs["api_key"] = api_key
+    api_base = _provider_api_base(resolved_provider)
+    if api_base:
+        kwargs["api_base"] = api_base
+    response = litellm.completion(**kwargs)
     for chunk in response:
         delta = chunk.choices[0].delta
         if delta and delta.content:

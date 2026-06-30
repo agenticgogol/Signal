@@ -17,9 +17,10 @@ interface Props {
   onSuccess: (token: string) => void
   onCancel: () => void
   action?: string
+  persistSession?: boolean
 }
 
-export function AdminGateModal({ onSuccess, onCancel, action = 'this action' }: Props) {
+export function AdminGateModal({ onSuccess, onCancel, action = 'this action', persistSession = true }: Props) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -37,7 +38,7 @@ export function AdminGateModal({ onSuccess, onCancel, action = 'this action' }: 
       })
       const json = await res.json()
       if (json.ok) {
-        sessionStorage.setItem(SESSION_KEY, json.token)
+        if (persistSession) sessionStorage.setItem(SESSION_KEY, json.token)
         onSuccess(json.token)
       } else {
         setError('Invalid username or password')
@@ -52,7 +53,7 @@ export function AdminGateModal({ onSuccess, onCancel, action = 'this action' }: 
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-700 p-6 w-full max-w-sm mx-4">
         <div className="mb-5">
-          <h3 className="font-bold text-zinc-900 dark:text-zinc-100 text-lg">Pro access required</h3>
+          <h3 className="font-bold text-zinc-900 dark:text-zinc-100 text-lg">Admin confirmation required</h3>
           <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
             Enter credentials to unlock {action}
           </p>
@@ -85,6 +86,53 @@ export function AdminGateModal({ onSuccess, onCancel, action = 'this action' }: 
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  )
+}
+
+interface ConfirmProps {
+  action?: string
+  onConfirm: () => void
+  onCancel: () => void
+  title?: string
+  description?: string
+  confirmLabel?: string
+}
+
+export function ActionConfirmModal({
+  action = 'this action',
+  onConfirm,
+  onCancel,
+  title = 'Confirm paid action',
+  description,
+  confirmLabel = 'Proceed',
+}: ConfirmProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-700 p-6 w-full max-w-sm mx-4">
+        <div className="mb-5">
+          <h3 className="font-bold text-zinc-900 dark:text-zinc-100 text-lg">{title}</h3>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+            {description ?? `This will call external APIs to ${action}.`}
+          </p>
+        </div>
+        <div className="flex gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex-1 py-2.5 text-sm font-medium text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="flex-1 py-2.5 text-sm font-medium bg-violet-600 hover:bg-violet-700 text-white rounded-xl transition-colors"
+          >
+            {confirmLabel}
+          </button>
+        </div>
       </div>
     </div>
   )

@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { AdminGateModal, getAdminToken } from '@/components/AdminGate'
+import { ActionConfirmModal, AdminGateModal } from '@/components/AdminGate'
+import { useAuthSession } from '@/lib/useAuthSession'
 
 // ── types ──────────────────────────────────────────────────────────────────────
 
@@ -89,7 +90,8 @@ function StepDot({ step, current }: { step: number; current: number }) {
 
 export default function IdeasPage() {
   const router = useRouter()
-  const userId = process.env.NEXT_PUBLIC_USER_ID!
+  const { user } = useAuthSession()
+  const userId = user?.id ?? process.env.NEXT_PUBLIC_USER_ID!
   const today = new Date().toISOString().split('T')[0]
   const [plan, setPlan] = useState<'free' | 'pro'>('free')
 
@@ -122,6 +124,8 @@ export default function IdeasPage() {
   const [generatingOutline, setGeneratingOutline] = useState(false)
   const [savingOutline, setSavingOutline] = useState(false)
   const [pendingAdminAction, setPendingAdminAction] = useState<'ideas' | 'outline' | null>(null)
+  const [showPaidConfirm, setShowPaidConfirm] = useState(false)
+  const [pendingPaidAction, setPendingPaidAction] = useState<'ideas' | 'outline' | null>(null)
   const [outlineError, setOutlineError] = useState<string | null>(null)
 
   const fetchIdeas = useCallback(async () => {
@@ -183,9 +187,12 @@ export default function IdeasPage() {
   }
 
   const handleGenerateIdeas = () => {
-    const token = getAdminToken()
-    if (token || plan === 'pro') generateTopicIdeas(token ?? undefined)
-    else setPendingAdminAction('ideas')
+    if (plan === 'pro') {
+      setPendingPaidAction('ideas')
+      setShowPaidConfirm(true)
+    } else {
+      setPendingAdminAction('ideas')
+    }
   }
 
   // Generate outline
@@ -217,9 +224,12 @@ export default function IdeasPage() {
   }
 
   const handleGenerateOutline = () => {
-    const token = getAdminToken()
-    if (token || plan === 'pro') generateOutline(token ?? undefined)
-    else setPendingAdminAction('outline')
+    if (plan === 'pro') {
+      setPendingPaidAction('outline')
+      setShowPaidConfirm(true)
+    } else {
+      setPendingAdminAction('outline')
+    }
   }
 
   // Save and freeze outline
@@ -254,6 +264,7 @@ export default function IdeasPage() {
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {pendingAdminAction && (
         <AdminGateModal
+          persistSession={false}
           action={pendingAdminAction === 'ideas'
             ? 'unlock AI topic ideas (Claude Haiku)'
             : 'unlock an AI content outline (Claude Sonnet)'}
@@ -264,6 +275,25 @@ export default function IdeasPage() {
             else generateOutline(token)
           }}
           onCancel={() => setPendingAdminAction(null)}
+        />
+      )}
+      {showPaidConfirm && (
+        <ActionConfirmModal
+          title="Confirm API usage"
+          description="This will call external APIs and spend your Pro plan allowance. No admin credentials are needed."
+          confirmLabel="Proceed"
+          action={pendingPaidAction === 'ideas' ? 'generate AI topic ideas' : 'generate an AI content outline'}
+          onConfirm={() => {
+            const action = pendingPaidAction
+            setShowPaidConfirm(false)
+            setPendingPaidAction(null)
+            if (action === 'ideas') generateTopicIdeas()
+            else generateOutline()
+          }}
+          onCancel={() => {
+            setShowPaidConfirm(false)
+            setPendingPaidAction(null)
+          }}
         />
       )}
       {/* Page header */}
