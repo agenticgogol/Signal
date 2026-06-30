@@ -1,7 +1,11 @@
-"""Execute the daily pipeline for every registered user."""
+"""Execute the daily pipeline for every registered user, or for a single user
+when PIPELINE_USER_ID is set (used by manual "Get Latest Feed" triggers and
+single-user scheduled runs so they don't reprocess every other account).
+"""
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 
 from src.db import get_client
@@ -10,10 +14,18 @@ from src.state import PipelineState
 
 
 def main() -> None:
-    response = get_client().table("user_profiles").select("id, style_seed").execute()
+    only_user_id = (os.environ.get("PIPELINE_USER_ID") or "").strip()
+
+    query = get_client().table("user_profiles").select("id, style_seed")
+    if only_user_id:
+        query = query.eq("id", only_user_id)
+    response = query.execute()
     users = response.data or []
     if not users:
-        print("No registered users; pipeline has nothing to run.")
+        if only_user_id:
+            print(f"No matching user_profiles row for PIPELINE_USER_ID={only_user_id}.")
+        else:
+            print("No registered users; pipeline has nothing to run.")
         return
 
     graph = get_graph()

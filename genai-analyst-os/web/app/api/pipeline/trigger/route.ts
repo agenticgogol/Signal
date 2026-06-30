@@ -36,6 +36,7 @@ export async function POST(req: Request) {
         inputs: {
           lookback_days: lookbackDays,
           max_per_source: maxPerSource,
+          user_id: userId,
         },
       }),
     }

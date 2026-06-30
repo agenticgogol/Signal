@@ -35,6 +35,24 @@ const FREQUENCIES = [
   { id: 'on_demand', label: 'On demand' },
 ]
 
+function hourUtcToLocalLabel(hourUtc: number): string {
+  const d = new Date(Date.UTC(2024, 0, 1, hourUtc, 0, 0))
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+}
+
+function formatRelativeTime(iso: string | null): string {
+  if (!iso) return 'never'
+  try {
+    const diff = Date.now() - new Date(iso).getTime()
+    const mins = Math.floor(diff / 60000)
+    if (mins < 1) return 'just now'
+    if (mins < 60) return `${mins}m ago`
+    const hrs = Math.floor(mins / 60)
+    if (hrs < 24) return `${hrs}h ago`
+    return `${Math.floor(hrs / 24)}d ago`
+  } catch { return 'unknown' }
+}
+
 interface SettingsPayload {
   provider: SupportedProvider
   model: string
@@ -68,6 +86,13 @@ export default function SettingsPage() {
   const [readingFrequency, setReadingFrequency] = useState<string | null>(null)
   const [prefsSaving, setPrefsSaving] = useState(false)
   const [prefsStatus, setPrefsStatus] = useState<string | null>(null)
+
+  const [scheduleEnabled, setScheduleEnabled] = useState(false)
+  const [scheduleHourUtc, setScheduleHourUtc] = useState<number>(13)
+  const [lastScheduledCrawlAt, setLastScheduledCrawlAt] = useState<string | null>(null)
+  const [scheduleSaving, setScheduleSaving] = useState(false)
+  const [scheduleStatus, setScheduleStatus] = useState<string | null>(null)
+  const [runningNow, setRunningNow] = useState(false)
 
   useEffect(() => {
     if (!session?.access_token || !userId) return
@@ -135,6 +160,21 @@ export default function SettingsPage() {
       .catch(() => {})
   }, [session?.access_token, userId])
 
+  useEffect(() => {
+    if (!session?.access_token || !userId) return
+    fetch(`/api/data/schedule-settings?userId=${encodeURIComponent(userId)}`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then(async response => {
+        const json = await response.json()
+        if (!response.ok) throw new Error(json.error ?? 'Could not load schedule')
+        setScheduleEnabled(Boolean(json.enabled))
+        if (typeof json.hourUtc === 'number') setScheduleHourUtc(json.hourUtc)
+        setLastScheduledCrawlAt(json.lastScheduledCrawlAt ?? null)
+      })
+      .catch(() => {})
+  }, [session?.access_token, userId])
+
   const toggleInterest = (id: string) => {
     setInterestAreas(prev => {
       const next = new Set(prev)
@@ -168,6 +208,50 @@ export default function SettingsPage() {
       setPrefsStatus(err instanceof Error ? err.message : 'Could not save preferences')
     } finally {
       setPrefsSaving(false)
+    }
+  }
+
+  const saveSchedule = async (nextEnabled: boolean, nextHourUtc: number) => {
+    if (!session?.access_token || !userId) return
+    setScheduleSaving(true)
+    setScheduleStatus(null)
+    try {
+      const response = await fetch('/api/data/schedule-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ userId, enabled: nextEnabled, hourUtc: nextHourUtc }),
+      })
+      const json = await response.json()
+      if (!response.ok) throw new Error(json.error ?? 'Could not save schedule')
+      setScheduleEnabled(nextEnabled)
+      setScheduleHourUtc(nextHourUtc)
+      setScheduleStatus(nextEnabled
+        ? `Saved. Your feed will refresh automatically around ${hourUtcToLocalLabel(nextHourUtc)} your time, every day.`
+        : 'Automatic refresh turned off.')
+    } catch (err) {
+      setScheduleStatus(err instanceof Error ? err.message : 'Could not save schedule')
+    } finally {
+      setScheduleSaving(false)
+    }
+  }
+
+  const runNow = async () => {
+    if (!session?.access_token || !userId) return
+    setRunningNow(true)
+    setScheduleStatus(null)
+    try {
+      const response = await fetch('/api/pipeline/trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ userId }),
+      })
+      const json = await response.json()
+      if (!response.ok || !json.ok) throw new Error(json.error ?? 'Could not start the pipeline')
+      setScheduleStatus('Feed refresh started — check the Feed tab in a couple of minutes.')
+    } catch (err) {
+      setScheduleStatus(err instanceof Error ? err.message : 'Could not start the pipeline')
+    } finally {
+      setRunningNow(false)
     }
   }
 
@@ -454,6 +538,67 @@ export default function SettingsPage() {
             {saving ? 'Saving...' : 'Save digest settings'}
           </button>
         </div>
+      </section>
+
+      <section className="mt-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Feed schedule</h2>
+          <span className="rounded-full border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/30 px-2 py-0.5 text-[10px] font-bold text-violet-700 dark:text-violet-300">PRO</span>
+        </div>
+        <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">Automatically run the crawl-and-rank pipeline at a time you choose, every day — or skip the schedule and trigger it yourself whenever you want fresh articles.</p>
+
+        {!canUsePaidFeatures ? (
+          <div className="mt-5 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/30 p-4 text-sm leading-6 text-amber-900 dark:text-amber-200">
+            Scheduling requires an active subscription and a configured model API key, same as the manual &quot;Get Latest Feed&quot; action above.
+          </div>
+        ) : (
+          <>
+            <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <label className="flex items-center gap-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+                  <input
+                    type="checkbox"
+                    checked={scheduleEnabled}
+                    onChange={event => saveSchedule(event.target.checked, scheduleHourUtc)}
+                    disabled={scheduleSaving}
+                  />
+                  Automatically refresh my feed every day
+                </label>
+                <div className="mt-3 flex items-center gap-2">
+                  <select
+                    value={scheduleHourUtc}
+                    onChange={event => {
+                      const hour = Number(event.target.value)
+                      setScheduleHourUtc(hour)
+                      if (scheduleEnabled) saveSchedule(true, hour)
+                    }}
+                    disabled={scheduleSaving}
+                    className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-500"
+                  >
+                    {Array.from({ length: 24 }, (_, hourUtc) => (
+                      <option key={hourUtc} value={hourUtc}>{hourUtcToLocalLabel(hourUtc)} (your time)</option>
+                    ))}
+                  </select>
+                  <span className="text-xs text-zinc-400">Runs take ~2-3 minutes and finish before this time.</span>
+                </div>
+              </div>
+              <button
+                onClick={runNow}
+                disabled={runningNow}
+                className="rounded-xl border border-zinc-200 dark:border-zinc-700 px-4 py-2.5 text-sm font-semibold text-zinc-700 dark:text-zinc-200 hover:border-violet-300 disabled:opacity-40"
+              >
+                {runningNow ? 'Starting…' : '⚡ Run now'}
+              </button>
+            </div>
+            <p className="mt-4 text-xs text-zinc-400">
+              {scheduleEnabled
+                ? `Auto-refresh is on, scheduled around ${hourUtcToLocalLabel(scheduleHourUtc)} your time daily.`
+                : 'Auto-refresh is off — use Run now or the Feed page button whenever you want fresh articles.'}
+              {' · '}Last scheduled run: {formatRelativeTime(lastScheduledCrawlAt)}
+            </p>
+            {scheduleStatus && <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-300">{scheduleStatus}</p>}
+          </>
+        )}
       </section>
     </div>
   )
