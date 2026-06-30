@@ -69,6 +69,7 @@ export default function UserGuidePage() {
           <FlowNode icon="🔒" title="Freeze" subtitle="save and open in Create" tone="green" />
         </div>
         <Callout title="Why freeze an outline?" tone="amber"><p>Freezing saves the version you deliberately reviewed. Create loads that exact hook, angle, audience, and section structure rather than silently regenerating it.</p></Callout>
+        <Callout title="LLM cost controls"><p>Generating topic ideas and building an outline both require admin credentials. One successful login is retained for the current browser tab session.</p></Callout>
       </GuideSection>
 
       <GuideSection id="content-workflow" eyebrow="Content generation" title="The Content Studio: evidence in, reviewed content out" description="Create is not a single prompt. It assembles your evidence and point of view, applies platform rules, streams an eight-agent quality workflow, and hands the final text back for human editing.">
@@ -99,7 +100,7 @@ export default function UserGuidePage() {
           <StepCard number={2} title="Define the brief" action="Enter topic, key angle, author POV, and audience" result="The orchestrator receives both editorial direction and personal perspective." />
           <StepCard number={3} title="Choose platform" action="Select LinkedIn, Substack, Thread, Blog, YouTube Long, or Short" result="Length, structure, voice, citations, and anti-patterns change automatically." />
           <StepCard number={4} title="Watch generation" action="Generate Content, then expand any completed agent output" result="Progress streams live; failed quality criteria may trigger up to three rewrite loops." />
-          <StepCard number={5} title="Own the result" action="Edit, Regenerate, Copy, or Approve & Publish" result="You remain responsible for factual review and the final external posting action." />
+          <StepCard number={5} title="Own the result" action="Edit, Regenerate, Copy, or Export for Publishing" result="You remain responsible for factual review and the final external posting action." />
         </div>
         <div className="mt-6 grid gap-4 md:grid-cols-4">
           <FeatureCard icon="🎯" title="Orchestrator">Turns topic, POV, audience, outline, evidence, and platform rules into a structured claim plan.</FeatureCard>
@@ -111,7 +112,7 @@ export default function UserGuidePage() {
           <FeatureCard icon="💎" title="Final Polish">Addresses reader objections without adding unnecessary sections or dropping source references.</FeatureCard>
           <FeatureCard icon="💾" title="Saved Job">Persists the brief, intermediate outputs, final draft, verification report, audience feedback, and scores.</FeatureCard>
         </div>
-        <Callout title="“Approve & Publish” does not post externally" tone="amber"><p>Signal deliberately stops at a formatted copy action. LinkedIn removes markdown, Substack prepares HTML-friendly text, and Threads are numbered. You still paste, review, and publish in the destination platform.</p></Callout>
+        <Callout title="“Export for Publishing” keeps you in control" tone="amber"><p>Signal deliberately stops at a formatted copy action. LinkedIn removes markdown, Substack prepares HTML-friendly text, and Threads are numbered. You still paste, review, and publish in the destination platform.</p></Callout>
       </GuideSection>
 
       <GuideSection id="formats" eyebrow="Platform intelligence" title="One argument, six native formats" description="The platform choice changes the drafting contract—not just the label on the output.">

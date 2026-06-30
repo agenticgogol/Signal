@@ -1,4 +1,10 @@
+import { verifyAdminToken } from '@/lib/adminAuth'
+
 export async function POST(req: Request) {
+  if (!verifyAdminToken(req)) {
+    return Response.json({ ok: false, error: 'Admin authentication required' }, { status: 401 })
+  }
+
   const pat = process.env.GITHUB_PAT
   if (!pat) {
     return Response.json({ ok: false, error: 'GITHUB_PAT not configured' }, { status: 500 })

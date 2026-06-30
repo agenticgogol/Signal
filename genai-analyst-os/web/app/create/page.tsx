@@ -53,7 +53,7 @@ const INITIAL_STEPS: AgentStep[] = [
   { id: 'final_polish',  label: 'Final Polish — addressing audience objections', icon: '💎', status: 'pending', output: '' },
 ]
 
-const STEP_LABELS = ['Source', 'Brief', 'Platform', 'Generate', 'Review & Publish']
+const STEP_LABELS = ['Source', 'Brief', 'Platform', 'Generate', 'Review & Export']
 
 function Stepper({ current }: { current: Step }) {
   return (
@@ -590,7 +590,7 @@ function CreatePageInner() {
       {step === 4 && (
         <div>
           <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mb-2">Generating…</h2>
-          <p className="text-sm text-zinc-500 mb-5">4-agent pipeline: Orchestrator → Writer → Critic → Humanizer</p>
+          <p className="text-sm text-zinc-500 mb-5">8-agent pipeline: plan → draft → verify → critique → humanize → evaluate → audience test → polish</p>
 
           <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-6">
             <div className="space-y-5">
@@ -632,12 +632,12 @@ function CreatePageInner() {
         </div>
       )}
 
-      {/* ── Step 5: Review & Publish ──────────────────────────────────────── */}
+      {/* ── Step 5: Review & Export ───────────────────────────────────────── */}
       {step === 5 && (
         <div>
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Review & Publish</h2>
+              <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Review & Export</h2>
               <p className="text-sm text-zinc-500">Edit freely. Written for <span className="font-medium text-violet-600">{spec?.name ?? format}</span>.</p>
             </div>
             {spec?.charLimit && (
@@ -670,7 +670,7 @@ function CreatePageInner() {
             </button>
             <button onClick={() => setPublishModalOpen(true)}
               className="px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-medium text-sm transition-colors">
-              ✅ Approve & Publish
+              ✅ Export for Publishing
             </button>
           </div>
 
@@ -678,7 +678,7 @@ function CreatePageInner() {
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
               <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-700 p-6 max-w-md w-full mx-4">
                 <h3 className="font-bold text-lg text-zinc-900 dark:text-zinc-100 mb-1">
-                  Publish to {spec?.name ?? format}
+                  Export for {spec?.name ?? format}
                 </h3>
                 <p className="text-sm text-zinc-500 mb-4">Copy the content in the format optimized for this platform.</p>
                 <div className="space-y-3 mb-5">

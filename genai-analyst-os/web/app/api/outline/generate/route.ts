@@ -1,9 +1,42 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest } from 'next/server'
+import { verifyAdminToken } from '@/lib/adminAuth'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
+const OUTLINE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    sections: {
+      type: 'array',
+      description: 'Four to six content sections.',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          title: { type: 'string' },
+          points: { type: 'array', description: 'Three to four concrete points.', items: { type: 'string' } },
+        },
+        required: ['title', 'points'],
+      },
+    },
+    angle: { type: 'string' },
+    audience: { type: 'string' },
+    hook: { type: 'string' },
+    format_recommendation: {
+      type: 'string',
+      enum: ['linkedin', 'substack', 'thread', 'blog', 'youtube_long', 'youtube_short'],
+    },
+  },
+  required: ['sections', 'angle', 'audience', 'hook', 'format_recommendation'],
+} as const
+
 export async function POST(req: NextRequest) {
+  if (!verifyAdminToken(req)) {
+    return Response.json({ error: 'Admin authentication required' }, { status: 401 })
+  }
+
   const { topic, audience, angle, focusAreas } = await req.json()
 
   const prompt = `You are an expert content strategist. Generate a detailed content outline for a GenAI practitioner's content.
@@ -30,11 +63,14 @@ Include 4-6 sections. Each section should have 3-4 bullet points.`
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 2048,
+      output_config: { format: { type: 'json_schema', schema: OUTLINE_SCHEMA } },
       messages: [{ role: 'user', content: prompt }],
     })
     const text = response.content[0].type === 'text' ? response.content[0].text : '{}'
-    const match = text.match(/\{[\s\S]*\}/)
-    const outline = match ? JSON.parse(match[0]) : null
+    const outline = JSON.parse(text)
+    if (!Array.isArray(outline.sections) || outline.sections.length < 4 || outline.sections.length > 6) {
+      throw new Error('Claude returned an outline outside the required 4–6 section range')
+    }
     return Response.json({ outline })
   } catch (err) {
     return Response.json({ error: String(err) }, { status: 500 })

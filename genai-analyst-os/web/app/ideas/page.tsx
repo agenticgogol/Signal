@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { AdminGateModal, getAdminToken } from '@/components/AdminGate'
 
 // ── types ──────────────────────────────────────────────────────────────────────
 
@@ -112,12 +113,15 @@ export default function IdeasPage() {
   const [selectedIdeaIdx, setSelectedIdeaIdx] = useState<number | null>(null)
   const [customTopic, setCustomTopic] = useState('')
   const [generatingIdeas, setGeneratingIdeas] = useState(false)
+  const [topicIdeasError, setTopicIdeasError] = useState<string | null>(null)
 
   // Step 3 — outline
   const [outline, setOutline] = useState<Outline | null>(null)
   const [outlineSections, setOutlineSections] = useState<OutlineSection[]>([])
   const [generatingOutline, setGeneratingOutline] = useState(false)
   const [savingOutline, setSavingOutline] = useState(false)
+  const [pendingAdminAction, setPendingAdminAction] = useState<'ideas' | 'outline' | null>(null)
+  const [outlineError, setOutlineError] = useState<string | null>(null)
 
   const fetchIdeas = useCallback(async () => {
     setIdeasLoading(true)
@@ -145,42 +149,62 @@ export default function IdeasPage() {
   }
 
   // Generate topic ideas
-  const handleGenerateIdeas = async () => {
+  const generateTopicIdeas = async (token: string) => {
+    setTopicIdeasError(null)
     setGeneratingIdeas(true)
     setWizardStep(2)
     try {
       const allFocus = focusOther ? [...focusAreas, focusOther] : focusAreas
       const res = await fetch('/api/ideas/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-admin-token': token },
         body: JSON.stringify({ focusAreas: allFocus, audience, angle, freeText, userId }),
       })
       const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Topic generation failed')
       setGeneratedIdeas(json.ideas ?? [])
-    } catch {}
+    } catch (error) {
+      setTopicIdeasError(error instanceof Error ? error.message : 'Topic generation failed')
+    }
     setGeneratingIdeas(false)
   }
 
+  const handleGenerateIdeas = () => {
+    const token = getAdminToken()
+    if (token) generateTopicIdeas(token)
+    else setPendingAdminAction('ideas')
+  }
+
   // Generate outline
-  const handleGenerateOutline = async () => {
+  const generateOutline = async (token: string) => {
     const topic = selectedIdeaIdx !== null
       ? generatedIdeas[selectedIdeaIdx]?.title
       : customTopic
     if (!topic) return
+    setOutlineError(null)
     setGeneratingOutline(true)
     setWizardStep(3)
     try {
       const allFocus = focusOther ? [...focusAreas, focusOther] : focusAreas
       const res = await fetch('/api/outline/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-admin-token': token },
         body: JSON.stringify({ topic, audience, angle, focusAreas: allFocus, userId }),
       })
       const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Outline generation failed')
       setOutline(json.outline)
       setOutlineSections(json.outline?.sections ?? [])
-    } catch {}
+    } catch (error) {
+      setOutlineError(error instanceof Error ? error.message : 'Outline generation failed')
+    }
     setGeneratingOutline(false)
+  }
+
+  const handleGenerateOutline = () => {
+    const token = getAdminToken()
+    if (token) generateOutline(token)
+    else setPendingAdminAction('outline')
   }
 
   // Save and freeze outline
@@ -213,6 +237,20 @@ export default function IdeasPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {pendingAdminAction && (
+        <AdminGateModal
+          action={pendingAdminAction === 'ideas'
+            ? 'generate AI topic ideas (Claude Haiku)'
+            : 'generate an AI content outline (Claude Sonnet)'}
+          onSuccess={token => {
+            const action = pendingAdminAction
+            setPendingAdminAction(null)
+            if (action === 'ideas') generateTopicIdeas(token)
+            else generateOutline(token)
+          }}
+          onCancel={() => setPendingAdminAction(null)}
+        />
+      )}
       {/* Page header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">Ideas</h1>
@@ -504,6 +542,11 @@ export default function IdeasPage() {
                     <div key={i} className="h-20 bg-gray-100 dark:bg-gray-800 rounded-xl animate-pulse" />
                   ))}
                 </div>
+              ) : topicIdeasError ? (
+                <div className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-4">
+                  <p className="text-sm font-medium text-red-700 dark:text-red-300">{topicIdeasError}</p>
+                  <button onClick={handleGenerateIdeas} className="mt-3 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700">Try again</button>
+                </div>
               ) : (
                 <>
                   <div className="space-y-3 mb-6">
@@ -575,6 +618,11 @@ export default function IdeasPage() {
                   {[0, 1, 2, 3].map(i => (
                     <div key={i} className="h-24 bg-gray-100 dark:bg-gray-800 rounded-xl animate-pulse" />
                   ))}
+                </div>
+              ) : outlineError ? (
+                <div className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-4">
+                  <p className="text-sm font-medium text-red-700 dark:text-red-300">{outlineError}</p>
+                  <button onClick={handleGenerateOutline} className="mt-3 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700">Try again</button>
                 </div>
               ) : outline ? (
                 <>

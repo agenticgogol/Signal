@@ -1,10 +1,30 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createServiceClient } from '@/lib/supabase'
 import { NextRequest } from 'next/server'
+import { verifyAdminToken } from '@/lib/adminAuth'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
+const TOPIC_IDEAS_SCHEMA = {
+  type: 'array',
+  description: 'Exactly five timely content topic ideas.',
+  items: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      title: { type: 'string' },
+      pitch: { type: 'string' },
+      why_timely: { type: 'string' },
+    },
+    required: ['title', 'pitch', 'why_timely'],
+  },
+} as const
+
 export async function POST(req: NextRequest) {
+  if (!verifyAdminToken(req)) {
+    return Response.json({ error: 'Admin authentication required' }, { status: 401 })
+  }
+
   const { focusAreas, audience, angle, freeText, userId } = await req.json()
 
   const db = createServiceClient()
@@ -50,12 +70,15 @@ Return ONLY a JSON array with exactly this structure:
   try {
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
+      max_tokens: 1400,
+      output_config: { format: { type: 'json_schema', schema: TOPIC_IDEAS_SCHEMA } },
       messages: [{ role: 'user', content: prompt }],
     })
     const text = response.content[0].type === 'text' ? response.content[0].text : '[]'
-    const match = text.match(/\[[\s\S]*\]/)
-    const ideas = match ? JSON.parse(match[0]) : []
+    const ideas: unknown = JSON.parse(text)
+    if (!Array.isArray(ideas) || ideas.length !== 5) {
+      throw new Error('Claude did not return exactly five topic ideas')
+    }
     return Response.json({ ideas })
   } catch (err) {
     return Response.json({ error: String(err) }, { status: 500 })

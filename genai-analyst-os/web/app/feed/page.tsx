@@ -665,7 +665,7 @@ export default function FeedPage() {
     }, 15000)
   }, [userId, fetchFeed])
 
-  const doTrigger = async () => {
+  const doTrigger = async (token: string) => {
     setFreshArticleIds(new Set())
     setShowFreshBanner(false)
     setTriggering(true)
@@ -685,7 +685,7 @@ export default function FeedPage() {
 
       const res = await fetch('/api/pipeline/trigger', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-admin-token': token },
         body: JSON.stringify({ lookbackDays: pipelineConfig.lookbackDays, maxPerSource: pipelineConfig.maxPerSource }),
       })
       const json = await res.json()
@@ -704,7 +704,7 @@ export default function FeedPage() {
 
   const handleTrigger = () => {
     const token = getAdminToken()
-    if (token) doTrigger(); else setShowAdminGate(true)
+    if (token) doTrigger(token); else setShowAdminGate(true)
   }
 
   const handleReact = async (articleId: string, r: 'like' | 'dislike') => {
@@ -800,7 +800,7 @@ export default function FeedPage() {
     <div className="p-6 max-w-6xl mx-auto">
       {showAdminGate && (
         <AdminGateModal action="run the feed pipeline"
-          onSuccess={() => { setShowAdminGate(false); doTrigger() }}
+          onSuccess={token => { setShowAdminGate(false); doTrigger(token) }}
           onCancel={() => setShowAdminGate(false)} />
       )}
 

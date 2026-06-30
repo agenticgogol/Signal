@@ -190,7 +190,7 @@ export default function ImplementationGuidePage() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <FeatureCard icon="⏱️" title="Run tracking">Every user run opens a <code>crawl_runs</code> row. UI polling distinguishes queued, running, completed, degraded, and timeout states.</FeatureCard>
           <FeatureCard icon="🧯" title="Failure isolation">Feed failures do not erase good items. Model failures produce explicit empty/error states rather than malformed partial data.</FeatureCard>
-          <FeatureCard icon="🔒" title="Secret boundaries">Service role, GitHub PAT, and model keys stay server-side. Only public Supabase configuration reaches the browser.</FeatureCard>
+          <FeatureCard icon="🔒" title="Secret boundaries">Service role, GitHub PAT, and model keys stay server-side. Feed runs plus Create, topic, and outline generation independently validate the admin token; the modal is not the security boundary.</FeatureCard>
           <FeatureCard icon="📏" title="Bounded work">UI choices, server validation, RSS timeouts, source caps, article limits, and response schemas bound latency and spend.</FeatureCard>
           <FeatureCard icon="🧬" title="Deduplication">URL uniqueness protects global articles; API range views deduplicate repeated dated rankings before rendering.</FeatureCard>
           <FeatureCard icon="🗂️" title="Cache strategy">Global enrichment is reused for all users; weekly synthesis is reused until explicit regeneration.</FeatureCard>

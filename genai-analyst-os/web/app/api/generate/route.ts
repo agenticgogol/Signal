@@ -9,12 +9,17 @@ import {
   runFinalPolishAgent,
   persistJob,
 } from '@/lib/agents'
+import { verifyAdminToken } from '@/lib/adminAuth'
 
 export const maxDuration = 300
 
 const MAX_LOOPS = 3
 
 export async function POST(req: Request) {
+  if (!verifyAdminToken(req)) {
+    return Response.json({ error: 'Admin authentication required' }, { status: 401 })
+  }
+
   const { brief, sources, format, pov, userId } = await req.json()
 
   const stream = new ReadableStream({
