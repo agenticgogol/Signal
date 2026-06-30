@@ -452,7 +452,7 @@ function FeedSection({ title, subtitle, items, reactions, onReact, selectedForCr
         </div>
         <span className="text-xs text-zinc-400">{items.length}</span>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className="grid items-start grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {items.map((item, idx) => {
           const article = Array.isArray(item.articles) ? item.articles[0] : item.articles
           return (
@@ -511,8 +511,8 @@ export default function FeedPage() {
   const [pipelineResult, setPipelineResult] = useState<string | null>(null)
   const [showAdminGate, setShowAdminGate] = useState(false)
   const [showPaidConfirm, setShowPaidConfirm] = useState(false)
-  const [pendingFreeAction, setPendingFreeAction] = useState<'feed' | 'narrative' | null>(null)
-  const [pendingPaidAction, setPendingPaidAction] = useState<'feed' | 'narrative' | null>(null)
+  const [pendingFreeAction, setPendingFreeAction] = useState<'feed' | 'narrative' | 'daily' | null>(null)
+  const [pendingPaidAction, setPendingPaidAction] = useState<'feed' | 'narrative' | 'daily' | null>(null)
   const [showConfig, setShowConfig] = useState(false)
   const [pipelineConfig, setPipelineConfig] = useState<PipelineConfig>(DEFAULT_CONFIG)
 
@@ -537,6 +537,7 @@ export default function FeedPage() {
   const [weeklyArchive, setWeeklyArchive] = useState<DigestRecord[]>([])
   const [dailyDigestLoading, setDailyDigestLoading] = useState(false)
   const [dailyDigestError, setDailyDigestError] = useState<string | null>(null)
+  const [dailyDigestFetched, setDailyDigestFetched] = useState(false)
 
   const pollRef           = useRef<ReturnType<typeof setInterval> | null>(null)
   const elapsedRef        = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -712,10 +713,43 @@ export default function FeedPage() {
     } catch (e) {
       setDailyDigestError(String(e))
     }
+    setDailyDigestFetched(true)
     setDailyDigestLoading(false)
   }, [userId])
 
-  const promptForCostlyAction = (action: 'feed' | 'narrative') => {
+  const regenerateDailyDigest = useCallback(async (token?: string) => {
+    setDailyDigestLoading(true)
+    setDailyDigestError(null)
+    try {
+      const headers: Record<string, string> = {}
+      if (token) headers['x-admin-token'] = token
+      const res = await fetch(`/api/data/daily-digest?userId=${userId}`, {
+        method: 'POST',
+        headers: Object.keys(headers).length > 0 ? headers : undefined,
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Could not regenerate daily digest')
+      setDailyDigest((json.current?.narrative ?? null) as DailyDigestData | null)
+      setDailyDigestMeta(json.current ?? null)
+      setDailyDigestFetched(true)
+      await fetchDailyDigest()
+    } catch (e) {
+      setDailyDigestError(String(e))
+      setDailyDigestLoading(false)
+    }
+  }, [userId, fetchDailyDigest])
+
+  useEffect(() => {
+    setDailyDigest(null)
+    setDailyDigestMeta(null)
+    setDailyDigestRecent([])
+    setDailyDigestArchive([])
+    setWeeklyArchive([])
+    setDailyDigestError(null)
+    setDailyDigestFetched(false)
+  }, [userId])
+
+  const promptForCostlyAction = (action: 'feed' | 'narrative' | 'daily') => {
     if (plan === 'pro') {
       setPendingPaidAction(action)
       setShowPaidConfirm(true)
@@ -727,6 +761,10 @@ export default function FeedPage() {
 
   const handleNarrativeRegenerate = () => {
     promptForCostlyAction('narrative')
+  }
+
+  const handleDailyDigestRegenerate = () => {
+    promptForCostlyAction('daily')
   }
 
   // Initial load
@@ -748,10 +786,10 @@ export default function FeedPage() {
 
   useEffect(() => {
     if (activeTab === 'news' && newsItems.length === 0) fetchNews()
-    if (activeTab === 'daily' && !dailyDigest && !dailyDigestLoading) fetchDailyDigest()
+    if (activeTab === 'daily' && !dailyDigestFetched && !dailyDigestLoading) fetchDailyDigest()
     if (activeTab === 'weekly' && weeklyItems.length === 0) fetchWeekly()
     if (activeTab === 'weekly' && weeklyView === 'narrative' && !narrative && !narrativeLoading) fetchNarrative()
-  }, [activeTab, weeklyView, newsItems.length, weeklyItems.length, dailyDigest, dailyDigestLoading, fetchNews, fetchWeekly, fetchNarrative, fetchDailyDigest])
+  }, [activeTab, weeklyView, newsItems.length, weeklyItems.length, dailyDigestFetched, dailyDigestLoading, fetchNews, fetchWeekly, fetchNarrative, fetchDailyDigest])
 
   // ── pipeline trigger ──────────────────────────────────────────────────────
 
@@ -997,13 +1035,21 @@ export default function FeedPage() {
       {showAdminGate && (
         <AdminGateModal
           persistSession={false}
-          action={pendingFreeAction === 'narrative' ? 'regenerate the weekly digest' : 'run the feed pipeline'}
+          action={
+            pendingFreeAction === 'narrative'
+              ? 'regenerate the weekly digest'
+              : pendingFreeAction === 'daily'
+                ? 'regenerate the daily digest'
+                : 'run the feed pipeline'
+          }
           onSuccess={token => {
             setShowAdminGate(false)
             const action = pendingFreeAction
             setPendingFreeAction(null)
             if (action === 'narrative') {
               fetchNarrative(true, token)
+            } else if (action === 'daily') {
+              regenerateDailyDigest(token)
             } else {
               doTrigger(token)
             }
@@ -1018,12 +1064,19 @@ export default function FeedPage() {
           title="Confirm API usage"
           description="This will call external APIs and spend your Pro plan allowance. No admin credentials are needed."
           confirmLabel="Proceed"
-          action={pendingPaidAction === 'narrative' ? 'regenerate the weekly digest' : 'run the feed pipeline'}
+          action={
+            pendingPaidAction === 'narrative'
+              ? 'regenerate the weekly digest'
+              : pendingPaidAction === 'daily'
+                ? 'regenerate the daily digest'
+                : 'run the feed pipeline'
+          }
           onConfirm={() => {
             const action = pendingPaidAction
             setShowPaidConfirm(false)
             setPendingPaidAction(null)
             if (action === 'narrative') fetchNarrative(true)
+            else if (action === 'daily') regenerateDailyDigest()
             else doTrigger()
           }}
           onCancel={() => {
@@ -1229,7 +1282,7 @@ export default function FeedPage() {
           )}
 
           {loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            <div className="grid items-start grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {[0,1,2,3,4,5].map(i => <SkeletonCard key={i} />)}
             </div>
           ) : filteredArticles.length === 0 ? (
@@ -1317,10 +1370,16 @@ export default function FeedPage() {
                 {dailyDigestMeta?.emailed_at && ' · emailed'}
               </p>
             </div>
-            <button onClick={fetchDailyDigest} disabled={dailyDigestLoading}
-              className="text-xs text-violet-600 dark:text-violet-400 px-3 py-1.5 bg-violet-50 dark:bg-violet-950/30 rounded-lg border border-violet-200 dark:border-violet-800 hover:bg-violet-100 transition-colors font-medium disabled:opacity-50">
-              {dailyDigestLoading ? 'Loading…' : '↺ Refresh view'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={fetchDailyDigest} disabled={dailyDigestLoading}
+                className="text-xs text-violet-600 dark:text-violet-400 px-3 py-1.5 bg-violet-50 dark:bg-violet-950/30 rounded-lg border border-violet-200 dark:border-violet-800 hover:bg-violet-100 transition-colors font-medium disabled:opacity-50">
+                {dailyDigestLoading ? 'Loading…' : '↺ Refresh view'}
+              </button>
+              <button onClick={handleDailyDigestRegenerate} disabled={dailyDigestLoading}
+                className="text-xs text-violet-600 dark:text-violet-400 px-3 py-1.5 bg-white dark:bg-zinc-900 rounded-lg border border-violet-200 dark:border-violet-800 hover:bg-violet-50 dark:hover:bg-violet-950/20 transition-colors font-medium disabled:opacity-50">
+                {dailyDigestLoading ? 'Writing…' : plan === 'pro' ? '↺ Regenerate' : '🔒 Pro: Regenerate'}
+              </button>
+            </div>
           </div>
 
           {dailyDigestLoading ? (
@@ -1411,9 +1470,10 @@ export default function FeedPage() {
             </div>
           ) : (
             <div className="text-center py-16 text-zinc-400">
-              <div className="text-5xl mb-4">✦</div>
+              <div className="text-5xl mb-4">🗞️</div>
               <p className="font-medium text-zinc-600 dark:text-zinc-400">No daily digest yet</p>
-              <p className="text-sm mt-2">Run the overnight feed pipeline or trigger the latest feed so Signal has ranked evidence to condense into a daily story.</p>
+              <p className="text-sm mt-2">Daily digests are generated by the overnight pipeline after it ranks your articles for the day.</p>
+              <p className="text-sm mt-1">If you just enabled this feature, run the feed pipeline once and then refresh this view.</p>
             </div>
           )}
         </div>
