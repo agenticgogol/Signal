@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react'
 import { ActionConfirmModal, AdminGateModal } from '@/components/AdminGate'
 import type { VoiceFingerprint } from '@/lib/voice'
 import { useAuthSession } from '@/lib/useAuthSession'
+import { VOICE_TEMPLATES } from '@/lib/voiceTemplates'
 
 const EMPTY_POSTS = ['', '', '']
+const TEMPLATE_POSTS = VOICE_TEMPLATES.map(t => t.text)
 
 function MetricBar({ label, value, color }: { label: string; value: number; color: string }) {
   return (
@@ -30,7 +32,8 @@ function Chips({ items, empty = 'No strong pattern detected' }: { items: string[
 export default function VoicePage() {
   const { session, user } = useAuthSession()
   const userId = user?.id ?? process.env.NEXT_PUBLIC_USER_ID!
-  const [posts, setPosts] = useState<string[]>(EMPTY_POSTS)
+  const [posts, setPosts] = useState<string[]>(TEMPLATE_POSTS)
+  const [usingTemplates, setUsingTemplates] = useState(true)
   const [fingerprint, setFingerprint] = useState<VoiceFingerprint | null>(null)
   const [loadingProfile, setLoadingProfile] = useState(true)
   const [analyzing, setAnalyzing] = useState(false)
@@ -46,10 +49,19 @@ export default function VoicePage() {
         const json = await response.json()
         if (!response.ok) throw new Error(json.error ?? 'Could not load voice profile')
         setFingerprint(json.fingerprint ?? null)
+        // Once a real fingerprint exists, don't override the textareas with
+        // templates — start blank so re-analysis reflects intentional edits.
+        if (json.fingerprint) {
+          setPosts(EMPTY_POSTS)
+          setUsingTemplates(false)
+        }
       })
       .catch(err => setError(String(err)))
       .finally(() => setLoadingProfile(false))
   }, [userId])
+
+  const loadTemplates = () => { setPosts(TEMPLATE_POSTS); setUsingTemplates(true) }
+  const clearToBlank = () => { setPosts(EMPTY_POSTS); setUsingTemplates(false) }
 
   useEffect(() => {
     fetch(`/api/data/profile?userId=${encodeURIComponent(userId)}`)
@@ -131,11 +143,20 @@ export default function VoicePage() {
           <div><h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Your writing samples</h2><p className="mt-1 text-xs text-zinc-400">Use complete, successful posts. Minimum 150 characters each; 50,000 characters total.</p></div>
           <span className="text-xs font-semibold text-zinc-400">{validPosts.length}/5 ready</span>
         </div>
+        {usingTemplates && (
+          <div className="mt-4 flex items-start justify-between gap-3 rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/70 dark:bg-violet-950/30 p-3.5 text-xs leading-5 text-violet-800 dark:text-violet-200">
+            <span><strong>Starter templates loaded.</strong> These are example AI/LLM LinkedIn and Substack posts so you can see the product working immediately. Replace them with your own writing whenever you're ready — Signal will only sound like you once it analyzes your actual samples.</span>
+            <button onClick={clearToBlank} className="shrink-0 rounded-lg border border-violet-300 dark:border-violet-700 px-3 py-1.5 font-semibold text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/40">Start blank</button>
+          </div>
+        )}
+        {!usingTemplates && !fingerprint && (
+          <button onClick={loadTemplates} className="mt-4 text-xs font-semibold text-violet-600 dark:text-violet-400 hover:underline">↺ Reload AI/LLM starter templates</button>
+        )}
         <div className="mt-5 space-y-4">
           {posts.map((post, index) => (
             <div key={index} className="rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50/60 dark:bg-zinc-950/50 p-4">
               <div className="mb-2 flex items-center justify-between"><label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Sample {index + 1}</label>{posts.length > 3 && <button onClick={() => setPosts(current => current.filter((_, i) => i !== index))} className="text-xs text-zinc-400 hover:text-red-500">Remove</button>}</div>
-              <textarea value={post} onChange={event => setPosts(current => current.map((item, i) => i === index ? event.target.value : item))} rows={7} placeholder="Paste one of your best-performing posts here…" className="w-full resize-y rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3.5 py-3 text-sm leading-6 text-zinc-800 dark:text-zinc-200 outline-none focus:ring-2 focus:ring-violet-500" />
+              <textarea value={post} onChange={event => { setPosts(current => current.map((item, i) => i === index ? event.target.value : item)); setUsingTemplates(false) }} rows={7} placeholder="Paste one of your best-performing posts here…" className="w-full resize-y rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3.5 py-3 text-sm leading-6 text-zinc-800 dark:text-zinc-200 outline-none focus:ring-2 focus:ring-violet-500" />
               <p className={`mt-1 text-right text-[11px] ${post.trim() && post.trim().length < 150 ? 'text-amber-600' : 'text-zinc-400'}`}>{post.trim().length} characters</p>
             </div>
           ))}

@@ -23,8 +23,9 @@ export async function POST(req: NextRequest) {
   const rows = STARTER_SOURCES.map(source => ({
     user_id: userId,
     url: source.url,
+    rss_url: source.rss_url ?? null,
     source_tier: source.source_tier,
-    rss_detection_method: 'not_found',
+    rss_detection_method: source.rss_detection_method,
   }))
 
   const { error } = await db

@@ -77,6 +77,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         const json = await response.json()
         if (!response.ok) throw new Error(json.error ?? 'Could not load setup status')
         setSetupStatus(json)
+        // Every signed-in account should start with a working feed — seed
+        // curated AI/LLM sources automatically rather than waiting for the
+        // user to discover the "Import starter sources" button themselves.
+        // The seed route is idempotent (no-ops once any source exists).
+        if (json.hasSources === false && session?.access_token) {
+          fetch('/api/sources/seed', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+            body: JSON.stringify({ userId: user.id }),
+          }).catch(() => {})
+        }
       })
       .catch(() => setSetupStatus(null))
   }, [session?.access_token, user?.id])
