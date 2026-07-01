@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase'
 import { DEFAULT_PROVIDER, defaultModelFor, normalizeProvider, type SupportedProvider, type UserLlmSettings } from '@/lib/llmConfig'
 import { decryptSecretIfNeeded } from '@/lib/secrets'
+import { recordLlmTrace } from '@/lib/observability'
 
 function providerApiKey(provider: SupportedProvider) {
   switch (provider) {
@@ -145,6 +146,9 @@ export async function generateTextForUser(params: {
   prompt: string
   maxTokens?: number
   temperature?: number
+  // Tags the span for observability — which agent/workflow made this call.
+  // Optional so existing call sites keep working; defaults to 'unspecified'.
+  agent?: string
 }) {
   const settings = await getUserLlmSettings(params.userId)
   if (!settings.apiKey) {
@@ -152,12 +156,39 @@ export async function generateTextForUser(params: {
   }
 
   const call = settings.provider === 'anthropic' ? callAnthropic : callOpenAiCompatible
-  return call(settings, {
-    system: params.system,
-    prompt: params.prompt,
-    maxTokens: params.maxTokens ?? 2000,
-    temperature: params.temperature,
-  })
+  const startedAt = Date.now()
+  try {
+    const result = await call(settings, {
+      system: params.system,
+      prompt: params.prompt,
+      maxTokens: params.maxTokens ?? 2000,
+      temperature: params.temperature,
+    })
+    void recordLlmTrace({
+      userId: params.userId,
+      agent: params.agent ?? 'unspecified',
+      provider: settings.provider,
+      model: settings.model,
+      promptChars: (params.system?.length ?? 0) + params.prompt.length,
+      completionChars: result.length,
+      durationMs: Date.now() - startedAt,
+      status: 'success',
+    })
+    return result
+  } catch (error) {
+    void recordLlmTrace({
+      userId: params.userId,
+      agent: params.agent ?? 'unspecified',
+      provider: settings.provider,
+      model: settings.model,
+      promptChars: (params.system?.length ?? 0) + params.prompt.length,
+      completionChars: 0,
+      durationMs: Date.now() - startedAt,
+      status: 'error',
+      errorMessage: error instanceof Error ? error.message : String(error),
+    })
+    throw error
+  }
 }
 
 export async function generateJsonForUser<T>(params: {
@@ -167,6 +198,7 @@ export async function generateJsonForUser<T>(params: {
   schema: unknown
   maxTokens?: number
   temperature?: number
+  agent?: string
 }) {
   const text = await generateTextForUser({
     userId: params.userId,
@@ -174,6 +206,7 @@ export async function generateJsonForUser<T>(params: {
     prompt: `${params.prompt}\n\nJSON schema:\n${JSON.stringify(params.schema, null, 2)}`,
     maxTokens: params.maxTokens ?? 2000,
     temperature: params.temperature,
+    agent: params.agent,
   })
 
   return JSON.parse(extractJson(text)) as T

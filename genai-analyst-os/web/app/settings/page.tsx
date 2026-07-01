@@ -96,6 +96,18 @@ export default function SettingsPage() {
   const [scheduleStatus, setScheduleStatus] = useState<string | null>(null)
   const [runningNow, setRunningNow] = useState(false)
 
+  const [draftsInboxEnabled, setDraftsInboxEnabled] = useState(false)
+  const [draftsInboxSaving, setDraftsInboxSaving] = useState(false)
+  const [draftsInboxStatus, setDraftsInboxStatus] = useState<string | null>(null)
+
+  const [traces, setTraces] = useState<Array<{
+    id: string; agent: string; provider: string | null; model: string | null
+    prompt_chars: number; completion_chars: number; duration_ms: number
+    status: 'success' | 'error'; error_message: string | null; created_at: string
+  }>>([])
+  const [arizeConfigured, setArizeConfigured] = useState(false)
+  const [tracesLoading, setTracesLoading] = useState(false)
+
   useEffect(() => {
     if (!session?.access_token || !userId) return
     fetch(`/api/data/profile?userId=${encodeURIComponent(userId)}`, {
@@ -178,6 +190,58 @@ export default function SettingsPage() {
       })
       .catch(() => {})
   }, [session?.access_token, userId])
+
+  useEffect(() => {
+    if (!session?.access_token || !userId) return
+    fetch(`/api/data/drafts-inbox-settings?userId=${encodeURIComponent(userId)}`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then(async response => {
+        const json = await response.json()
+        if (!response.ok) throw new Error(json.error ?? 'Could not load Drafts Inbox setting')
+        setDraftsInboxEnabled(Boolean(json.enabled))
+      })
+      .catch(() => {})
+  }, [session?.access_token, userId])
+
+  useEffect(() => {
+    if (!session?.access_token || !userId) return
+    setTracesLoading(true)
+    fetch(`/api/data/llm-traces?userId=${encodeURIComponent(userId)}`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then(async response => {
+        const json = await response.json()
+        if (!response.ok) throw new Error(json.error ?? 'Could not load activity')
+        setTraces(json.traces ?? [])
+        setArizeConfigured(Boolean(json.arizeConfigured))
+      })
+      .catch(() => {})
+      .finally(() => setTracesLoading(false))
+  }, [session?.access_token, userId])
+
+  const toggleDraftsInbox = async (next: boolean) => {
+    if (!session?.access_token || !userId) return
+    setDraftsInboxSaving(true)
+    setDraftsInboxStatus(null)
+    try {
+      const response = await fetch('/api/data/drafts-inbox-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ userId, enabled: next }),
+      })
+      const json = await response.json()
+      if (!response.ok) throw new Error(json.error ?? 'Could not save Drafts Inbox setting')
+      setDraftsInboxEnabled(next)
+      setDraftsInboxStatus(next
+        ? 'On — once a day, Signal will draft one post from what you engaged with most and leave it in your Drafts Inbox for review.'
+        : 'Off — no automatic drafts will be generated.')
+    } catch (err) {
+      setDraftsInboxStatus(err instanceof Error ? err.message : 'Could not save Drafts Inbox setting')
+    } finally {
+      setDraftsInboxSaving(false)
+    }
+  }
 
   const toggleInterest = (id: string) => {
     setInterestAreas(prev => {
@@ -651,6 +715,80 @@ export default function SettingsPage() {
             </p>
             {scheduleStatus && <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-300">{scheduleStatus}</p>}
           </>
+        )}
+      </section>
+
+      <section className="mt-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Drafts Inbox</h2>
+          <span className="rounded-full border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/30 px-2 py-0.5 text-[10px] font-bold text-violet-700 dark:text-violet-300">PRO</span>
+        </div>
+        <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">Off by default. When on, once a day Signal looks at what you engaged with most (opened, pinned, or liked) and drafts <strong>one</strong> fully-written post from it — through the same evidence-grounded, citation-verified pipeline as Create — and leaves it in your Drafts Inbox for you to approve or dismiss. Nothing publishes automatically.</p>
+        {!canUsePaidFeatures ? (
+          <div className="mt-5 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/30 p-4 text-sm leading-6 text-amber-900 dark:text-amber-200">
+            Requires an active subscription and a configured model API key, same as Create and the other Pro actions.
+          </div>
+        ) : (
+          <>
+            <label className="mt-5 flex items-center gap-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+              <input type="checkbox" checked={draftsInboxEnabled} disabled={draftsInboxSaving}
+                onChange={event => toggleDraftsInbox(event.target.checked)} />
+              Draft one post a day from what I engaged with most
+            </label>
+            <p className="mt-2 text-xs text-zinc-400">Capped at one draft per account per day. Review pending drafts in Create → Drafts Inbox.</p>
+            {draftsInboxStatus && <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-300">{draftsInboxStatus}</p>}
+          </>
+        )}
+      </section>
+
+      <section className="mt-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Recent AI activity</h2>
+            <p className="mt-1 text-xs text-zinc-400">Every agent call your account makes — which one, on what model, how long it took.</p>
+          </div>
+          <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold ${arizeConfigured
+            ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300'
+            : 'border-zinc-200 bg-white text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400'}`}>
+            {arizeConfigured ? 'Arize forwarding: on' : 'Arize forwarding: not configured'}
+          </span>
+        </div>
+        {tracesLoading ? (
+          <div className="mt-4 h-24 rounded-xl bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
+        ) : traces.length === 0 ? (
+          <p className="mt-4 text-sm text-zinc-400">No AI calls recorded yet — this fills in as you use Create, Ask Signal, and Find Connections.</p>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-zinc-400 border-b border-zinc-100 dark:border-zinc-800">
+                  <th className="pb-2 pr-4 font-medium">Agent</th>
+                  <th className="pb-2 pr-4 font-medium">Model</th>
+                  <th className="pb-2 pr-4 font-medium">Duration</th>
+                  <th className="pb-2 pr-4 font-medium">Status</th>
+                  <th className="pb-2 font-medium">When</th>
+                </tr>
+              </thead>
+              <tbody>
+                {traces.map(t => (
+                  <tr key={t.id} className="border-b border-zinc-50 dark:border-zinc-900">
+                    <td className="py-2 pr-4 font-semibold text-zinc-700 dark:text-zinc-300">{t.agent}</td>
+                    <td className="py-2 pr-4 text-zinc-500">{t.provider ? `${t.provider} · ${t.model}` : '—'}</td>
+                    <td className="py-2 pr-4 text-zinc-500">{(t.duration_ms / 1000).toFixed(1)}s</td>
+                    <td className="py-2 pr-4">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${t.status === 'success' ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'}`}>
+                        {t.status}
+                      </span>
+                    </td>
+                    <td className="py-2 text-zinc-400">{formatRelativeTime(t.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {!arizeConfigured && (
+          <p className="mt-4 text-[11px] text-zinc-400">Set <code>ARIZE_API_KEY</code> and <code>ARIZE_SPACE_ID</code> in your environment to also forward these spans to Arize for full-trace observability.</p>
         )}
       </section>
     </div>

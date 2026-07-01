@@ -219,6 +219,13 @@ function CreatePageInner() {
   const [feedbackText, setFeedbackText] = useState('')
   const [showFeedbackBox, setShowFeedbackBox] = useState(false)
 
+  // Republish Pack
+  const [republishPack, setRepublishPack] = useState<{ format: Format; content: string }[] | null>(null)
+  const [republishing, setRepublishing] = useState(false)
+  const [republishError, setRepublishError] = useState<string | null>(null)
+  const [showRepublishConfirm, setShowRepublishConfirm] = useState(false)
+  const [showRepublishAdminGate, setShowRepublishAdminGate] = useState(false)
+
   // Admin gate
   const [showAdminGate, setShowAdminGate] = useState(false)
   const [pendingGenerate, setPendingGenerate] = useState(false)
@@ -513,6 +520,36 @@ function CreatePageInner() {
     }
   }
 
+  const doRepublish = async (token?: string) => {
+    if (!finalOutput.trim()) return
+    setRepublishing(true)
+    setRepublishError(null)
+    setRepublishPack(null)
+    try {
+      const { sources } = buildBriefAndSources()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+      if (token) headers['x-admin-token'] = token
+      const response = await fetch('/api/generate/republish', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ userId, approvedContent: finalOutput, sourceFormat: format, sources }),
+      })
+      const json = await response.json()
+      if (!response.ok) throw new Error(json.error ?? 'Could not generate the republish pack')
+      setRepublishPack(json.pack ?? [])
+    } catch (err) {
+      setRepublishError(err instanceof Error ? err.message : 'Could not generate the republish pack')
+    } finally {
+      setRepublishing(false)
+    }
+  }
+
+  const handleRepublishClick = () => {
+    if (canUsePaidFeatures) setShowRepublishConfirm(true)
+    else setShowRepublishAdminGate(true)
+  }
+
   const handleSSEEvent = (event: string, payload: Record<string, unknown>) => {
     if (event === 'agent_start') {
       const agent = payload.agent as string
@@ -741,6 +778,24 @@ function CreatePageInner() {
             setShowPaidConfirm(false)
             setPendingPaidGenerate(false)
           }}
+        />
+      )}
+      {showRepublishAdminGate && (
+        <AdminGateModal
+          persistSession={false}
+          action="generate a Republish Pack"
+          onSuccess={token => { setShowRepublishAdminGate(false); doRepublish(token) }}
+          onCancel={() => setShowRepublishAdminGate(false)}
+        />
+      )}
+      {showRepublishConfirm && (
+        <ActionConfirmModal
+          title="Confirm API usage"
+          description="This adapts your approved draft into the other 5 platform formats — one model call per format, using your configured provider and account API key."
+          confirmLabel="Proceed"
+          action="generate a Republish Pack"
+          onConfirm={() => { setShowRepublishConfirm(false); doRepublish() }}
+          onCancel={() => setShowRepublishConfirm(false)}
         />
       )}
 
@@ -1239,7 +1294,34 @@ function CreatePageInner() {
               className="px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-medium text-sm transition-colors">
               ✅ Export for Publishing
             </button>
+            <button onClick={handleRepublishClick} disabled={republishing}
+              className="px-4 py-2.5 text-sm font-medium border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 rounded-xl hover:bg-violet-50 dark:hover:bg-violet-950/30 transition-colors disabled:opacity-50">
+              {republishing ? 'Adapting…' : '📦 Republish Pack'}
+            </button>
           </div>
+          <p className="mt-2 text-[11px] text-amber-600 dark:text-amber-400">⚡ Republish Pack calls your configured model once per other format — costs API credits.</p>
+
+          {republishError && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{republishError}</p>}
+
+          {republishPack && republishPack.length > 0 && (
+            <div className="mt-5 space-y-3">
+              <p className="text-xs font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400">📦 Republish Pack — {republishPack.length} format{republishPack.length !== 1 ? 's' : ''}</p>
+              {republishPack.map(item => {
+                const meta = FORMATS.find(f => f.id === item.format)
+                return (
+                  <div key={item.format} className="rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4">
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{meta?.icon} {meta?.label ?? item.format}</p>
+                      <button onClick={() => navigator.clipboard?.writeText(item.content)}
+                        className="text-xs font-semibold text-violet-600 dark:text-violet-400 hover:underline">📋 Copy</button>
+                    </div>
+                    <textarea readOnly value={item.content} rows={6}
+                      className="w-full rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3 py-2.5 text-xs font-mono resize-none focus:outline-none" />
+                  </div>
+                )
+              })}
+            </div>
+          )}
 
           {exportStatus && (
             <div className={`mt-4 rounded-xl border px-4 py-3 text-sm ${

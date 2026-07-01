@@ -13,6 +13,7 @@ const CORE_ITEMS = [
 ]
 
 const MORE_ITEMS = [
+  { href: '/drafts-inbox',          label: 'Drafts Inbox',     icon: '📥' },
   { href: '/memory',                label: 'Memory Assistant', icon: '🧠' },
   { href: '/voice',                 label: 'My Voice',         icon: '🎙️' },
   { href: '/settings',              label: 'Settings',         icon: '⚙️' },

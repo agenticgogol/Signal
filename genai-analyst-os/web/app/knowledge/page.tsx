@@ -20,6 +20,15 @@ interface KnowledgeConnection {
   worthPost: boolean
 }
 
+interface StaleItem {
+  id: string
+  title: string
+  sourceUrl: string | null
+  topicTags: string[]
+  daysOld: number
+  notebookTitle: string
+}
+
 interface RankedItem {
   id: string
   notebook_id: string
@@ -91,6 +100,14 @@ export default function KnowledgePage() {
   const [connectionsError, setConnectionsError] = useState<string | null>(null)
   const [connections, setConnections] = useState<KnowledgeConnection[] | null>(null)
   const [connectionsScanned, setConnectionsScanned] = useState<number | null>(null)
+
+  // Declutter — Knowledge Decay, free heuristic scan
+  const [staleItems, setStaleItems] = useState<StaleItem[] | null>(null)
+  const [staleLoading, setStaleLoading] = useState(false)
+  const [staleError, setStaleError] = useState<string | null>(null)
+  const [selectedStaleIds, setSelectedStaleIds] = useState<Set<string>>(new Set())
+  const [archiving, setArchiving] = useState(false)
+  const [archiveStatus, setArchiveStatus] = useState<string | null>(null)
 
   // Add-source panel
   const [sourceMode, setSourceMode] = useState<SourceMode>('url')
@@ -252,6 +269,54 @@ export default function KnowledgePage() {
 
   const handleFindConnections = () => {
     runOrGate('This scans your knowledge base and recent feed for free, then makes one LLM call to explain any real connections it finds — uses your configured model, costs API credits.', doFindConnections)
+  }
+
+  // ── Declutter — free heuristic scan, no LLM, no gating ─────────────────
+  const scanForStale = async () => {
+    if (!userId) return
+    setStaleLoading(true)
+    setStaleError(null)
+    try {
+      const res = await fetch(`/api/knowledge/stale?userId=${encodeURIComponent(userId)}`, { headers: authHeaders() })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Could not scan for stale items')
+      setStaleItems(json.items ?? [])
+      setSelectedStaleIds(new Set())
+    } catch (e) {
+      setStaleError(e instanceof Error ? e.message : String(e))
+    }
+    setStaleLoading(false)
+  }
+
+  const toggleStaleSelection = (id: string) => {
+    setSelectedStaleIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const archiveSelected = async () => {
+    if (selectedStaleIds.size === 0) return
+    setArchiving(true)
+    setArchiveStatus(null)
+    try {
+      const res = await fetch('/api/knowledge/archive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ userId, itemIds: Array.from(selectedStaleIds) }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Could not archive selected items')
+      setArchiveStatus(`Archived ${json.archivedCount} item${json.archivedCount !== 1 ? 's' : ''} — hidden from ranking and search, never deleted.`)
+      setStaleItems(prev => (prev ?? []).filter(item => !selectedStaleIds.has(item.id)))
+      setSelectedStaleIds(new Set())
+      await fetchAll()
+    } catch (e) {
+      setArchiveStatus(e instanceof Error ? e.message : String(e))
+    }
+    setArchiving(false)
   }
 
   // ── Add source ────────────────────────────────────────────────────────
@@ -622,6 +687,51 @@ export default function KnowledgePage() {
                   </div>
                 </div>
               ))}
+            </div>
+          )
+        )}
+      </section>
+
+      {/* ── Declutter — free heuristic scan, no LLM ──────────────────────── */}
+      <section className="mt-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">🧹 Declutter</h2>
+            <p className="text-xs text-zinc-400 mt-0.5">Finds items untouched for 90+ days. Archiving only hides them from ranking and search — nothing is ever deleted.</p>
+          </div>
+          <button onClick={scanForStale} disabled={staleLoading}
+            className="rounded-xl border border-zinc-200 dark:border-zinc-700 hover:border-violet-300 disabled:opacity-50 px-4 py-2.5 text-sm font-bold text-zinc-700 dark:text-zinc-300 transition-colors shrink-0">
+            {staleLoading ? 'Scanning…' : '🧹 Scan for stale items'}
+          </button>
+        </div>
+        <p className="mt-2 text-[11px] text-zinc-400">Free — heuristic only, no LLM call.</p>
+
+        {staleError && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{staleError}</p>}
+        {archiveStatus && <p className="mt-3 text-xs text-emerald-600 dark:text-emerald-400">{archiveStatus}</p>}
+
+        {staleItems !== null && (
+          staleItems.length === 0 ? (
+            <p className="mt-4 text-sm text-zinc-400">Nothing stale — everything in your library is recent or still fresh.</p>
+          ) : (
+            <div className="mt-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs text-zinc-400">{staleItems.length} candidate{staleItems.length !== 1 ? 's' : ''}</p>
+                <button onClick={archiveSelected} disabled={selectedStaleIds.size === 0 || archiving}
+                  className="rounded-lg bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 disabled:opacity-40 px-3 py-1.5 text-xs font-bold">
+                  {archiving ? 'Archiving…' : `Archive selected (${selectedStaleIds.size})`}
+                </button>
+              </div>
+              <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                {staleItems.map(item => (
+                  <label key={item.id} className="flex items-start gap-2.5 rounded-xl border border-zinc-100 dark:border-zinc-800 p-2.5 cursor-pointer hover:border-violet-200 dark:hover:border-violet-800">
+                    <input type="checkbox" className="mt-0.5" checked={selectedStaleIds.has(item.id)} onChange={() => toggleStaleSelection(item.id)} />
+                    <div className="min-w-0">
+                      <p className="text-sm text-zinc-800 dark:text-zinc-200 truncate">{item.title}</p>
+                      <p className="text-[11px] text-zinc-400">{item.notebookTitle} · {item.daysOld} days old{item.topicTags.length > 0 ? ` · ${item.topicTags.slice(0, 2).join(', ')}` : ''}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
             </div>
           )
         )}

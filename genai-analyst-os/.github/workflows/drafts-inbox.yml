@@ -1,0 +1,25 @@
+name: Drafts Inbox — daily draft generation
+
+on:
+  schedule:
+    # 06:00 UTC daily. The route itself only drafts for users who opted in
+    # via Settings (drafts_inbox_enabled) and skips anyone already drafted
+    # today, so this is safe to run once regardless of user time zones.
+    - cron: '0 6 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  run-drafts-inbox:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger drafts inbox generation
+        run: |
+          response=$(curl -sS -o /tmp/response.json -w "%{http_code}" -X POST \
+            "${{ secrets.APP_URL }}/api/drafts-inbox/run" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}")
+          echo "HTTP status: $response"
+          cat /tmp/response.json
+          if [ "$response" -ge 300 ]; then
+            echo "Drafts Inbox trigger failed"
+            exit 1
+          fi

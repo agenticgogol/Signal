@@ -235,6 +235,7 @@ Return:
     topic_tags: string[]
   }>({
     userId: params.userId,
+    agent: 'knowledge_summarize',
     system: 'You are structuring a personal AI knowledge base for an expert practitioner.',
     prompt,
     schema: KNOWLEDGE_SCHEMA,
@@ -497,6 +498,7 @@ export async function answerNotebookQuestion(params: {
     citations: { title: string; url: string }[]
   }>({
     userId: params.userId,
+    agent: 'notebook_qa',
     system: 'You answer questions only from the supplied notebook and feed context. Be concise, specific, and cite the sources you used.',
     prompt: `Notebook: ${notebook?.title || 'Knowledge base'}\nQuestion: ${params.question}\n\nNOTEBOOK CONTEXT:\n${notebookContext || 'None'}\n\nFEED CONTEXT:\n${feedContext || 'None'}\n\nReturn a grounded answer and citations.`,
     schema: {
@@ -578,6 +580,7 @@ export async function answerKnowledgeBaseQuestion(params: {
     citations: { title: string; url: string }[]
   }>({
     userId: params.userId,
+    agent: 'knowledge_ask',
     system: 'You answer questions only from the supplied knowledge base context below. If the context does not address the question, say so plainly rather than guessing or using outside knowledge. Be concise and cite the sources you used.',
     prompt: `Question: ${params.question}\n\nKNOWLEDGE BASE CONTEXT:\n${context}\n\nReturn a grounded answer and citations.`,
     schema: {
@@ -637,6 +640,7 @@ export async function answerRecallQuestion(params: {
       .select('id, notebook_id, title, source_url, summary, why_it_matters, topic_tags, cleaned_text, processed_at')
       .eq('user_id', params.userId)
       .eq('status', 'ready')
+      .is('archived_at', null)
       .order('processed_at', { ascending: false })
       .limit(120),
     db.from('user_feed_items')
@@ -735,6 +739,7 @@ export async function answerRecallQuestion(params: {
     citations: { title: string; url: string }[]
   }>({
     userId: params.userId,
+    agent: 'recall',
     system: 'You are a recall assistant. Answer only from the supplied user feed and notebook memory context. Be concise, help the user remember the concept, and cite sources used.',
     prompt: `Question: ${params.question}\n\nMEMORY CONTEXT:\n${memoryContext}\n\nReturn a grounded answer and citations.`,
     schema: {
@@ -812,6 +817,7 @@ export async function findKnowledgeConnections(userId: string): Promise<{ connec
       .select('id, title, source_url, summary, why_it_matters, topic_tags')
       .eq('user_id', userId)
       .eq('status', 'ready')
+      .is('archived_at', null)
       .order('processed_at', { ascending: false })
       .limit(150),
     db.from('knowledge_links')
@@ -897,6 +903,7 @@ export async function findKnowledgeConnections(userId: string): Promise<{ connec
     connections: { index: number; insight: string; worth_post: boolean }[]
   }>({
     userId,
+    agent: 'connection_agent',
     maxTokens: 1400,
     system: 'You find genuinely interesting connections between something a practitioner saved earlier and something new in their feed. For each numbered pair, write ONE sharp sentence explaining the actual connection or why it matters together — not a generic summary of either item alone. Mark worth_post=true only if the connection itself would make a compelling post (a real insight, contradiction, or update), not just "these are related."',
     prompt: `Candidate pairs:\n\n${pairsBlock}\n\nReturn one connection entry per numbered pair.`,
@@ -939,4 +946,67 @@ export async function findKnowledgeConnections(userId: string): Promise<{ connec
     .sort((a, b) => Number(b.worthPost) - Number(a.worthPost))
 
   return { connections, candidatesScanned: scanned }
+}
+
+// ── Knowledge Decay ───────────────────────────────────────────────────────
+// Pure heuristic, zero LLM cost — flags items that are old and have never
+// come up again (no connection, no citation in an Ask answer, no recent
+// activity) so the library stays useful instead of accumulating dead links.
+// Archiving is soft: excluded from ranking/search, never deleted.
+
+export interface StaleKnowledgeItem {
+  id: string
+  title: string
+  sourceUrl: string | null
+  topicTags: string[]
+  daysOld: number
+  notebookTitle: string
+}
+
+const STALE_AFTER_DAYS = 90
+
+export async function findStaleKnowledgeItems(userId: string): Promise<StaleKnowledgeItem[]> {
+  const db = createServiceClient()
+  const cutoff = new Date()
+  cutoff.setUTCDate(cutoff.getUTCDate() - STALE_AFTER_DAYS)
+
+  const { data, error } = await db
+    .from('knowledge_items')
+    .select('id, title, source_url, topic_tags, processed_at, created_at, knowledge_notebooks(title)')
+    .eq('user_id', userId)
+    .eq('status', 'ready')
+    .is('archived_at', null)
+    .lt('processed_at', cutoff.toISOString())
+    .order('processed_at', { ascending: true })
+    .limit(50)
+
+  if (error) throw error
+
+  const now = Date.now()
+  return (data ?? []).map((item: Record<string, unknown>) => {
+    const notebook = Array.isArray(item.knowledge_notebooks) ? item.knowledge_notebooks[0] : item.knowledge_notebooks as Record<string, unknown> | null
+    const processedAt = String(item.processed_at || item.created_at || new Date().toISOString())
+    return {
+      id: String(item.id),
+      title: String(item.title || 'Untitled'),
+      sourceUrl: item.source_url ? String(item.source_url) : null,
+      topicTags: Array.isArray(item.topic_tags) ? item.topic_tags.map(String) : [],
+      daysOld: Math.floor((now - new Date(processedAt).getTime()) / (1000 * 60 * 60 * 24)),
+      notebookTitle: String(notebook?.title || 'General'),
+    }
+  })
+}
+
+export async function archiveKnowledgeItems(userId: string, itemIds: string[]): Promise<number> {
+  if (itemIds.length === 0) return 0
+  const db = createServiceClient()
+  const { data, error } = await db
+    .from('knowledge_items')
+    .update({ archived_at: new Date().toISOString() })
+    .eq('user_id', userId)
+    .in('id', itemIds)
+    .select('id')
+
+  if (error) throw error
+  return (data ?? []).length
 }

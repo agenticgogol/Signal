@@ -928,6 +928,14 @@ export default function FeedPage() {
   const [seedingSources, setSeedingSources] = useState(false)
   const [seededSources, setSeededSources] = useState(false)
 
+  // Novelty/Velocity Radar — free heuristic scan, LLM explanation optional
+  const [radarHits, setRadarHits] = useState<Array<{ term: string; recentMentions: number; recentSourceCount: number; articles: { title: string; url: string }[]; insight?: string }> | null>(null)
+  const [radarScanning, setRadarScanning] = useState(false)
+  const [radarError, setRadarError] = useState<string | null>(null)
+  const [radarExplaining, setRadarExplaining] = useState(false)
+  const [showRadarConfirm, setShowRadarConfirm] = useState(false)
+  const [showRadarAdminGate, setShowRadarAdminGate] = useState(false)
+
   // Tabs
   const [activeTab, setActiveTab] = useState<Tab>('feed')
   const [digestScope, setDigestScope] = useState<DigestScope>('today')
@@ -1256,6 +1264,49 @@ export default function FeedPage() {
     }
     setKnowledgeLoading(false)
   }, [session?.access_token, user?.id, knowledgeNotebookFilter])
+
+  const scanRadar = async () => {
+    setRadarScanning(true)
+    setRadarError(null)
+    try {
+      const headers: Record<string, string> = {}
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+      const res = await fetch(`/api/radar/scan?userId=${encodeURIComponent(userId)}`, { headers })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Could not scan for emerging terms')
+      setRadarHits(json.hits ?? [])
+    } catch (e) {
+      setRadarError(e instanceof Error ? e.message : String(e))
+    }
+    setRadarScanning(false)
+  }
+
+  const doExplainRadar = async (token?: string) => {
+    if (!radarHits || radarHits.length === 0) return
+    setRadarExplaining(true)
+    setRadarError(null)
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+      if (token) headers['x-admin-token'] = token
+      const res = await fetch('/api/radar/explain', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ userId, hits: radarHits }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Could not explain these trends')
+      setRadarHits(json.hits ?? radarHits)
+    } catch (e) {
+      setRadarError(e instanceof Error ? e.message : String(e))
+    }
+    setRadarExplaining(false)
+  }
+
+  const handleExplainRadar = () => {
+    if (canUsePaidFeatures) setShowRadarConfirm(true)
+    else setShowRadarAdminGate(true)
+  }
 
   const fetchWeekly = useCallback(async () => {
     setWeeklyLoading(true)
@@ -1770,6 +1821,24 @@ export default function FeedPage() {
           }}
         />
       )}
+      {showRadarAdminGate && (
+        <AdminGateModal
+          persistSession={false}
+          action="explain these emerging terms"
+          onSuccess={token => { setShowRadarAdminGate(false); doExplainRadar(token) }}
+          onCancel={() => setShowRadarAdminGate(false)}
+        />
+      )}
+      {showRadarConfirm && (
+        <ActionConfirmModal
+          title="Confirm API usage"
+          description="One batched call to your configured model explains why each emerging term looks like a genuine signal."
+          confirmLabel="Proceed"
+          action="explain these emerging terms"
+          onConfirm={() => { setShowRadarConfirm(false); doExplainRadar() }}
+          onCancel={() => setShowRadarConfirm(false)}
+        />
+      )}
       {showFeedModal && (
         <GetLatestFeedModal
           config={pipelineConfig}
@@ -1910,6 +1979,51 @@ export default function FeedPage() {
       {/* ══ YOUR FEED TAB ═══════════════════════════════════════════════════ */}
       {activeTab === 'feed' && (
         <div>
+          {/* 🚀 Novelty/Velocity Radar — free heuristic scan, LLM explanation optional */}
+          <div className="mb-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">🚀 Emerging this week</p>
+                <p className="text-xs text-zinc-400 mt-0.5">Terms that just started showing up across multiple independent sources — before they're mainstream.</p>
+              </div>
+              <button onClick={scanRadar} disabled={radarScanning}
+                className="rounded-xl border border-zinc-200 dark:border-zinc-700 hover:border-violet-300 disabled:opacity-50 px-4 py-2 text-xs font-bold text-zinc-700 dark:text-zinc-300 transition-colors shrink-0">
+                {radarScanning ? 'Scanning…' : '🚀 Scan for emerging terms'}
+              </button>
+            </div>
+            <p className="mt-1.5 text-[11px] text-zinc-400">Free — heuristic scan, no LLM call.</p>
+            {radarError && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{radarError}</p>}
+            {radarHits !== null && (
+              radarHits.length === 0 ? (
+                <p className="mt-3 text-sm text-zinc-400">Nothing spiking right now — check back after your next feed refresh.</p>
+              ) : (
+                <div className="mt-3">
+                  <div className="flex flex-wrap gap-2">
+                    {radarHits.map(hit => (
+                      <div key={hit.term} className="rounded-xl border border-zinc-100 dark:border-zinc-800 px-3 py-2 max-w-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{hit.term}</span>
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">{hit.recentSourceCount} sources</span>
+                        </div>
+                        {hit.insight ? (
+                          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{hit.insight}</p>
+                        ) : (
+                          <p className="mt-1 text-[11px] text-zinc-400">{hit.articles.slice(0, 2).map(a => a.title).join(' · ')}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {!radarHits.some(h => h.insight) && (
+                    <button onClick={handleExplainRadar} disabled={radarExplaining}
+                      className="mt-3 text-xs font-semibold text-violet-600 dark:text-violet-400 hover:underline disabled:opacity-50">
+                      {radarExplaining ? 'Explaining…' : '🧠 Explain why these matter (uses API credits)'}
+                    </button>
+                  )}
+                </div>
+              )
+            )}
+          </div>
+
           {/* Compact Ask Signal bar */}
           <button
             onClick={() => setActiveTab('chat')}

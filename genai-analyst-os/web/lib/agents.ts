@@ -136,6 +136,7 @@ export async function runOrchestratorAgent(
   // response used to silently degrade every downstream agent's context.
   const plan = await generateJsonForUser<OrchestratorPlan>({
     userId,
+    agent: 'orchestrator',
     maxTokens: 1500,
     system: hasSources
       ? 'You are a content strategist for a senior GenAI practitioner. Every key claim you propose must be traceable to one of the supplied sources — if no source supports a good claim, leave source_url/source_title/source_domain as empty strings rather than inventing one.'
@@ -189,6 +190,7 @@ Write ONLY the final content — no meta-commentary, no "here is your post", no 
 
   return generateTextForUser({
     userId,
+    agent: 'writer',
     maxTokens: 2500,
     system: systemPrompt,
     prompt: `Content plan:\n${orchestratorBrief}${sourceContext}\n\nWrite the ${spec?.name ?? format} content now.${hasSources ? ' Every opinion and factual claim must be grounded in the evidence given for one of the sources above, with a citation in the format specified.' : ' There are no external sources — write this directly from the content plan and brief, with no citations.'}`,
@@ -239,6 +241,7 @@ TOP 3 REWRITES (exact suggestions: "Change [X] to [Y] because [reason]")`
 
   return generateTextForUser({
     userId,
+    agent: 'critic',
     maxTokens: 1400,
     system: `You are a fact-checker and content critic for a GenAI practitioner's content.\n\n${reviewChecklist}`,
     prompt: `Content plan: ${orchestratorBrief}${sourceList}\n\nDraft:\n${draft}`,
@@ -265,6 +268,7 @@ export async function runHumanizerAgent(
 
   return generateTextForUser({
     userId,
+    agent: 'humanizer',
     maxTokens: 2500,
     system: `You are a ghostwriter specializing in humanizing AI-generated content for ${spec?.name ?? format}.
 
@@ -343,6 +347,7 @@ export async function runClaimVerifierAgent(
     verdict: 'pass' | 'needs_revision'
   }>({
     userId,
+    agent: 'verifier',
     maxTokens: 1200,
     system: `You are a fact-checker verifying that each claim in a draft is actually supported by its cited source's evidence text — not just that the URL exists.
 
@@ -433,6 +438,7 @@ export async function runEvaluatorAgent(
       writer_instructions: string
     }>({
       userId,
+      agent: 'evaluator',
       maxTokens: 1000,
       system: `You are a content quality evaluator. Score this ${spec?.name ?? format} content on 5 criteria, each 1-10:
 
@@ -483,6 +489,7 @@ export async function runAudienceSimAgent(
 
   return generateTextForUser({
     userId,
+    agent: 'audience_sim',
     maxTokens: 800,
     system: `You are simulating 3 different readers of a ${spec?.name ?? format} post.
 
@@ -523,6 +530,7 @@ export async function runFinalPolishAgent(
 
   return generateTextForUser({
     userId,
+    agent: 'final_polish',
     maxTokens: 2500,
     system: `You are making the final polish pass on a ${spec?.name ?? format} post.
 
@@ -535,6 +543,54 @@ ${citationRule}
 
 Return ONLY the revised content. No preamble.${buildVoiceConstitution(voiceFingerprint)}`,
     prompt: `Content:\n${content}\n\nAudience feedback to address:\n${audienceFeedback}`,
+  })
+}
+
+// ── Republish Pack ─────────────────────────────────────────────────────────
+// Adapts an ALREADY-APPROVED, already-verified final draft into a different
+// platform format. Deliberately skips the Orchestrator/Verifier/Evaluator
+// loop — the facts and citations were already checked once; this only
+// restructures for a new platform's length, structure, and citation style,
+// which is why one pass per format is enough instead of the full 8-agent
+// pipeline per format.
+export async function runRepublishAgent(
+  userId: string,
+  approvedContent: string,
+  sourceFormat: string,
+  targetFormat: string,
+  sources: SourceArticle[] = [],
+  voiceFingerprint?: VoiceFingerprint | null
+): Promise<string> {
+  const spec = PLATFORM_SPECS[targetFormat]
+  if (!spec) throw new Error(`Unknown target format: ${targetFormat}`)
+  const mustDos = spec.mustDos.map(d => `• ${d}`).join('\n')
+  const avoid = spec.avoid.map(d => `• ${d}`).join('\n')
+  const hasSources = sources.length > 0
+  const sourceContext = formatSourceList(sources)
+
+  return generateTextForUser({
+    userId,
+    agent: 'republish',
+    maxTokens: 2500,
+    system: `You are adapting an already-approved, fact-checked ${PLATFORM_SPECS[sourceFormat]?.name ?? sourceFormat} post into ${spec.name}.
+
+The ideas, claims, and citations in the source content have already been verified — do not add new claims, remove existing citations, or invent anything. Your only job is restructuring for this platform.
+
+PLATFORM RULES for ${spec.name}:
+Structure: ${spec.structure}
+Tone: ${spec.tone}
+Length: ${spec.wordLimit}${spec.charLimit ? ` (max ${spec.charLimit} characters)` : ''}
+
+MUST DO:
+${mustDos}
+
+AVOID:
+${avoid}
+
+${hasSources ? citationGuide(targetFormat) : 'This piece has no external sources — do not add a "Sources:" section or invent citations.'}
+
+Write ONLY the final adapted content — no meta-commentary, no "here is your post".${buildVoiceConstitution(voiceFingerprint)}`,
+    prompt: `Source content (${PLATFORM_SPECS[sourceFormat]?.name ?? sourceFormat}):\n${approvedContent}${sourceContext}\n\nAdapt this into ${spec.name} now.`,
   })
 }
 

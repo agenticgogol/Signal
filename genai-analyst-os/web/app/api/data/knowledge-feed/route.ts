@@ -41,6 +41,7 @@ export async function GET(req: NextRequest) {
         .select('id, notebook_id, title, source_type, source_url, summary, why_it_matters, topic_tags, cleaned_text, processed_at, created_at')
         .eq('user_id', access.userId)
         .eq('status', 'ready')
+        .is('archived_at', null)
         .order('processed_at', { ascending: false })
         .limit(200),
       db.from('knowledge_notebooks')
