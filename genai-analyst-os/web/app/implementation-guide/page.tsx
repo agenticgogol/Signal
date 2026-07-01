@@ -1,4 +1,4 @@
-import { Arrow, Callout, FeatureCard, FlowNode, GuideHero, GuideSection } from '@/components/GuideUI'
+import { Arrow, Callout, FeatureCard, FlowNode, GuideHero, GuideSection, PipelineDiagram, type PipelineZone } from '@/components/GuideUI'
 
 const stack = [
   ['▲', 'Next.js 16', 'App Router, server routes, React 19, Tailwind CSS 4'],
@@ -29,12 +29,128 @@ const apiRows = [
   ['/api/generate', 'POST + SSE', 'Streams the eight-agent drafting and quality workflow'],
 ]
 
+const systemZones: PipelineZone[] = [
+  {
+    label: 'Ingestion', tone: 'green',
+    steps: [
+      { title: 'User sources', tone: 'green', detail: ['RSS/Atom, tiered 1–3 by trust', 'Resolved and stored per account'] },
+      { title: 'Crawl', tone: 'green', detail: ['Scheduled (per-user hour, Pro) or manual "Get Latest Feed"', 'Bounded lookback (1–14d) and per-source cap (1–10)'] },
+    ],
+  },
+  {
+    label: 'Enrichment & Ranking', tone: 'blue',
+    steps: [
+      { title: 'Summarise', tone: 'blue', detail: ['TL;DR, topic tags, depth, why-it-matters, takeaways'] },
+      { title: 'Embed', tone: 'blue', detail: ['384-d pgvector embedding per article'] },
+      { title: 'Rank', tone: 'blue', detail: ['Blend: recency + topic_weights cosine + source tier', 'Instant re-sort on preference change, no pipeline re-run needed'] },
+    ],
+  },
+  {
+    label: 'Surfaces', tone: 'amber',
+    steps: [
+      { title: 'Feed, Digest, Live News', tone: 'amber', detail: ['Ranked feed · Today/This Week digest toggle · live world headlines', 'Knowledge Feed ranks saved notebook items the same way'] },
+    ],
+  },
+  {
+    label: 'RAG & Memory (on demand)', tone: 'violet', dashed: true,
+    steps: [
+      { title: 'Ask Signal / Memory Assistant', tone: 'violet', detail: ['One shared recall engine, two entry points', 'Retrieves feed + knowledge + prior chat, answers with citations'] },
+    ],
+    note: 'Reads episodic memory (opens, pins, likes, prior chats) to ground answers; writes back to it after each answer.',
+  },
+  {
+    label: 'Content Generation (human-directed)', tone: 'green',
+    steps: [
+      { title: '8-agent evidence-grounded loop', tone: 'green', detail: ['Orchestrator → Writer → Verifier → Critic → Humanizer → Evaluator (loop)', 'Audience Sim → Final Polish'] },
+    ],
+  },
+]
+
+const contentGenZones: PipelineZone[] = [
+  {
+    label: 'Input assembly', tone: 'green',
+    steps: [
+      { title: 'Evidence sources', tone: 'green', detail: ['1–3 feed articles or notebook items, WITH real content', 'why_it_matters + tldr_bullets, or summary — not just title/URL'] },
+      { title: 'Human brief', tone: 'green', detail: ['Topic · angle · optional POV · audience · platform + voice fingerprint'] },
+    ],
+  },
+  {
+    label: 'Planning', tone: 'blue',
+    steps: [
+      { title: 'Orchestrator', tone: 'blue', detail: ['Schema-validated JSON plan (generateJsonForUser, not regex-scraped text)', 'Every key_claim must trace to a specific source\'s evidence or be left unsourced'] },
+    ],
+  },
+  {
+    label: 'Draft & verify loop — up to 3 iterations', tone: 'amber', dashed: true,
+    steps: [
+      { title: 'Writer', tone: 'amber', detail: ['Platform-native draft, cites only what the evidence actually supports'] },
+      { title: 'Claim Verifier', tone: 'amber', detail: ['Per-claim status vs. real evidence: supported / overstated / unsupported / hallucinated', 'Structured JSON verdict — checked by code, not re-read as prose'] },
+      { title: 'Critic', tone: 'amber', detail: ['Citation gaps + accuracy issues + AI writing tells'] },
+      { title: 'Humanizer', tone: 'amber', detail: ['Fixes critique + citation issues, applies voice fingerprint'] },
+      { title: 'Evaluator', tone: 'amber', detail: ['5 scores (hook, specificity, citations, voice, platform fit)', 'Citations score forced below 7 if Verifier found hallucination/unsupported claims'] },
+    ],
+    note: 'Loop breaks only when Evaluator passes AND the Verifier reports zero hallucinated/unsupported citations — whichever comes later, capped at 3 loops.',
+  },
+  {
+    label: 'Reader pressure test', tone: 'violet',
+    steps: [
+      { title: 'Audience Simulation', tone: 'violet', detail: ['3 personas: skeptical engineer, PM, executive skimmer'] },
+      { title: 'Final Polish', tone: 'violet', detail: ['Addresses objections in place — no new sections, no structure changes'] },
+    ],
+  },
+]
+
+const ragZones: PipelineZone[] = [
+  {
+    label: 'Query intake', tone: 'green',
+    steps: [
+      { title: 'Ask Signal (Feed tab) or Memory Assistant page', tone: 'green', detail: ['Same component, two entry points — one shared implementation'] },
+    ],
+  },
+  {
+    label: 'Retrieval', tone: 'blue',
+    steps: [
+      { title: 'Feed memory search', tone: 'blue', detail: ['Recent ranked articles: title, why_it_matters, takeaways'] },
+      { title: 'Knowledge base search', tone: 'blue', detail: ['Notebook items scored by word-overlap relevance to the question'] },
+      { title: 'Prior chat history', tone: 'blue', detail: ['Last N recall Q&As from user_chat_events, matched by overlap too'] },
+    ],
+  },
+  {
+    label: 'Grounding & generation', tone: 'violet',
+    steps: [
+      { title: 'Assemble numbered context', tone: 'violet', detail: ['[F1], [K1], [P1] style citations — feed, knowledge, prior chat'] },
+      { title: 'Generate answer', tone: 'violet', detail: ['Schema-validated JSON: answer + citations, on the account\'s configured model', 'Instructed to answer only from supplied context — no open-ended recall'] },
+    ],
+  },
+  {
+    label: 'Memory write-back', tone: 'amber',
+    steps: [
+      { title: 'Log chat event', tone: 'amber', detail: ['Question + answer summary + citations → user_chat_events'] },
+    ],
+    note: 'Both Ask Signal and Memory Assistant read this same table, so a question asked in either place appears in both.',
+  },
+]
+
 export default function ImplementationGuidePage() {
   return (
     <div className="mx-auto max-w-6xl p-6 md:p-8 pb-24">
       <GuideHero eyebrow="Engineering Field Guide" title="How Signal turns a noisy web into an auditable intelligence workflow"
         description="This guide maps the runtime architecture, agent graph, data model, model tiers, API boundaries, reliability decisions, and deployment controls. It is written for maintainers who need to understand not only what runs, but why the system is shaped this way."
         chips={['Next.js + Python', 'Supabase + pgvector', 'Per-user LLM routing', 'GitHub Actions', 'Human-in-the-loop']} />
+
+      <GuideSection id="system-pipeline" eyebrow="Bird's-eye view" title="The entire system as one pipeline" description="Five layers, one direction: sources become ranked intelligence, intelligence becomes surfaces, and two on-demand layers — recall and content generation — sit on top of it rather than being separate products.">
+        <PipelineDiagram
+          entry={{ icon: '📰', label: 'Your sources (RSS/Atom)' }}
+          zones={systemZones}
+          exit={{ icon: '✍️', label: 'Human reviews, edits, and publishes manually' }}
+          sideRail={{ label: 'Supabase Postgres + pgvector', sublabel: 'every layer reads and writes here' }}
+        />
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
+          <Callout title="Two on-demand layers"><p>RAG &amp; Memory and Content Generation don&apos;t run on a schedule — they activate when a user asks a question or clicks Create, but both depend on everything ranked and enriched below them.</p></Callout>
+          <Callout title="One store, no hidden pipeline" tone="green"><p>There is no separate vector database or cache tier — pgvector embeddings, ranked feed rows, knowledge chunks, and episodic memory events all live in the same Postgres instance.</p></Callout>
+          <Callout title="Detailed sections below" tone="amber"><p>The Content Generation and RAG &amp; Memory sections further down expand each of those two layers into their own full pipeline diagrams.</p></Callout>
+        </div>
+      </GuideSection>
 
       <GuideSection id="architecture" eyebrow="System map" title="Three paths, one intelligence layer" description="The scheduled path builds durable personalized intelligence. The immediate path serves live worldwide headlines. The creation path turns selected evidence and human direction into reviewed platform-native content.">
         <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
@@ -106,38 +222,28 @@ export default function ImplementationGuidePage() {
         </div>
       </GuideSection>
 
-      <GuideSection id="content-generation" eyebrow="Creation engine" title="Content generation is an evaluated agent loop" description="The Create API has a five-minute execution budget and streams progress as Server-Sent Events. Expensive creative work uses Sonnet; bounded checking work uses Haiku.">
-        <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
-          <p className="mb-4 text-xs font-bold uppercase tracking-widest text-zinc-400">Input assembly</p>
-          <div className="grid gap-3 md:grid-cols-4">
-            <FlowNode icon="📚" title="Sources" subtitle="1–3 feed articles or frozen outline" tone="green" />
-            <FlowNode icon="💬" title="Author Direction" subtitle="topic · angle · optional POV" tone="blue" />
-            <FlowNode icon="👤" title="Audience" subtitle="engineer · PM · leader · mixed" tone="amber" />
-            <FlowNode icon="🎙️" title="Voice + Platform" subtitle="fingerprint · length · citations" />
-          </div>
-          <div className="my-6 text-center text-2xl text-zinc-300 dark:text-zinc-700">↓</div>
-          <div className="grid gap-3 md:grid-cols-4">
-            {[
-              ['1', 'Orchestrator', 'Sonnet', 'claim plan + hook'],
-              ['2', 'Writer', 'Sonnet', 'platform-native draft'],
-              ['3', 'Claim Verifier', 'Haiku', 'support + citation check'],
-              ['4', 'Critic', 'Haiku', 'gaps + exact rewrites'],
-              ['5', 'Humanizer', 'Sonnet', 'voice + critique fixes'],
-              ['6', 'Evaluator', 'Haiku', 'five quality scores'],
-              ['7', 'Audience Sim', 'Haiku', 'three reader reactions'],
-              ['8', 'Final Polish', 'Sonnet', 'objection-aware final'],
-            ].map(([number, name, model, job]) => (
-              <div key={name} className="rounded-2xl border border-zinc-200 dark:border-zinc-700 p-4">
-                <div className="flex items-center justify-between"><span className="text-xs font-black text-violet-600">AGENT {number}</span><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${model === 'Sonnet' ? 'bg-violet-50 text-violet-600 dark:bg-violet-950/40' : 'bg-blue-50 text-blue-600 dark:bg-blue-950/40'}`}>{model}</span></div>
-                <p className="mt-2 text-sm font-bold text-zinc-900 dark:text-zinc-100">{name}</p><p className="mt-1 text-xs text-zinc-400">{job}</p>
-              </div>
-            ))}
-          </div>
-        </div>
+      <GuideSection id="content-generation" eyebrow="Creation engine" title="Content generation is an evidence-grounded, evaluated agent loop" description="The Create API has a five-minute execution budget and streams progress as Server-Sent Events. Every agent call runs on the one provider and model configured in Settings for that account — there is no fixed per-agent model tier.">
+        <PipelineDiagram
+          zones={contentGenZones}
+          exit={{ icon: '✍️', label: 'Human Review — edit, copy, publish manually' }}
+        />
         <div className="mt-5 grid gap-4 md:grid-cols-3">
-          <Callout title="Quality gate"><p>Evaluator scores hook, specificity, citations, voice, and platform fit from 1–10. Any criterion below 7 creates targeted Writer instructions.</p></Callout>
-          <Callout title="Bounded rewrite loop" tone="amber"><p>Writer → Verifier → Critic → Humanizer → Evaluator can repeat, but <code>MAX_LOOPS = 3</code> prevents runaway cost and latency.</p></Callout>
-          <Callout title="Reader pressure test" tone="green"><p>Only after the quality loop does the system simulate a skeptical engineer, product lead, and executive skimmer, then apply one final polish.</p></Callout>
+          <Callout title="The fix that mattered most"><p>Every agent used to see only a source&apos;s title, URL, and domain — never its actual content. The Claim Verifier checked citations against a literal placeholder string. Citations looked rigorous but had nothing real to be grounded in.</p></Callout>
+          <Callout title="Hard gate, not a suggestion" tone="amber"><p>A hallucinated or unsupported citation blocks the loop from finishing clean, regardless of the Evaluator&apos;s overall score. <code>MAX_LOOPS = 3</code> still bounds cost — if issues remain at the ceiling, a citation_warning names them explicitly on Review &amp; Export.</p></Callout>
+          <Callout title="Reader pressure test" tone="green"><p>Only after the quality loop does the system simulate a skeptical engineer, product lead, and executive skimmer, then apply one final polish that fixes specific lines without restructuring.</p></Callout>
+        </div>
+      </GuideSection>
+
+      <GuideSection id="rag-memory" eyebrow="Recall engine" title="RAG & Memory: one retrieval pipeline behind two entry points" description="Ask Signal (on the Feed tab) and the standalone Memory Assistant page used to be separate implementations of the same idea. They now share one pipeline end to end — including what gets remembered.">
+        <PipelineDiagram
+          zones={ragZones}
+          exit={{ icon: '💬', label: 'Grounded answer + citations, shown in both surfaces' }}
+          sideRail={{ label: 'Episodic memory', sublabel: 'user_article_events, user_chat_events, user_knowledge_events' }}
+        />
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
+          <Callout title="Answer only from context"><p>The generation step is explicitly instructed to answer only from the assembled feed/knowledge/chat context — not from open-ended model knowledge — and to cite which numbered source backed each part of the answer.</p></Callout>
+          <Callout title="Shared, not duplicated" tone="green"><p>Both entry points call the same component and the same API routes. A question asked in Ask Signal shows up in Memory Assistant&apos;s history and vice versa, by construction rather than by convention.</p></Callout>
+          <Callout title="Feeds ranking too" tone="amber"><p>The same episodic events (opens, pins, likes) also apply a small recency-decayed boost to feed ranking — memory isn&apos;t only for recall, it quietly improves what surfaces next.</p></Callout>
         </div>
       </GuideSection>
 

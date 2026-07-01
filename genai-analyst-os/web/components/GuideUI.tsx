@@ -100,6 +100,127 @@ export function Arrow() {
   return <div className="hidden md:flex items-center text-xl font-black text-zinc-300 dark:text-zinc-700">→</div>
 }
 
+// ── PipelineDiagram ───────────────────────────────────────────────────────────
+// A vertical, layered architecture diagram in the style of a real systems
+// design doc: an entry point, a stack of colored "zone" boxes each holding
+// one or more step boxes connected by arrows, an optional exit point, and
+// an optional persistent side rail for a cross-cutting concern (memory,
+// observability, auth) that touches every zone rather than sitting in the
+// linear flow.
+
+const ZONE_TONES = {
+  blue:   { wrap: 'border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/20', label: 'text-blue-700 dark:text-blue-300' },
+  green:  { wrap: 'border-green-200 bg-green-50/60 dark:border-green-900 dark:bg-green-950/20', label: 'text-green-700 dark:text-green-300' },
+  amber:  { wrap: 'border-amber-200 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/20', label: 'text-amber-700 dark:text-amber-300' },
+  violet: { wrap: 'border-violet-200 bg-violet-50/60 dark:border-violet-900 dark:bg-violet-950/20', label: 'text-violet-700 dark:text-violet-300' },
+  zinc:   { wrap: 'border-zinc-200 bg-zinc-50/60 dark:border-zinc-800 dark:bg-zinc-900/40', label: 'text-zinc-600 dark:text-zinc-400' },
+} as const
+
+const STEP_TONES = {
+  blue:   'border-blue-300 bg-white dark:bg-zinc-900 dark:border-blue-800',
+  green:  'border-green-300 bg-white dark:bg-zinc-900 dark:border-green-800',
+  amber:  'border-amber-300 bg-white dark:bg-zinc-900 dark:border-amber-800',
+  violet: 'border-violet-300 bg-white dark:bg-zinc-900 dark:border-violet-800',
+  zinc:   'border-zinc-300 bg-white dark:bg-zinc-900 dark:border-zinc-700',
+} as const
+
+export interface PipelineStep {
+  title: string
+  detail: string[]
+  tone?: keyof typeof STEP_TONES
+}
+
+export interface PipelineZone {
+  label: string
+  tone: keyof typeof ZONE_TONES
+  steps: PipelineStep[]
+  dashed?: boolean
+  note?: string
+}
+
+function DownArrow() {
+  return <div className="flex justify-center py-1 text-lg font-black text-zinc-300 dark:text-zinc-700">↓</div>
+}
+
+function PipelineStepBox({ step }: { step: PipelineStep }) {
+  const tone = step.tone ?? 'zinc'
+  return (
+    <div className={`rounded-xl border-2 p-3.5 ${STEP_TONES[tone]}`}>
+      <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{step.title}</p>
+      {step.detail.map((line, i) => (
+        <p key={i} className="mt-0.5 text-[11px] leading-4 text-zinc-500 dark:text-zinc-400">{line}</p>
+      ))}
+    </div>
+  )
+}
+
+export function PipelineDiagram({
+  entry, zones, exit, sideRail,
+}: {
+  entry?: { icon: string; label: string }
+  zones: PipelineZone[]
+  exit?: { icon: string; label: string }
+  sideRail?: { label: string; sublabel?: string }
+}) {
+  return (
+    <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
+      <div className="flex gap-5 items-stretch">
+        {sideRail && (
+          <div className="hidden md:flex flex-col items-center justify-between shrink-0 w-36 rounded-2xl border border-blue-200 dark:border-blue-900 bg-blue-50/70 dark:bg-blue-950/20 px-3 py-5 text-center">
+            <span className="text-xl">🧭</span>
+            <p className="text-sm font-bold text-blue-700 dark:text-blue-300">{sideRail.label}</p>
+            {sideRail.sublabel && <p className="text-[11px] text-blue-500 dark:text-blue-400">{sideRail.sublabel}</p>}
+            <div className="flex flex-col gap-6 text-blue-300 dark:text-blue-700 text-lg font-black">
+              <span>↔</span><span>↔</span><span>↔</span>
+            </div>
+          </div>
+        )}
+
+        <div className="flex-1 min-w-0">
+          {entry && (
+            <>
+              <div className="mx-auto w-fit rounded-full border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-4 py-2 text-sm font-bold text-zinc-700 dark:text-zinc-200">
+                {entry.icon} {entry.label}
+              </div>
+              <DownArrow />
+            </>
+          )}
+
+          {zones.map((zone, zi) => {
+            const tone = ZONE_TONES[zone.tone]
+            return (
+              <div key={zone.label}>
+                <div className={`rounded-2xl border p-4 ${tone.wrap} ${zone.dashed ? 'border-dashed' : ''}`}>
+                  <p className={`text-xs font-black uppercase tracking-wider ${tone.label}`}>{zone.label}</p>
+                  <div className="mt-3 space-y-2">
+                    {zone.steps.map((step, si) => (
+                      <div key={step.title}>
+                        <PipelineStepBox step={step} />
+                        {si < zone.steps.length - 1 && <DownArrow />}
+                      </div>
+                    ))}
+                  </div>
+                  {zone.note && <p className="mt-3 text-[11px] text-zinc-400">{zone.note}</p>}
+                </div>
+                {zi < zones.length - 1 && <DownArrow />}
+              </div>
+            )
+          })}
+
+          {exit && (
+            <>
+              <DownArrow />
+              <div className="mx-auto w-fit rounded-full border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 px-4 py-2 text-sm font-bold text-zinc-700 dark:text-zinc-200">
+                {exit.icon} {exit.label}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function Callout({ title, children, tone = 'violet' }: {
   title: string; children: ReactNode; tone?: 'violet' | 'green' | 'amber'
 }) {
