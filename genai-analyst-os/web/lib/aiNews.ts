@@ -215,22 +215,31 @@ export async function fetchTrendingEntities(limit = 8): Promise<TrendingEntity[]
   const items = await fetchAiNews(120)
   const bySources = new Map<string, Set<string>>()
   const byCount = new Map<string, number>()
+  const hasNonInitialOccurrence = new Set<string>()
   // Preserve first-seen display casing (e.g. "SpaceX" not "spacex").
   const display = new Map<string, string>()
 
   for (const item of items) {
-    const rawEntities = item.title.match(/\b[A-Z][a-zA-Z0-9]*(?:'s)?\b/g) ?? []
-    for (const raw of rawEntities) {
-      const key = raw.replace(/'s$/, '').toLowerCase()
-      if (key.length < 3 || ENTITY_NOISE_WORDS.has(key)) continue
-      if (!display.has(key)) display.set(key, raw.replace(/'s$/, ''))
+    const words = item.title.split(/\s+/)
+    words.forEach((word, index) => {
+      const cleaned = word.replace(/^[^A-Za-z]+|[^A-Za-z0-9']+$/g, '')
+      if (!/^[A-Z][a-zA-Z0-9]*(?:'s)?$/.test(cleaned)) return
+      const key = cleaned.replace(/'s$/, '').toLowerCase()
+      if (key.length < 3 || ENTITY_NOISE_WORDS.has(key)) return
+      // A word that's ONLY ever capitalized because it opened a sentence
+      // ("Code editors are...") isn't a real named entity — a genuine one
+      // (Meta, SpaceX) will show up capitalized mid-sentence too, somewhere
+      // across this batch.
+      if (index > 0) hasNonInitialOccurrence.add(key)
+      if (!display.has(key)) display.set(key, cleaned.replace(/'s$/, ''))
       if (!bySources.has(key)) bySources.set(key, new Set())
       bySources.get(key)!.add(item.source)
       byCount.set(key, (byCount.get(key) ?? 0) + 1)
-    }
+    })
   }
 
   return Array.from(bySources.entries())
+    .filter(([key]) => hasNonInitialOccurrence.has(key))
     .map(([key, sources]) => ({ entity: display.get(key) ?? key, sourceCount: sources.size, itemCount: byCount.get(key) ?? 0 }))
     .filter(e => e.sourceCount >= 2)
     .sort((a, b) => b.sourceCount - a.sourceCount || b.itemCount - a.itemCount)

@@ -1022,6 +1022,7 @@ export default function FeedPage() {
   const [newsFetchedAt, setNewsFetchedAt] = useState<string | null>(null)
   const [newsFilter, setNewsFilter] = useState<string>('all')
   const [newsTrending, setNewsTrending] = useState<Array<{ entity: string; sourceCount: number; itemCount: number }>>([])
+  const [newsEntityFilter, setNewsEntityFilter] = useState<string | null>(null)
   // "New since last visit" — compared against pubMs, not re-set until the
   // user actually leaves the tab, so items don't lose their "new" dot the
   // instant they're rendered.
@@ -1778,7 +1779,8 @@ export default function FeedPage() {
 
   // AI news sources for filter
   const newsSources = [...new Set(newsItems.flatMap(n => n.sources))]
-  const filteredNews = newsFilter === 'all' ? newsItems : newsItems.filter(n => n.sources.includes(newsFilter))
+  const filteredNews = (newsFilter === 'all' ? newsItems : newsItems.filter(n => n.sources.includes(newsFilter)))
+    .filter(n => !newsEntityFilter || n.title.toLowerCase().includes(newsEntityFilter.toLowerCase()))
   const featuredNews = filteredNews.filter(n => n.sources.length > 1).slice(0, 3)
   const restNews = filteredNews.filter(n => !featuredNews.includes(n))
   const restNewsByCategory = restNews.reduce<Record<string, NewsItem[]>>((acc, item) => {
@@ -2859,15 +2861,25 @@ export default function FeedPage() {
             </button>
           </div>
 
-          {/* Trending entities — Twitter-trends-style strip, aggregated across all live items */}
+          {/* Most-mentioned names this batch — an honest label, not a novelty
+              claim (that's what the Emerging Radar on the main Feed tab is
+              for). Clickable: narrows the list below to headlines mentioning
+              that name. */}
           {!newsLoading && newsTrending.length > 0 && (
             <div className="flex items-center gap-2 flex-wrap mb-5 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-900/40 px-4 py-2.5">
-              <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 shrink-0">🔥 Buzzing:</span>
+              <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 shrink-0">🏷️ Filter by name:</span>
               {newsTrending.map(t => (
-                <span key={t.entity} className="text-xs font-medium text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 px-2 py-0.5 rounded-full">
-                  {t.entity} <span className="text-zinc-400">· {t.sourceCount}</span>
-                </span>
+                <button key={t.entity} onClick={() => setNewsEntityFilter(prev => prev === t.entity ? null : t.entity)}
+                  className={`text-xs font-medium px-2 py-0.5 rounded-full border transition-colors ${
+                    newsEntityFilter === t.entity
+                      ? 'bg-violet-600 text-white border-violet-600'
+                      : 'bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-violet-300'}`}>
+                  {t.entity} <span className={newsEntityFilter === t.entity ? 'text-violet-200' : 'text-zinc-400'}>· {t.sourceCount}</span>
+                </button>
               ))}
+              {newsEntityFilter && (
+                <button onClick={() => setNewsEntityFilter(null)} className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">✕ clear</button>
+              )}
             </div>
           )}
 
