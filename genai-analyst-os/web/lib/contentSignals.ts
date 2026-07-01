@@ -46,8 +46,10 @@ function overlap(a: Set<string>, b: Set<string>): number {
 
 const RELEVANCE_THRESHOLD = 0.35
 
+const NEWS_WINDOW_DAYS = 3
+
 export interface ContentCandidate {
-  itemType: 'feed' | 'reading_list'
+  itemType: 'feed' | 'reading_list' | 'news'
   refId: string
   title: string
   url: string | null
@@ -79,17 +81,24 @@ export async function getSignalWeights(userId: string): Promise<SignalWeights> {
 }
 
 export async function pickWeightedCandidate(userId: string): Promise<ContentCandidate | null> {
+  const candidates = await pickWeightedCandidates(userId, 1)
+  return candidates[0] ?? null
+}
+
+export async function pickWeightedCandidates(userId: string, count: number): Promise<ContentCandidate[]> {
   const db = createServiceClient()
   const weights = await getSignalWeights(userId)
 
   const since = new Date(); since.setUTCDate(since.getUTCDate() - CANDIDATE_WINDOW_DAYS)
   const readingSince = new Date(); readingSince.setUTCDate(readingSince.getUTCDate() - READING_LIST_WINDOW_DAYS)
   const readSince = new Date(); readSince.setUTCDate(readSince.getUTCDate() - RECENT_READ_WINDOW_DAYS)
+  const newsSince = new Date(); newsSince.setUTCDate(newsSince.getUTCDate() - NEWS_WINDOW_DAYS)
 
   const [
     { data: profile },
     { data: feedRows },
     { data: knowledgeRows },
+    { data: newsRows },
     { data: articleEvents },
     { data: knowledgeEvents },
     { data: readQueueRows },
@@ -109,6 +118,11 @@ export async function pickWeightedCandidate(userId: string): Promise<ContentCand
       .is('archived_at', null)
       .gte('processed_at', readingSince.toISOString())
       .limit(60),
+    db.from('news_articles')
+      .select('id, title, url, description, sources_count, published_at')
+      .gte('published_at', newsSince.toISOString())
+      .order('sources_count', { ascending: false })
+      .limit(30),
     db.from('user_article_events')
       .select('event_type, article_id')
       .eq('user_id', userId)
@@ -167,7 +181,26 @@ export async function pickWeightedCandidate(userId: string): Promise<ContentCand
     })
   }
 
-  if (candidates.size === 0) return null
+  // News candidates start with their own multi-source coverage already
+  // folded into the trending_news signal directly (no title-matching
+  // needed — they *are* the trending-news items), rather than only ever
+  // boosting some other feed article's score.
+  for (const item of newsRows ?? []) {
+    const key = `news:${item.id}`
+    candidates.set(key, {
+      itemType: 'news',
+      refId: String(item.id),
+      title: String(item.title || 'Untitled'),
+      url: item.url ? String(item.url) : null,
+      whyItMatters: String(item.description || ''),
+      topicTags: [],
+      rawSignals: { engagement: 0, recently_read: 0, trending_news: Number(item.sources_count ?? 1), recent_trend: 0, emerging_topic: 0 },
+      matchedSignals: Number(item.sources_count ?? 1) >= 2 ? ['trending_news'] : [],
+      score: 0,
+    })
+  }
+
+  if (candidates.size === 0) return []
 
   // ── Signal 1: explicit engagement (like/pin/save/open, feed + reading list) ──
   for (const event of articleEvents ?? []) {
@@ -250,5 +283,5 @@ export async function pickWeightedCandidate(userId: string): Promise<ContentCand
   }
 
   const ranked = Array.from(candidates.values()).sort((a, b) => b.score - a.score)
-  return ranked[0] ?? null
+  return ranked.slice(0, count)
 }

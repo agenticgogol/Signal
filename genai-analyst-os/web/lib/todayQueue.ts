@@ -1,14 +1,15 @@
 import { createServiceClient } from '@/lib/supabase'
 
 // The "Today" queue — one blended, ranked, time-boxed reading list across
-// Feed and Reading List (News folds in later once this pattern is proven).
-// Pure heuristics, zero LLM cost: this is ranking arithmetic reusing signals
-// that already exist (blend_score for Feed, topic/recency/detail for
-// Reading List), not a generative call.
+// Feed, Reading List, and News. Pure heuristics, zero LLM cost: this is
+// ranking arithmetic reusing signals that already exist (blend_score for
+// Feed, topic/recency/detail for Reading List, source-coverage for News),
+// not a generative call.
 
 const WORDS_PER_MINUTE = 200
 const MIN_MINUTES = 1
 const CANDIDATE_WINDOW_DAYS = 3
+const NEWS_WINDOW_DAYS = 3
 const REPEAT_COOLDOWN_DAYS = 14
 
 function estimateMinutes(text: string): number {
@@ -24,7 +25,7 @@ function recencyDecay(processedAt: string | null | undefined, halfLifeDays = 14)
 
 export interface QueueEntry {
   id: string
-  itemType: 'feed' | 'reading_list'
+  itemType: 'feed' | 'reading_list' | 'news'
   title: string
   url: string | null
   sourceLabel: string
@@ -38,7 +39,7 @@ export interface QueueEntry {
 }
 
 async function generateCandidates(userId: string): Promise<Array<{
-  itemType: 'feed' | 'reading_list'
+  itemType: 'feed' | 'reading_list' | 'news'
   refId: string
   title: string
   url: string | null
@@ -54,12 +55,15 @@ async function generateCandidates(userId: string): Promise<Array<{
   const since = new Date()
   since.setUTCDate(since.getUTCDate() - CANDIDATE_WINDOW_DAYS)
 
+  const newsSince = new Date()
+  newsSince.setUTCDate(newsSince.getUTCDate() - NEWS_WINDOW_DAYS)
+
   const cooldownSince = new Date()
   cooldownSince.setUTCDate(cooldownSince.getUTCDate() - REPEAT_COOLDOWN_DAYS)
 
-  const [{ data: alreadyRead }, { data: feedRows }, { data: knowledgeRows }] = await Promise.all([
+  const [{ data: alreadyRead }, { data: feedRows }, { data: knowledgeRows }, { data: newsRows }] = await Promise.all([
     db.from('daily_reading_queue')
-      .select('article_id, knowledge_item_id')
+      .select('article_id, knowledge_item_id, news_article_id')
       .eq('user_id', userId)
       .eq('status', 'read')
       .gte('queue_date', cooldownSince.toISOString().slice(0, 10)),
@@ -76,10 +80,16 @@ async function generateCandidates(userId: string): Promise<Array<{
       .is('archived_at', null)
       .order('processed_at', { ascending: false })
       .limit(60),
+    db.from('news_articles')
+      .select('id, title, url, description, sources_count, published_at')
+      .gte('published_at', newsSince.toISOString())
+      .order('sources_count', { ascending: false })
+      .limit(30),
   ])
 
   const readArticleIds = new Set((alreadyRead ?? []).map(r => r.article_id).filter(Boolean))
   const readItemIds = new Set((alreadyRead ?? []).map(r => r.knowledge_item_id).filter(Boolean))
+  const readNewsIds = new Set((alreadyRead ?? []).map(r => r.news_article_id).filter(Boolean))
 
   const feedCandidates = (feedRows ?? [])
     .map((row: Record<string, unknown>) => {
@@ -117,7 +127,26 @@ async function generateCandidates(userId: string): Promise<Array<{
     })
     .filter((c): c is NonNullable<typeof c> => c !== null)
 
-  return [...feedCandidates, ...knowledgeCandidates]
+  // News has no per-user affinity data of its own — sources_count (how many
+  // independent outlets covered it) stands in for blend_score/topic-fit,
+  // same "multi-source coverage = signal" idea the News tab UI already uses.
+  const newsCandidates = (newsRows ?? [])
+    .map((item: Record<string, unknown>) => {
+      if (readNewsIds.has(String(item.id))) return null
+      const text = String(item.description || '')
+      return {
+        itemType: 'news' as const,
+        refId: String(item.id),
+        title: String(item.title || 'Untitled'),
+        url: item.url ? String(item.url) : null,
+        sourceLabel: 'News',
+        estMinutes: estimateMinutes(text || String(item.title || '')),
+        rawScore: Number(item.sources_count ?? 1),
+      }
+    })
+    .filter((c): c is NonNullable<typeof c> => c !== null)
+
+  return [...feedCandidates, ...knowledgeCandidates, ...newsCandidates]
 }
 
 // Normalizes each pool to 0-1 by its own max before merging — Feed's
@@ -151,6 +180,7 @@ async function buildAndPersistQueue(userId: string, targetMinutes: number): Prom
     item_type: c.itemType,
     article_id: c.itemType === 'feed' ? c.refId : null,
     knowledge_item_id: c.itemType === 'reading_list' ? c.refId : null,
+    news_article_id: c.itemType === 'news' ? c.refId : null,
     rank: index,
     est_minutes: c.estMinutes,
     score: c.score,
@@ -170,7 +200,7 @@ async function fetchTodayQueue(userId: string): Promise<QueueEntry[]> {
   const db = createServiceClient()
   const { data: rows, error } = await db
     .from('daily_reading_queue')
-    .select('id, item_type, article_id, knowledge_item_id, rank, est_minutes, score, status')
+    .select('id, item_type, article_id, knowledge_item_id, news_article_id, rank, est_minutes, score, status')
     .eq('user_id', userId)
     .eq('queue_date', new Date().toISOString().slice(0, 10))
     .order('rank', { ascending: true })
@@ -179,36 +209,44 @@ async function fetchTodayQueue(userId: string): Promise<QueueEntry[]> {
 
   const articleIds = rows.filter(r => r.article_id).map(r => r.article_id)
   const knowledgeIds = rows.filter(r => r.knowledge_item_id).map(r => r.knowledge_item_id)
+  const newsIds = rows.filter(r => r.news_article_id).map(r => r.news_article_id)
 
-  const [{ data: articles }, { data: items }] = await Promise.all([
+  const [{ data: articles }, { data: items }, { data: newsItems }] = await Promise.all([
     articleIds.length ? db.from('articles').select('id, title, url, why_it_matters, tldr_bullets, key_takeaways').in('id', articleIds) : Promise.resolve({ data: [] as Record<string, unknown>[] }),
     knowledgeIds.length ? db.from('knowledge_items').select('id, title, source_url, summary, why_it_matters').in('id', knowledgeIds) : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    newsIds.length ? db.from('news_articles').select('id, title, url, description, sources, sources_count').in('id', newsIds) : Promise.resolve({ data: [] as Record<string, unknown>[] }),
   ])
 
   const articleMap = new Map((articles ?? []).map((a: Record<string, unknown>) => [String(a.id), a]))
   const itemMap = new Map((items ?? []).map((i: Record<string, unknown>) => [String(i.id), i]))
+  const newsMap = new Map((newsItems ?? []).map((n: Record<string, unknown>) => [String(n.id), n]))
 
   return rows.map(row => {
     const isFeed = row.item_type === 'feed'
-    const ref = isFeed ? articleMap.get(String(row.article_id)) : itemMap.get(String(row.knowledge_item_id))
+    const isNews = row.item_type === 'news'
+    const ref = isFeed ? articleMap.get(String(row.article_id)) : isNews ? newsMap.get(String(row.news_article_id)) : itemMap.get(String(row.knowledge_item_id))
     const takeaways = isFeed
       ? [
           ...(Array.isArray(ref?.key_takeaways) ? ref.key_takeaways.map(String) : []),
           ...(Array.isArray(ref?.tldr_bullets) ? ref.tldr_bullets.map(String) : []),
         ]
       : []
+    const sourceLabel = isFeed ? 'Feed' : isNews ? 'News' : 'Reading List'
+    const whyItMatters = isNews
+      ? (ref?.sources_count ? `Covered by ${ref.sources_count} independent source${Number(ref.sources_count) === 1 ? '' : 's'}.` : null)
+      : (ref?.why_it_matters ? String(ref.why_it_matters) : null)
     return {
       id: String(row.id),
-      itemType: row.item_type as 'feed' | 'reading_list',
+      itemType: row.item_type as 'feed' | 'reading_list' | 'news',
       title: String(ref?.title || 'Untitled'),
       url: (ref?.url || ref?.source_url) ? String(ref.url || ref.source_url) : null,
-      sourceLabel: isFeed ? 'Feed' : 'Reading List',
+      sourceLabel,
       estMinutes: Number(row.est_minutes),
       score: Number(row.score),
       status: row.status as 'unread' | 'read' | 'skipped',
       rank: Number(row.rank),
-      summary: isFeed ? null : (ref?.summary ? String(ref.summary) : null),
-      whyItMatters: ref?.why_it_matters ? String(ref.why_it_matters) : null,
+      summary: !isFeed && !isNews ? (ref?.summary ? String(ref.summary) : null) : (isNews ? (ref?.description ? String(ref.description) : null) : null),
+      whyItMatters,
       takeaways: Array.from(new Set(takeaways)).slice(0, 6),
     }
   })

@@ -1,3 +1,5 @@
+import { createServiceClient } from '@/lib/supabase'
+
 const SOURCES = [
   { name: 'The Decoder', url: 'https://the-decoder.com/feed/', category: 'Research & Industry' },
   { name: 'TechCrunch AI', url: 'https://techcrunch.com/category/artificial-intelligence/feed/', category: 'Industry News' },
@@ -197,6 +199,29 @@ export async function fetchAiNewsStories(limit = 40): Promise<AiNewsStory[]> {
 
   stories.sort((a, b) => b.sources.length - a.sources.length || b.pubMs - a.pubMs)
   return stories.slice(0, limit)
+}
+
+// Persists clustered stories into news_articles so News can be referenced
+// later — read into the Today queue, scored as a content-generation signal,
+// and cited in Ask Signal — instead of being fetched-and-discarded on every
+// request. Called from the News tab's fetch/refresh (where the live RSS
+// pull already happens); the Today queue and content picker then just read
+// whatever's already persisted rather than re-fetching live themselves.
+export async function persistNewsStories(stories: AiNewsStory[]): Promise<void> {
+  if (stories.length === 0) return
+  const db = createServiceClient()
+  const rows = stories.map(story => ({
+    url: story.url,
+    title: story.title,
+    description: story.description,
+    category: story.category,
+    primary_source: story.sources[0] ?? '',
+    sources: story.sources,
+    sources_count: story.sources.length,
+    published_at: story.pubMs ? new Date(story.pubMs).toISOString() : null,
+    updated_at: new Date().toISOString(),
+  }))
+  await db.from('news_articles').upsert(rows, { onConflict: 'url' })
 }
 
 // ── Trending entities ───────────────────────────────────────────────────

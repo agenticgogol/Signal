@@ -9,6 +9,7 @@ import { usePathname } from 'next/navigation'
 // "go deeper" surfaces per the redesign: focus on Today first, explore only
 // if there's time left.
 const CORE_ITEMS = [
+  { href: '/today',       label: 'Today',        icon: '👋' },
   { href: '/feed',        label: 'Feed',         icon: '📰' },
   { href: '/feed?tab=news', label: 'News',       icon: '🌐' },
   { href: '/knowledge',   label: 'Reading List', icon: '📖' },

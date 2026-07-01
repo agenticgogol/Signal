@@ -12,16 +12,17 @@ export const maxDuration = 300
 const VALID_FORMATS = ['linkedin', 'substack', 'thread', 'blog', 'youtube_long', 'youtube_short']
 
 export async function POST(req: Request) {
-  const { userId, customTopic, formats } = await req.json()
+  const { userId, customTopic, formats, ideaCount } = await req.json()
   if (!userId) return Response.json({ error: 'userId is required' }, { status: 400 })
 
   const paidGate = await requirePaidFeature(req, userId, 'Generate today\'s content')
   if (paidGate) return paidGate
 
   const chosenFormats = Array.isArray(formats) ? formats.filter((f: unknown) => VALID_FORMATS.includes(f as string)) : undefined
+  const chosenIdeaCount = [1, 2, 3].includes(ideaCount) ? ideaCount : 1
 
   try {
-    const result = await generateSmartDraftsForUser(userId, typeof customTopic === 'string' ? customTopic : undefined, chosenFormats)
+    const result = await generateSmartDraftsForUser(userId, typeof customTopic === 'string' ? customTopic : undefined, chosenFormats, chosenIdeaCount)
     return Response.json(result)
   } catch (error) {
     return Response.json({ error: getErrorMessage(error) }, { status: 500 })

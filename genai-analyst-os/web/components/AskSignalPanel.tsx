@@ -55,10 +55,16 @@ export default function AskSignalPanel({
   variant = 'full',
   suggestedQuestions = [],
   crossLink,
+  externalQuestion,
 }: {
   variant?: 'compact' | 'full'
   suggestedQuestions?: string[]
   crossLink?: { href: string; label: string }
+  // Lets a parent page (e.g. Today's "💬 Ask about this" on a reading/
+  // publishing item) trigger a question from outside without needing to
+  // navigate here first. `nonce` must change on every trigger (even for a
+  // repeated question) since effects only re-fire on a changed dependency.
+  externalQuestion?: { text: string; nonce: number } | null
 }) {
   const { session, user } = useAuthSession()
   const userId = user?.id ?? process.env.NEXT_PUBLIC_USER_ID ?? ''
@@ -129,6 +135,11 @@ export default function AskSignalPanel({
     setQuestion(nextQuestion ?? question)
     setShowAdminGate(true)
   }
+
+  useEffect(() => {
+    if (externalQuestion?.text) requestAsk(externalQuestion.text)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalQuestion?.nonce])
 
   const compact = variant === 'compact'
 

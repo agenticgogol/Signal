@@ -11,7 +11,7 @@ import {
   runRepublishAgent,
   type SourceArticle,
 } from '@/lib/agents'
-import { pickWeightedCandidate, type ContentCandidate } from '@/lib/contentSignals'
+import { pickWeightedCandidate, pickWeightedCandidates, type ContentCandidate } from '@/lib/contentSignals'
 import { generateJsonForUser } from '@/lib/llmClient'
 import type { VoiceFingerprint } from '@/lib/voice'
 
@@ -85,7 +85,8 @@ async function runEvidenceGroundedPipeline(
 function buildSourcesFromCandidate(candidate: ContentCandidate): { brief: string; title: string; sourceUrl: string; sources: SourceArticle[] } {
   const { title, whyItMatters, url } = candidate
   const sourceUrl = url || ''
-  const brief = `Write a post reacting to and building on this ${candidate.itemType === 'feed' ? 'article' : 'saved resource'}, from the practitioner's own perspective: "${title}". ${whyItMatters}`
+  const kind = candidate.itemType === 'feed' ? 'article' : candidate.itemType === 'news' ? 'news story' : 'saved resource'
+  const brief = `Write a post reacting to and building on this ${kind}, from the practitioner's own perspective: "${title}". ${whyItMatters}`
   const sources: SourceArticle[] = [{
     title,
     url: sourceUrl,
@@ -124,13 +125,14 @@ export async function generateDailyDraftForUser(userId: string): Promise<DraftIn
 
   const { data: inserted, error } = await db
     .from('draft_inbox_items')
-    .insert({ user_id: userId, topic: title.slice(0, 200), format, brief, final_content: final, source_title: title, source_url: sourceUrl })
+    .insert({ user_id: userId, topic: title.slice(0, 200), format, brief, final_content: final, source_title: title, source_url: sourceUrl, source: 'auto' })
     .select('id')
     .single()
 
-  // A unique (user_id, day, format) index means a second attempt for the
-  // same format the same day conflicts here rather than double-drafting —
-  // that's the expected, desired outcome, not a bug.
+  // A unique (user_id, day, format) index — scoped to source='auto' rows
+  // only — means a second autonomous attempt for the same format the same
+  // day conflicts here rather than double-drafting. Manual generations are
+  // not capped this way.
   if (error) {
     if (error.code === '23505') return { status: 'skipped_already_today' }
     throw error
@@ -167,38 +169,39 @@ export interface SmartDraftResult {
   format: string
   itemId: string
   isNew: boolean
+  topic: string
 }
 
 // Button-triggered from the Today page — same evidence-grounded pipeline as
-// the autonomous job, run on demand rather than waiting for the daily
-// cron, plus one cheap Republish-Pack-adapted variant for a naturally
-// paired platform. "Use logic" per the request: rather than generating two
-// entirely separate ideas (a second full pipeline run, roughly double the
-// cost for a plausibly worse ROI), the second piece reuses the same
-// already-verified idea and evidence, adapted for a different platform's
-// structure — the same "same idea, several formats" pattern Republish Pack
-// already uses in Create.
+// the autonomous job, run on demand rather than waiting for the daily cron.
 //
 // Topic selection: a user-typed custom topic is a hard override (skips the
-// weighted picker entirely, same "personal post, no sources" path Custom
-// Brief uses in Create). Otherwise pickWeightedCandidate blends five
-// signals — explicit engagement, recent reading behavior, relevance-gated
-// trending news, and emerging/trending topics — each weighted per the
-// user's Settings (or the agreed defaults), with topic-interest alignment
-// applied as a multiplier rather than a sixth competing signal.
+// weighted picker entirely, always exactly one idea — you typed the one
+// thing you want). Otherwise pickWeightedCandidates blends five signals —
+// explicit engagement, recent reading behavior, relevance-gated trending
+// news, and emerging/trending topics, now including News alongside Feed and
+// Reading List — each weighted per the user's Settings, with topic-interest
+// alignment applied as a multiplier. ideaCount controls how many of the
+// top-ranked candidates to generate for — diversity, not just depth: 2-3
+// different ideas instead of one, each getting its own full pipeline run.
 //
-// Platform selection: if the caller explicitly picks formats (the Today
-// page's "Generate" popup), the first one runs the full pipeline and every
-// additional one is a cheap Republish-adapted variant of it — same idea,
-// however many platforms the user chose, not N full generations. With no
-// explicit choice (the autonomous daily job), falls back to the user's
-// configured default format plus one naturally paired platform.
-export async function generateSmartDraftsForUser(userId: string, customTopic?: string, formats?: string[]): Promise<{ drafts: SmartDraftResult[]; skipped?: string }> {
+// Platform selection: for EACH idea, the first chosen format runs the full
+// pipeline and every additional format is a cheap Republish-adapted variant
+// of that same idea — same idea, several platforms, not a second full
+// generation per platform. With no explicit format choice (the autonomous
+// daily job), falls back to the user's configured default format plus one
+// naturally paired platform.
+export async function generateSmartDraftsForUser(
+  userId: string,
+  customTopic?: string,
+  formats?: string[],
+  ideaCount = 1,
+): Promise<{ drafts: SmartDraftResult[]; skipped?: string }> {
   const db = createServiceClient()
 
   const trimmedTopic = customTopic?.trim()
-  const candidate = trimmedTopic ? null : await pickWeightedCandidate(userId)
-  if (!trimmedTopic && !candidate) {
+  const candidates = trimmedTopic ? [] : await pickWeightedCandidates(userId, Math.max(1, Math.min(3, ideaCount)))
+  if (!trimmedTopic && candidates.length === 0) {
     return { drafts: [], skipped: 'Nothing to go on yet — read a few things, or type a custom topic below.' }
   }
 
@@ -209,34 +212,30 @@ export async function generateSmartDraftsForUser(userId: string, customTopic?: s
   const primaryFormat = chosenFormats ? chosenFormats[0] : String(profile?.drafts_inbox_format || 'linkedin')
   const remainingFormats = chosenFormats ? chosenFormats.slice(1) : [PAIRED_FORMAT[primaryFormat] ?? 'thread']
 
-  const { brief, title, sourceUrl, sources } = trimmedTopic
-    ? buildSourcesFromCustomTopic(trimmedTopic)
-    : buildSourcesFromCandidate(candidate!)
+  const ideas = trimmedTopic ? [buildSourcesFromCustomTopic(trimmedTopic)] : candidates.map(buildSourcesFromCandidate)
   const results: SmartDraftResult[] = []
 
-  const primaryContent = await runEvidenceGroundedPipeline(userId, brief, primaryFormat, sources, voiceFingerprint)
-  const primaryInsert = await db
-    .from('draft_inbox_items')
-    .insert({ user_id: userId, topic: title.slice(0, 200), format: primaryFormat, brief, final_content: primaryContent, source_title: title, source_url: sourceUrl })
-    .select('id')
-    .single()
-  if (primaryInsert.error && primaryInsert.error.code !== '23505') throw primaryInsert.error
-  if (!primaryInsert.error) results.push({ format: primaryFormat, itemId: primaryInsert.data.id, isNew: true })
-
-  for (const extraFormat of remainingFormats) {
-    if (extraFormat === primaryFormat) continue
-    const extraContent = await runRepublishAgent(userId, primaryContent, primaryFormat, extraFormat, sources, voiceFingerprint)
-    const extraInsert = await db
+  for (const { brief, title, sourceUrl, sources } of ideas) {
+    const primaryContent = await runEvidenceGroundedPipeline(userId, brief, primaryFormat, sources, voiceFingerprint)
+    const primaryInsert = await db
       .from('draft_inbox_items')
-      .insert({ user_id: userId, topic: title.slice(0, 200), format: extraFormat, brief, final_content: extraContent, source_title: title, source_url: sourceUrl })
+      .insert({ user_id: userId, topic: title.slice(0, 200), format: primaryFormat, brief, final_content: primaryContent, source_title: title, source_url: sourceUrl, source: 'manual' })
       .select('id')
       .single()
-    if (extraInsert.error && extraInsert.error.code !== '23505') throw extraInsert.error
-    if (!extraInsert.error) results.push({ format: extraFormat, itemId: extraInsert.data.id, isNew: true })
-  }
+    if (primaryInsert.error) throw primaryInsert.error
+    results.push({ format: primaryFormat, itemId: primaryInsert.data.id, isNew: true, topic: title })
 
-  if (results.length === 0) {
-    return { drafts: [], skipped: 'Today\'s drafts for these formats already exist — check your pending drafts below.' }
+    for (const extraFormat of remainingFormats) {
+      if (extraFormat === primaryFormat) continue
+      const extraContent = await runRepublishAgent(userId, primaryContent, primaryFormat, extraFormat, sources, voiceFingerprint)
+      const extraInsert = await db
+        .from('draft_inbox_items')
+        .insert({ user_id: userId, topic: title.slice(0, 200), format: extraFormat, brief, final_content: extraContent, source_title: title, source_url: sourceUrl, source: 'manual' })
+        .select('id')
+        .single()
+      if (extraInsert.error) throw extraInsert.error
+      results.push({ format: extraFormat, itemId: extraInsert.data.id, isNew: true, topic: title })
+    }
   }
 
   return { drafts: results }

@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useState, type ReactNode } from 'react'
 import { ActionConfirmModal, AdminGateModal } from '@/components/AdminGate'
+import AskSignalPanel from '@/components/AskSignalPanel'
 import { useAuthSession } from '@/lib/useAuthSession'
 
 interface StreakInfo {
@@ -17,7 +18,7 @@ interface StreakInfo {
 
 interface QueueEntry {
   id: string
-  itemType: 'feed' | 'reading_list'
+  itemType: 'feed' | 'reading_list' | 'news'
   title: string
   url: string | null
   sourceLabel: string
@@ -197,6 +198,14 @@ export default function TodayPage() {
   const [showGenerateAdminGate, setShowGenerateAdminGate] = useState(false)
   const [showPlatformPicker, setShowPlatformPicker] = useState(false)
   const [selectedFormats, setSelectedFormats] = useState<string[]>(['linkedin'])
+  const [ideaCount, setIdeaCount] = useState(1)
+  const [showAllIdeas, setShowAllIdeas] = useState(false)
+  const [askExternalQuestion, setAskExternalQuestion] = useState<{ text: string; nonce: number } | null>(null)
+
+  const askAbout = (title: string) => {
+    setAskExternalQuestion({ text: `Tell me about "${title}" and why it matters.`, nonce: Date.now() })
+    document.getElementById('today-ask-signal')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
   const [expandedDraftId, setExpandedDraftId] = useState<string | null>(null)
   const [customTopic, setCustomTopic] = useState('')
   const [feedbackDraftId, setFeedbackDraftId] = useState<string | null>(null)
@@ -312,7 +321,7 @@ export default function TodayPage() {
       const res = await fetch('/api/today/generate', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ userId, customTopic: customTopic.trim() || undefined, formats: selectedFormats }),
+        body: JSON.stringify({ userId, customTopic: customTopic.trim() || undefined, formats: selectedFormats, ideaCount: customTopic.trim() ? 1 : ideaCount }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Could not generate content')
@@ -370,6 +379,16 @@ export default function TodayPage() {
   const pendingDrafts = drafts.filter(d => d.status === 'pending')
   const draftFormats = Array.from(new Set(drafts.map(d => d.format)))
   const filteredPendingDrafts = draftFormatFilter === 'all' ? pendingDrafts : pendingDrafts.filter(d => d.format === draftFormatFilter)
+  // Group by idea (topic) so "N ideas" surfaces as distinct clusters rather
+  // than a flat list where multi-format variants of the same idea blend in
+  // with genuinely different ideas.
+  const draftIdeaGroups = Object.values(
+    filteredPendingDrafts.reduce<Record<string, DraftItem[]>>((acc, d) => {
+      (acc[d.topic] ??= []).push(d)
+      return acc
+    }, {})
+  ).sort((a, b) => new Date(b[0].created_at).getTime() - new Date(a[0].created_at).getTime())
+  const visibleIdeaGroups = showAllIdeas ? draftIdeaGroups : draftIdeaGroups.slice(0, 3)
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-8 pb-24">
@@ -409,6 +428,19 @@ export default function TodayPage() {
               </label>
             ))}
           </div>
+          {!customTopic.trim() && (
+            <div className="mb-4">
+              <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5">How many different ideas? (diversity — each gets its own full generation)</p>
+              <div className="flex gap-2">
+                {[1, 2, 3].map(n => (
+                  <button key={n} onClick={() => setIdeaCount(n)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${ideaCount === n ? 'bg-violet-600 text-white border-violet-600' : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700'}`}>
+                    {n} idea{n > 1 ? 's' : ''}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <button onClick={confirmPlatformPicker} disabled={selectedFormats.length === 0}
             className="w-full rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-50 px-4 py-2 text-sm font-bold text-white transition-colors">
             Continue
@@ -537,7 +569,7 @@ export default function TodayPage() {
                     <button onClick={() => toggleExpand(entry.id)} className="flex-1 min-w-0 text-left">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-800 px-2 py-0.5 rounded-full shrink-0">
-                          {entry.itemType === 'feed' ? '📰' : '📖'} {entry.sourceLabel}
+                          {entry.itemType === 'feed' ? '📰' : entry.itemType === 'news' ? '🌐' : '📖'} {entry.sourceLabel}
                         </span>
                         <span className="text-xs text-zinc-400 shrink-0">~{entry.estMinutes.toFixed(0)} min</span>
                       </div>
@@ -568,9 +600,12 @@ export default function TodayPage() {
                           ))}
                         </ul>
                       )}
-                      {entry.url && (
-                        <button onClick={() => openItemLink(entry)} className="text-xs font-semibold text-violet-600 dark:text-violet-400 hover:underline">Open full article ↗</button>
-                      )}
+                      <div className="flex items-center gap-3">
+                        {entry.url && (
+                          <button onClick={() => openItemLink(entry)} className="text-xs font-semibold text-violet-600 dark:text-violet-400 hover:underline">Open full article ↗</button>
+                        )}
+                        <button onClick={() => askAbout(entry.title)} className="text-xs font-semibold text-zinc-500 hover:text-violet-600 dark:hover:text-violet-400">💬 Ask about this</button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -644,8 +679,15 @@ export default function TodayPage() {
             <p className="text-sm text-zinc-500 dark:text-zinc-400">No pending drafts. If Drafts Inbox is on in Settings, check back tomorrow — it drafts at most one post a day from what you engaged with most.</p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {filteredPendingDrafts.map(draft => {
+          <div className="space-y-5">
+            {visibleIdeaGroups.map(group => (
+              <div key={group[0].topic} className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-400 truncate">💡 {group[0].source_title || group[0].topic}</p>
+                  <button onClick={() => doSmartGenerate()} disabled={smartGenerating}
+                    className="shrink-0 text-[11px] font-medium text-zinc-400 hover:text-violet-600 dark:hover:text-violet-400">🔁 New idea</button>
+                </div>
+            {group.map(draft => {
               const { headline, teaser } = draftPreview(draft.final_content)
               const draftExpanded = expandedDraftId === draft.id
               return (
@@ -675,6 +717,8 @@ export default function TodayPage() {
                           className="ml-auto rounded-xl px-4 py-2 text-sm font-medium text-zinc-400 hover:text-red-600 dark:hover:text-red-400">🗑 Dismiss</button>
                         <button onClick={() => { setFeedbackDraftId(prev => prev === draft.id ? null : draft.id); setFeedbackText('') }}
                           className="text-sm font-medium text-zinc-500 hover:text-violet-600 dark:hover:text-violet-400">✏️ Feedback</button>
+                        <button onClick={() => askAbout(draft.source_title || draft.topic)}
+                          className="text-sm font-medium text-zinc-500 hover:text-violet-600 dark:hover:text-violet-400">💬 Ask</button>
                       </div>
                       <div className="mt-2 flex items-center gap-2 flex-wrap">
                         <span className="text-[11px] text-zinc-400">Publish:</span>
@@ -711,10 +755,24 @@ export default function TodayPage() {
                 </div>
               )
             })}
+              </div>
+            ))}
+            {draftIdeaGroups.length > visibleIdeaGroups.length && (
+              <button onClick={() => setShowAllIdeas(true)} className="text-xs font-semibold text-violet-600 dark:text-violet-400 hover:underline">
+                See {draftIdeaGroups.length - visibleIdeaGroups.length} more idea{draftIdeaGroups.length - visibleIdeaGroups.length > 1 ? 's' : ''} →
+              </button>
+            )}
           </div>
         )}
       </section>
       </div>
+
+      {/* ══ Ask Signal — inline, no navigation away ═════════════════════ */}
+      <section id="today-ask-signal" className="mb-10">
+        <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100 mb-1">💬 Ask Signal</h2>
+        <p className="text-xs text-zinc-400 mb-3">Searches your Feed, Reading List, and News together. Click "💬 Ask about this" / "💬 Ask" on anything above to jump straight to a question about it.</p>
+        <AskSignalPanel variant="compact" externalQuestion={askExternalQuestion} crossLink={{ href: '/memory', label: 'Open full Memory Assistant →' }} />
+      </section>
 
       {/* ══ Explore more ═══════════════════════════════════════════════ */}
       <section>
