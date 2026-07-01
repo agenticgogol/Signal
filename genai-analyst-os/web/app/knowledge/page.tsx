@@ -130,6 +130,10 @@ export default function KnowledgePage() {
             Admin guest workspace
           </div>
         )}
+        <Link href="/knowledge/resources"
+          className="mt-5 inline-flex items-center gap-2 rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/30 px-4 py-2.5 text-sm font-semibold text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-950/50 transition-colors">
+          🔗 Resources — GitHub repos & links auto-extracted from your notes →
+        </Link>
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">

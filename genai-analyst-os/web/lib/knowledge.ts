@@ -59,6 +59,63 @@ const KNOWLEDGE_SCHEMA = {
   required: ['title', 'summary', 'why_it_matters', 'topic_tags'],
 } as const
 
+export interface KnowledgeLink {
+  url: string
+  linkType: 'github' | 'paper' | 'video' | 'article'
+  label: string
+}
+
+const GITHUB_RE = /^https?:\/\/(?:www\.)?(?:github\.com|gist\.github\.com)\/([\w.-]+)\/([\w.-]+)/i
+const PAPER_HOST_RE = /(?:arxiv\.org|doi\.org|paperswithcode\.com|dl\.acm\.org|openreview\.net|semanticscholar\.org)/i
+const VIDEO_HOST_RE = /(?:youtube\.com|youtu\.be|vimeo\.com)/i
+
+// Pulls every URL out of raw pasted text (a LinkedIn post, a note, anything)
+// and classifies it — GitHub repos get their own bucket since they're the
+// highest-signal link type practitioners save, distinct from papers/videos/
+// general articles. Pure regex, no LLM call: cheap, deterministic, and runs
+// on every single ingested item without adding latency or cost.
+export function extractLinks(text: string): KnowledgeLink[] {
+  if (!text) return []
+  // Trailing punctuation and closing brackets commonly get swept up when a
+  // URL sits at the end of a sentence or inside parentheses in prose.
+  const URL_RE = /\bhttps?:\/\/[^\s<>"')\]]+/gi
+  const matches = text.match(URL_RE) ?? []
+
+  const seen = new Set<string>()
+  const links: KnowledgeLink[] = []
+
+  for (const raw of matches) {
+    const url = raw.replace(/[.,;:!?]+$/, '')
+    if (seen.has(url)) continue
+    seen.add(url)
+
+    const githubMatch = url.match(GITHUB_RE)
+    if (githubMatch) {
+      const [, owner, repo] = githubMatch
+      // Skip non-repo GitHub URLs (profile pages, github.com/orgs/..., marketing pages)
+      if (['orgs', 'marketplace', 'sponsors', 'about', 'features', 'topics'].includes(owner.toLowerCase())) {
+        links.push({ url, linkType: 'article', label: new URL(url).hostname.replace('www.', '') })
+        continue
+      }
+      links.push({ url, linkType: 'github', label: `${owner}/${repo.replace(/\.git$/, '')}` })
+      continue
+    }
+
+    let hostname = ''
+    try { hostname = new URL(url).hostname.replace('www.', '') } catch { hostname = url }
+
+    if (PAPER_HOST_RE.test(url)) {
+      links.push({ url, linkType: 'paper', label: hostname })
+    } else if (VIDEO_HOST_RE.test(url)) {
+      links.push({ url, linkType: 'video', label: hostname })
+    } else {
+      links.push({ url, linkType: 'article', label: hostname })
+    }
+  }
+
+  return links
+}
+
 export function normalizeText(value: string) {
   return value
     .replace(/\r/g, '\n')
@@ -290,6 +347,29 @@ export async function ingestKnowledgeItem(params: {
     }).eq('id', item.id).select('*').single()
 
     if (update.error) throw update.error
+
+    // Pull every URL out of the raw text — GitHub repos, papers, videos, and
+    // general links — and store them separately so a pasted LinkedIn post's
+    // buried links become a browsable, topic-organized resource instead of
+    // staying lost inside the note. Best-effort: never fail ingestion over this.
+    try {
+      const links = extractLinks(rawText)
+      if (links.length > 0) {
+        await db.from('knowledge_links').delete().eq('item_id', item.id)
+        await db.from('knowledge_links').insert(links.map(link => ({
+          user_id: params.userId,
+          notebook_id: params.notebookId,
+          item_id: item.id,
+          url: link.url,
+          link_type: link.linkType,
+          label: link.label,
+          topic_tags: analyzed.topic_tags,
+        })))
+      }
+    } catch {
+      // Link extraction is a bonus feature — never let it fail the save.
+    }
+
     return update.data as KnowledgeItem
   } catch (error) {
     await db.from('knowledge_items').update({
