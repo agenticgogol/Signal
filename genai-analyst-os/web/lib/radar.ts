@@ -8,12 +8,15 @@ import { generateJsonForUser } from '@/lib/llmClient'
 // sources in 48 hours" pattern is a genuine early signal, not just
 // "here's what's already popular."
 
-const RECENT_WINDOW_DAYS = 4
+const RECENT_WINDOW_DAYS = 7
 const BASELINE_WINDOW_DAYS = 45
 const MIN_RECENT_SOURCES = 2
 const MIN_RECENT_SOURCES_SINGLE_WORD = 3
-const MAX_BASELINE_MENTIONS = 0
 const MIN_BASELINE_ARTICLES_FOR_CONFIDENCE = 15
+// A term with zero baseline mentions is "brand new." One with some baseline
+// history but a much higher mention rate this week is "trending up" — both
+// are useful signal, so both are surfaced, just labeled differently.
+const TRENDING_VELOCITY_RATIO = 3
 
 const STOPWORDS = new Set([
   'the','a','an','and','or','but','of','to','in','on','for','with','is','are','was','were',
@@ -63,6 +66,8 @@ export interface RadarHit {
   term: string
   recentMentions: number
   recentSourceCount: number
+  baselineMentions: number
+  tier: 'new' | 'trending'
   articles: { title: string; url: string }[]
   insight?: string
 }
@@ -128,17 +133,36 @@ export async function scanNoveltyRadar(userId: string): Promise<RadarScanResult>
     }
   }
 
+  // Normalized rate per day so a 7-day recent window and a 45-day baseline
+  // window are comparable — a term mentioned twice this week with zero
+  // baseline history is "new"; one mentioned twice this week after only
+  // appearing once across the whole baseline is "trending up."
+  const recentRatePerDay = (n: number) => n / RECENT_WINDOW_DAYS
+  const baselineRatePerDay = (n: number) => n / BASELINE_WINDOW_DAYS
+
   const hits: RadarHit[] = Array.from(candidates.values())
-    .filter(c => {
-      const minSources = c.term.includes(' ') ? MIN_RECENT_SOURCES : MIN_RECENT_SOURCES_SINGLE_WORD
-      return c.recentSources.size >= minSources && c.baselineCount <= MAX_BASELINE_MENTIONS
+    .filter(c => c.recentSources.size >= (c.term.includes(' ') ? MIN_RECENT_SOURCES : MIN_RECENT_SOURCES_SINGLE_WORD))
+    .map(c => {
+      const velocityRatio = c.baselineCount === 0
+        ? Infinity
+        : recentRatePerDay(c.recentCount) / baselineRatePerDay(c.baselineCount)
+      const tier: 'new' | 'trending' = c.baselineCount === 0 ? 'new' : 'trending'
+      return { ...c, velocityRatio, tier }
     })
-    .sort((a, b) => b.recentSources.size - a.recentSources.size || b.recentCount - a.recentCount)
-    .slice(0, 8)
+    .filter(c => c.tier === 'new' || c.velocityRatio >= TRENDING_VELOCITY_RATIO)
+    .sort((a, b) => {
+      // Brand-new terms first, then by how many independent sources picked
+      // it up, then by raw mention count.
+      if (a.tier !== b.tier) return a.tier === 'new' ? -1 : 1
+      return b.recentSources.size - a.recentSources.size || b.recentCount - a.recentCount
+    })
+    .slice(0, 10)
     .map(c => ({
       term: c.term,
       recentMentions: c.recentCount,
       recentSourceCount: c.recentSources.size,
+      baselineMentions: c.baselineCount,
+      tier: c.tier,
       articles: c.recentArticles,
     }))
 
@@ -154,7 +178,12 @@ export async function scanNoveltyRadar(userId: string): Promise<RadarScanResult>
 export async function explainNoveltyRadar(userId: string, hits: RadarHit[]): Promise<RadarHit[]> {
   if (hits.length === 0) return hits
 
-  const block = hits.map((h, i) => `[${i + 1}] "${h.term}" — mentioned by ${h.recentSourceCount} independent sources in the last ${RECENT_WINDOW_DAYS} days, absent before that.\nArticles: ${h.articles.map(a => a.title).join(' | ')}`).join('\n\n')
+  const block = hits.map((h, i) => {
+    const history = h.tier === 'new'
+      ? `absent from the prior ${BASELINE_WINDOW_DAYS} days`
+      : `mentioned only ${h.baselineMentions} time(s) across the prior ${BASELINE_WINDOW_DAYS} days`
+    return `[${i + 1}] "${h.term}" — mentioned ${h.recentMentions} time(s) by ${h.recentSourceCount} independent sources in the last ${RECENT_WINDOW_DAYS} days, ${history}.\nArticles: ${h.articles.map(a => a.title).join(' | ')}`
+  }).join('\n\n')
 
   const result = await generateJsonForUser<{ explanations: { index: number; insight: string }[] }>({
     userId,

@@ -929,7 +929,7 @@ export default function FeedPage() {
   const [seededSources, setSeededSources] = useState(false)
 
   // Novelty/Velocity Radar — free heuristic scan, LLM explanation optional
-  const [radarHits, setRadarHits] = useState<Array<{ term: string; recentMentions: number; recentSourceCount: number; articles: { title: string; url: string }[]; insight?: string }> | null>(null)
+  const [radarHits, setRadarHits] = useState<Array<{ term: string; recentMentions: number; recentSourceCount: number; baselineMentions: number; tier: 'new' | 'trending'; articles: { title: string; url: string }[]; insight?: string }> | null>(null)
   const [radarLowConfidence, setRadarLowConfidence] = useState(false)
   const [radarScanning, setRadarScanning] = useState(false)
   const [radarError, setRadarError] = useState<string | null>(null)
@@ -1986,7 +1986,7 @@ export default function FeedPage() {
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>
                 <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">🚀 Emerging this week</p>
-                <p className="text-xs text-zinc-400 mt-0.5">Terms that just started showing up across multiple independent sources — before they're mainstream.</p>
+                <p className="text-xs text-zinc-400 mt-0.5">🆕 brand new this week, or 📈 trending well above their normal mention rate — across multiple independent sources, before they're mainstream.</p>
               </div>
               <button onClick={scanRadar} disabled={radarScanning}
                 className="rounded-xl border border-zinc-200 dark:border-zinc-700 hover:border-violet-300 disabled:opacity-50 px-4 py-2 text-xs font-bold text-zinc-700 dark:text-zinc-300 transition-colors shrink-0">
@@ -2006,9 +2006,12 @@ export default function FeedPage() {
                   <div className="flex flex-wrap gap-2">
                     {radarHits.map(hit => (
                       <div key={hit.term} className="rounded-xl border border-zinc-100 dark:border-zinc-800 px-3 py-2 max-w-xs">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{hit.term}</span>
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">{hit.recentSourceCount} sources</span>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${hit.tier === 'new' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'}`}>
+                            {hit.tier === 'new' ? '🆕 new' : '📈 trending'}
+                          </span>
+                          <span className="text-[10px] text-zinc-400">{hit.recentMentions}× · {hit.recentSourceCount} sources</span>
                         </div>
                         {hit.insight ? (
                           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{hit.insight}</p>
