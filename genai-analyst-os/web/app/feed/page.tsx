@@ -930,6 +930,7 @@ export default function FeedPage() {
 
   // Novelty/Velocity Radar — free heuristic scan, LLM explanation optional
   const [radarHits, setRadarHits] = useState<Array<{ term: string; recentMentions: number; recentSourceCount: number; articles: { title: string; url: string }[]; insight?: string }> | null>(null)
+  const [radarLowConfidence, setRadarLowConfidence] = useState(false)
   const [radarScanning, setRadarScanning] = useState(false)
   const [radarError, setRadarError] = useState<string | null>(null)
   const [radarExplaining, setRadarExplaining] = useState(false)
@@ -1275,6 +1276,7 @@ export default function FeedPage() {
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Could not scan for emerging terms')
       setRadarHits(json.hits ?? [])
+      setRadarLowConfidence(Boolean(json.lowConfidence))
     } catch (e) {
       setRadarError(e instanceof Error ? e.message : String(e))
     }
@@ -1993,6 +1995,9 @@ export default function FeedPage() {
             </div>
             <p className="mt-1.5 text-[11px] text-zinc-400">Free — heuristic scan, no LLM call.</p>
             {radarError && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{radarError}</p>}
+            {radarHits !== null && radarHits.length > 0 && radarLowConfidence && (
+              <p className="mt-2 text-[11px] text-amber-600 dark:text-amber-400">⚠️ Your feed history is still thin, so these may just be common terms rather than genuinely new — confidence improves as more days of feed history build up.</p>
+            )}
             {radarHits !== null && (
               radarHits.length === 0 ? (
                 <p className="mt-3 text-sm text-zinc-400">Nothing spiking right now — check back after your next feed refresh.</p>

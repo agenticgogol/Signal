@@ -11,7 +11,9 @@ import { generateJsonForUser } from '@/lib/llmClient'
 const RECENT_WINDOW_DAYS = 4
 const BASELINE_WINDOW_DAYS = 45
 const MIN_RECENT_SOURCES = 2
-const MAX_BASELINE_MENTIONS = 1
+const MIN_RECENT_SOURCES_SINGLE_WORD = 3
+const MAX_BASELINE_MENTIONS = 0
+const MIN_BASELINE_ARTICLES_FOR_CONFIDENCE = 15
 
 const STOPWORDS = new Set([
   'the','a','an','and','or','but','of','to','in','on','for','with','is','are','was','were',
@@ -21,6 +23,24 @@ const STOPWORDS = new Set([
   'new','how','why','use','using','used','via','after','before','over','under','out','up',
 ])
 
+// Permanently-common words in a GenAI-focused feed — these are background
+// noise here, not signal, regardless of how thin the baseline window is.
+// A candidate is dropped only if EVERY word in it is on this list, so a
+// genuinely new compound like "Nano Banana" or "Model Context Protocol"
+// still gets through even though it contains no denylisted words, while
+// "Claude Sonnet" (both halves generic in this domain) does not.
+const DOMAIN_NOISE_WORDS = new Set([
+  'anthropic','openai','google','meta','microsoft','amazon','nvidia',
+  'claude','gpt','chatgpt','llm','llms','ai','ml','genai',
+  'sonnet','opus','haiku','gemini','copilot',
+  'model','models','agent','agents','api','apis','data','cloud','app','apps',
+])
+
+function isDomainNoise(term: string): boolean {
+  const words = term.toLowerCase().split(/\s+/)
+  return words.every(w => DOMAIN_NOISE_WORDS.has(w))
+}
+
 function extractTerms(text: string): string[] {
   // Proper-noun-ish runs (e.g. "Model Context Protocol", "GPT-5", "LangGraph")
   // plus significant single words — this is intentionally simple/cheap since
@@ -28,7 +48,7 @@ function extractTerms(text: string): string[] {
   const phrases = text.match(/\b([A-Z][a-zA-Z0-9]*(?:[-.][A-Za-z0-9]+)?(?:\s+[A-Z][a-zA-Z0-9]*){0,2})\b/g) ?? []
   return phrases
     .map(p => p.trim())
-    .filter(p => p.length >= 3 && !STOPWORDS.has(p.toLowerCase()))
+    .filter(p => p.length >= 3 && !STOPWORDS.has(p.toLowerCase()) && !isDomainNoise(p))
 }
 
 interface RadarCandidate {
@@ -47,7 +67,17 @@ export interface RadarHit {
   insight?: string
 }
 
-export async function scanNoveltyRadar(userId: string): Promise<{ hits: RadarHit[]; articlesScanned: number }> {
+export interface RadarScanResult {
+  hits: RadarHit[]
+  articlesScanned: number
+  // True when the baseline window has too few articles to reliably tell
+  // "actually new" apart from "just how few sources cover this niche" —
+  // surfaced so the UI can caveat results instead of presenting them with
+  // false confidence.
+  lowConfidence: boolean
+}
+
+export async function scanNoveltyRadar(userId: string): Promise<RadarScanResult> {
   const db = createServiceClient()
   const recentSince = new Date(); recentSince.setUTCDate(recentSince.getUTCDate() - RECENT_WINDOW_DAYS)
   const baselineSince = new Date(); baselineSince.setUTCDate(baselineSince.getUTCDate() - BASELINE_WINDOW_DAYS)
@@ -76,26 +106,33 @@ export async function scanNoveltyRadar(userId: string): Promise<{ hits: RadarHit
     }
   }
 
+  // Match terms case-insensitively (so "Claude Sonnet" and "claude sonnet"
+  // in different articles count as the same entity) while keeping the
+  // first-seen casing for display.
   const baselineTermCounts = new Map<string, number>()
   for (const doc of baselineDocs) {
-    const terms = new Set(extractTerms(doc.text))
+    const terms = new Set(extractTerms(doc.text).map(t => t.toLowerCase()))
     for (const term of terms) baselineTermCounts.set(term, (baselineTermCounts.get(term) ?? 0) + 1)
   }
 
   const candidates = new Map<string, RadarCandidate>()
   for (const doc of recentDocs) {
     const terms = new Set(extractTerms(doc.text))
-    for (const term of terms) {
-      const existing = candidates.get(term) ?? { term, recentCount: 0, recentSources: new Set<string>(), recentArticles: [], baselineCount: baselineTermCounts.get(term) ?? 0 }
+    for (const displayTerm of terms) {
+      const key = displayTerm.toLowerCase()
+      const existing = candidates.get(key) ?? { term: displayTerm, recentCount: 0, recentSources: new Set<string>(), recentArticles: [], baselineCount: baselineTermCounts.get(key) ?? 0 }
       existing.recentCount++
       if (doc.sourceId) existing.recentSources.add(doc.sourceId)
       if (existing.recentArticles.length < 3) existing.recentArticles.push({ title: doc.title, url: doc.url })
-      candidates.set(term, existing)
+      candidates.set(key, existing)
     }
   }
 
   const hits: RadarHit[] = Array.from(candidates.values())
-    .filter(c => c.recentSources.size >= MIN_RECENT_SOURCES && c.baselineCount <= MAX_BASELINE_MENTIONS)
+    .filter(c => {
+      const minSources = c.term.includes(' ') ? MIN_RECENT_SOURCES : MIN_RECENT_SOURCES_SINGLE_WORD
+      return c.recentSources.size >= minSources && c.baselineCount <= MAX_BASELINE_MENTIONS
+    })
     .sort((a, b) => b.recentSources.size - a.recentSources.size || b.recentCount - a.recentCount)
     .slice(0, 8)
     .map(c => ({
@@ -105,7 +142,11 @@ export async function scanNoveltyRadar(userId: string): Promise<{ hits: RadarHit
       articles: c.recentArticles,
     }))
 
-  return { hits, articlesScanned: recentDocs.length + baselineDocs.length }
+  return {
+    hits,
+    articlesScanned: recentDocs.length + baselineDocs.length,
+    lowConfidence: baselineDocs.length < MIN_BASELINE_ARTICLES_FOR_CONFIDENCE,
+  }
 }
 
 // Optional, separately gated — explains WHY each heuristic hit looks like a
