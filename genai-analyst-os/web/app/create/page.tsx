@@ -17,6 +17,7 @@ interface AgentStep {
 
 interface FeedArticle {
   id: string; title: string; url: string; blend_score: number; topic_tags?: string[]
+  why_it_matters?: string | null; tldr_bullets?: string[]
 }
 
 interface NotebookOption {
@@ -162,6 +163,7 @@ function CreatePageInner() {
   const [agentSteps, setAgentSteps] = useState<AgentStep[]>(INITIAL_STEPS)
   const [isGenerating, setIsGenerating] = useState(false)
   const [finalOutput, setFinalOutput] = useState('')
+  const [citationWarning, setCitationWarning] = useState<{ message: string; claims: { claim: string; cited_domain: string; status: string; note: string }[] } | null>(null)
 
   // Step 5
   const [copied, setCopied] = useState(false)
@@ -271,9 +273,9 @@ function CreatePageInner() {
     fetch(`/api/data/feed?userId=${userId}&date=${today}`)
       .then(r => r.json())
       .then(json => {
-        const arts: FeedArticle[] = (json.items ?? []).map((item: { blend_score: number; articles: { id: string; title: string; url: string; topic_tags: string[] } | null }) => {
+        const arts: FeedArticle[] = (json.items ?? []).map((item: { blend_score: number; articles: { id: string; title: string; url: string; topic_tags: string[]; why_it_matters?: string; tldr_bullets?: string[] } | null }) => {
           const a = Array.isArray(item.articles) ? item.articles[0] : item.articles
-          return a ? { id: a.id, title: a.title, url: a.url, blend_score: item.blend_score, topic_tags: a.topic_tags } : null
+          return a ? { id: a.id, title: a.title, url: a.url, blend_score: item.blend_score, topic_tags: a.topic_tags, why_it_matters: a.why_it_matters ?? null, tldr_bullets: a.tldr_bullets ?? [] } : null
         }).filter(Boolean) as FeedArticle[]
         setFeedArticles(arts)
       })
@@ -350,13 +352,17 @@ function CreatePageInner() {
       parts.push(`Outline:\n${outlineData.outline.sections.map((s, i) => `${i + 1}. ${s.title}`).join('\n')}`)
     }
 
-    const sources: { title: string; url: string; domain: string }[] = []
+    // evidence carries the actual substance (why-it-matters / summary) that
+    // every downstream agent needs to ground a citation in — without it,
+    // agents can only cite a URL they've never actually "read."
+    const sources: { title: string; url: string; domain: string; evidence: string }[] = []
     if (selectedArticleIds.size > 0) {
       const selected = feedArticles.filter(a => selectedArticleIds.has(a.id))
       selected.forEach(a => {
         let domain = ''
         try { domain = new URL(a.url).hostname.replace('www.', '') } catch {}
-        sources.push({ title: a.title, url: a.url, domain })
+        const evidence = [a.why_it_matters, ...(a.tldr_bullets ?? [])].filter(Boolean).join(' ')
+        sources.push({ title: a.title, url: a.url, domain, evidence })
       })
       parts.push(`Source articles:\n${selected.map(a => `- ${a.title} (${a.url})`).join('\n')}`)
     }
@@ -367,7 +373,8 @@ function CreatePageInner() {
         let domain = ''
         const url = item.source_url || `signal://knowledge/${item.id}`
         try { domain = new URL(url).hostname.replace('www.', '') } catch { domain = 'signal-knowledge' }
-        sources.push({ title: item.title, url, domain })
+        const evidence = [item.summary, item.why_it_matters].filter(Boolean).join(' ')
+        sources.push({ title: item.title, url, domain, evidence })
       })
       parts.push(`Notebook context:\n${selected.map(item => {
         const source = item.source_url || 'Private note'
@@ -385,6 +392,7 @@ function CreatePageInner() {
     if (!brief.trim()) return
     setIsGenerating(true)
     setFinalOutput('')
+    setCitationWarning(null)
     setAgentSteps(INITIAL_STEPS.map(s => ({ ...s, status: 'pending', output: '' })))
     setStep(4)
 
@@ -476,6 +484,8 @@ function CreatePageInner() {
           ? { ...s, status: 'pending', output: '', label: s.label.replace(/ \(loop \d+\)$/, '') + (loop > 1 ? ` (loop ${loop})` : '') }
           : s
       ))
+    } else if (event === 'citation_warning') {
+      setCitationWarning(payload as unknown as { message: string; claims: { claim: string; cited_domain: string; status: string; note: string }[] })
     } else if (event === 'complete') {
       setFinalOutput(payload.final as string)
       setStep(5)
@@ -1024,6 +1034,19 @@ function CreatePageInner() {
       {/* ── Step 5: Review & Export ───────────────────────────────────────── */}
       {step === 5 && (
         <div>
+          {citationWarning && (
+            <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-4">
+              <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">⚠️ {citationWarning.message}</p>
+              <ul className="mt-2 space-y-1">
+                {citationWarning.claims.map((c, i) => (
+                  <li key={i} className="text-xs text-amber-700 dark:text-amber-300">
+                    <strong className="uppercase">{c.status}</strong> — &quot;{c.claim}&quot; (cited: {c.cited_domain || 'none'}) — {c.note}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">Fix or remove these before publishing — everything else in this draft has been checked, but these specific claims still need your eyes.</p>
+            </div>
+          )}
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Review & Export</h2>

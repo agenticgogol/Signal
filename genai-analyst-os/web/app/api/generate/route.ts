@@ -58,6 +58,7 @@ export async function POST(req: Request) {
         let writerInstructions = ''
         let claimReport = ''
         let loopScores = ''
+        let lastVerifierResult: Awaited<ReturnType<typeof runClaimVerifierAgent>> | null = null
 
         // ── Steps 2-5: Writer → Verifier → Critic → Humanizer (with loops) ─
         for (let loop = 1; loop <= MAX_LOOPS; loop++) {
@@ -74,10 +75,20 @@ export async function POST(req: Request) {
           currentDraft = await runWriterAgent(userId, writerContext, format, sources, voiceFingerprint)
           send('agent_complete', { agent: 'writer', output: currentDraft, loop })
 
-          // Step 3: Claim Verifier
+          // Step 3: Claim Verifier — checks each citation against the
+          // source's real evidence text and returns a structured verdict.
           send('agent_start', { agent: 'verifier', loop })
-          claimReport = await runClaimVerifierAgent(userId, currentDraft, sources, brief)
-          send('agent_complete', { agent: 'verifier', output: claimReport, loop })
+          const verifierResult = await runClaimVerifierAgent(userId, currentDraft, sources, brief)
+          lastVerifierResult = verifierResult
+          claimReport = verifierResult.report
+          send('agent_complete', {
+            agent: 'verifier',
+            output: claimReport,
+            verdict: verifierResult.verdict,
+            hallucinatedCount: verifierResult.hallucinatedCount,
+            unsupportedCount: verifierResult.unsupportedCount,
+            loop,
+          })
 
           // Step 4: Critic (receives both verifier report and draft)
           send('agent_start', { agent: 'critic', loop })
@@ -90,9 +101,10 @@ export async function POST(req: Request) {
           currentHumanized = await runHumanizerAgent(userId, currentDraft, currentCritique, format, sources, voiceFingerprint)
           send('agent_complete', { agent: 'humanizer', output: currentHumanized, loop })
 
-          // Step 6: Evaluator — score the humanized output
+          // Step 6: Evaluator — score the humanized output, weighing the
+          // verifier's independent findings heavily on the citations score.
           send('agent_start', { agent: 'evaluator', loop })
-          const evalResult = await runEvaluatorAgent(userId, currentHumanized, format, brief, loop)
+          const evalResult = await runEvaluatorAgent(userId, currentHumanized, format, brief, loop, claimReport)
           loopScores = evalResult.scoresSummary
           send('agent_complete', {
             agent: 'evaluator',
@@ -103,13 +115,39 @@ export async function POST(req: Request) {
             loop,
           })
 
-          if (evalResult.pass || loop === MAX_LOOPS) {
-            // All criteria met (or max loops reached) — proceed to audience sim
+          // Hard gate: a hallucinated or unsupported citation must never
+          // ship, regardless of how the Evaluator scored everything else —
+          // this is exactly the kind of thing a human would otherwise have
+          // to catch by hand before publishing.
+          const citationsClean = verifierResult.hallucinatedCount === 0 && verifierResult.unsupportedCount === 0
+
+          if ((evalResult.pass && citationsClean) || loop === MAX_LOOPS) {
             break
           }
 
-          // Failed — prepare Writer instructions for next loop
-          writerInstructions = evalResult.writerInstructions
+          // Failed — merge Evaluator's rewrite instructions with any
+          // specific citation problems the Verifier found, so the retry
+          // actually fixes both instead of only whatever the Evaluator
+          // happened to mention.
+          const citationFixes = verifierResult.claims
+            .filter(c => c.status === 'hallucinated' || c.status === 'unsupported')
+            .map(c => `- Fix citation: "${c.claim}" (${c.status}) — ${c.note}`)
+            .join('\n')
+          writerInstructions = [evalResult.writerInstructions, citationFixes].filter(Boolean).join('\n\n')
+        }
+
+        // If the loop ceiling was hit with citation problems still open,
+        // say so explicitly rather than shipping a hallucinated or
+        // unsupported claim silently — this is exactly the failure mode a
+        // human reviewer would otherwise have to catch by hand.
+        const unresolvedCitationIssues = lastVerifierResult
+          ? lastVerifierResult.hallucinatedCount + lastVerifierResult.unsupportedCount
+          : 0
+        if (unresolvedCitationIssues > 0) {
+          send('citation_warning', {
+            message: `${unresolvedCitationIssues} citation issue(s) remained unresolved after ${MAX_LOOPS} loops — review the flagged claims before publishing.`,
+            claims: lastVerifierResult?.claims.filter(c => c.status === 'hallucinated' || c.status === 'unsupported') ?? [],
+          })
         }
 
         // ── Step 7: Audience Simulation ─────────────────────────────────────
