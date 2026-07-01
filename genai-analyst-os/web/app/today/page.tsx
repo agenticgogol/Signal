@@ -517,12 +517,15 @@ export default function TodayPage() {
         </SimpleModal>
       )}
       {showReadingInfo && (
-        <SimpleModal title="How Your Daily Reading is built" onClose={() => setShowReadingInfo(false)}>
+        <SimpleModal title="How Your Daily Reading is shortlisted and ranked" onClose={() => setShowReadingInfo(false)}>
+          <p className="text-sm text-zinc-600 dark:text-zinc-300 leading-relaxed mb-3">Three pools are candidates, each scored on its own scale so one source can&apos;t dominate just because its numbers run bigger, then merged into one ranked list:</p>
           <ul className="space-y-2 text-sm text-zinc-600 dark:text-zinc-300 leading-relaxed list-disc list-inside">
-            <li>Pulled from two places: your <strong>Feed</strong> (ranked by topic affinity, using the same scoring as the Feed tab) and your <strong>Reading List</strong> (ranked by topic affinity + how recently it was processed).</li>
-            <li>Items are merged and filled in, best first, until they add up to about your daily minute target — estimated from actual word count, not a flat guess.</li>
-            <li>Anything you&apos;ve already marked read stays out of the pool for 14 days, so the queue doesn&apos;t repeat itself.</li>
-            <li>Refreshing only replaces items you haven&apos;t acted on yet — read/skipped items from today are never touched.</li>
+            <li><strong>📰 Feed</strong> — scored by topic affinity, the same blend score used on the Feed tab (your declared interests + how you&apos;ve reacted to similar articles before).</li>
+            <li><strong>📖 Reading List</strong> — scored by topic affinity blended with recency (0.6 topic + 0.4 how recently it was processed), so freshly-added items get a boost without fully burying older relevant ones.</li>
+            <li><strong>🌐 News</strong> — scored by how many independent sources are covering the same story; a story 3 outlets picked up outranks one only 1 outlet has.</li>
+            <li>All three pools are normalized to a 0-1 scale independently, then merged and filled in best-first until the total reading time adds up to about your daily minute target — estimated from actual word count, not a flat guess per item.</li>
+            <li>Anything you&apos;ve marked read stays out of the pool for 14 days, so the queue doesn&apos;t repeat itself day to day.</li>
+            <li>Refreshing only replaces items you haven&apos;t acted on yet — read/skipped items from today are never touched, and undoing a read/skip puts it right back in the mix.</li>
           </ul>
         </SimpleModal>
       )}
@@ -565,22 +568,22 @@ export default function TodayPage() {
         </div>
       )}
 
-      <div className="grid gap-8 lg:grid-cols-2 mb-10">
+      <div className="grid gap-6 lg:grid-cols-2 mb-6">
       {/* ══ JOB 1: What to read ═══════════════════════════════════════════ */}
       <section>
-        <div className="flex items-center justify-between gap-3 mb-2">
+        <div className="flex items-center justify-between gap-3 mb-1.5">
           <div className="flex items-center gap-1.5">
             <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">📋 Your Daily Reading</h2>
             <button onClick={() => setShowReadingInfo(true)} className="text-zinc-400 hover:text-violet-600 dark:hover:text-violet-400 text-sm" title="How is this list built?">ⓘ</button>
           </div>
           <button onClick={() => setShowRefreshConfirm(true)} disabled={refreshing || queueLoading || entries.length === 0}
-            className="text-xs text-violet-600 dark:text-violet-400 px-3 py-1.5 bg-violet-50 dark:bg-violet-950/30 rounded-lg border border-violet-200 dark:border-violet-800 hover:bg-violet-100 transition-colors font-medium disabled:opacity-50 shrink-0">
+            className="text-xs text-violet-600 dark:text-violet-400 px-2.5 py-1 bg-violet-50 dark:bg-violet-950/30 rounded-lg border border-violet-200 dark:border-violet-800 hover:bg-violet-100 transition-colors font-medium disabled:opacity-50 shrink-0">
             {refreshing ? 'Refreshing…' : '↺ Refresh'}
           </button>
         </div>
-        <p className="text-xs text-zinc-400 mb-3">Blended from Feed and Reading List — about {targetMinutes} minutes. Click any item for a quick summary, or open it to read in full.</p>
+        <p className="text-xs text-zinc-400 mb-2">Blended from Feed, Reading List &amp; News — about {targetMinutes} minutes.</p>
 
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center gap-2 mb-3">
           <span className="text-xs text-zinc-400">Daily target:</span>
           {MINUTE_OPTIONS.map(m => (
             <button key={m} onClick={() => changeTargetMinutes(m)} disabled={savingMinutes}
@@ -591,34 +594,34 @@ export default function TodayPage() {
           ))}
         </div>
 
-        {queueError && <p className="mb-4 text-sm text-red-600 dark:text-red-400">{queueError}</p>}
+        {queueError && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{queueError}</p>}
 
         {entries.length > 0 && (
-          <div className="mb-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
-            <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400 mb-2">
+          <div className="mb-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3.5 py-2.5">
+            <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400 mb-1.5">
               <span>{doneEntries.length} / {entries.length} items done</span>
             </div>
-            <div className="h-2 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
+            <div className="h-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
               <div className="h-full bg-violet-600 transition-all" style={{ width: `${progressPct}%` }} />
             </div>
-            {allDone && <p className="mt-3 text-sm font-semibold text-emerald-600 dark:text-emerald-400">✅ All done for today — nice work.</p>}
+            {allDone && <p className="mt-2 text-sm font-semibold text-emerald-600 dark:text-emerald-400">✅ All done for today — nice work.</p>}
           </div>
         )}
 
         {queueLoading ? (
-          <div className="space-y-3">{[0, 1, 2].map(i => <div key={i} className="h-20 rounded-2xl bg-zinc-100 dark:bg-zinc-800 animate-pulse" />)}</div>
+          <div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="h-16 rounded-xl bg-zinc-100 dark:bg-zinc-800 animate-pulse" />)}</div>
         ) : entries.length === 0 ? (
-          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 text-center">
+          <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 text-center">
             <p className="text-sm text-zinc-500 dark:text-zinc-400">Nothing queued yet — add sources to your <Link href="/feed" className="text-violet-600 dark:text-violet-400 hover:underline">Feed</Link> or <Link href="/knowledge" className="text-violet-600 dark:text-violet-400 hover:underline">Reading List</Link>, then refresh.</p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {visiblePendingEntries.map(entry => {
               const expanded = expandedId === entry.id
               const previewText = entry.whyItMatters || entry.summary || (entry.takeaways[0] ?? '')
               return (
-                <div key={entry.id} className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-violet-300 dark:hover:border-violet-700 transition-colors overflow-hidden">
-                  <div className="flex items-center gap-3 p-4">
+                <div key={entry.id} className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-violet-300 dark:hover:border-violet-700 transition-colors overflow-hidden">
+                  <div className="flex items-center gap-3 p-3">
                     <button onClick={() => setQueueStatus(entry.id, 'read')} disabled={actioningId === entry.id}
                       className="shrink-0 w-6 h-6 rounded-full border-2 border-zinc-300 dark:border-zinc-600 hover:border-violet-500 transition-colors" title="Mark as read" />
                     <button onClick={() => toggleExpand(entry.id)} className="flex-1 min-w-0 text-left">
@@ -711,11 +714,11 @@ export default function TodayPage() {
             {smartGenerating ? 'Generating…' : '✨ Generate today\'s content'}
           </button>
         </div>
-        <p className="text-xs text-zinc-400 mb-3">Auto-drafted from what you've been reading, or generate on demand. Nothing publishes without your approval. Opt in or out, and choose the target platform, in <Link href="/settings" className="text-violet-600 dark:text-violet-400 hover:underline">Settings</Link>.</p>
+        <p className="text-xs text-zinc-400 mb-2">Auto-drafted from your reading, or generate on demand. Nothing publishes without approval.</p>
 
         <input value={customTopic} onChange={e => setCustomTopic(e.target.value)}
           placeholder="Optional: type a custom topic instead of auto-picking one…"
-          className="w-full mb-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2 text-xs outline-none focus:ring-2 focus:ring-violet-500" />
+          className="w-full mb-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-violet-500" />
 
         {smartGenerateError && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{smartGenerateError}</p>}
         {smartGenerateNote && <p className="mb-3 text-sm text-emerald-600 dark:text-emerald-400">{smartGenerateNote}</p>}
@@ -744,9 +747,9 @@ export default function TodayPage() {
             <p className="text-sm text-zinc-500 dark:text-zinc-400">No pending drafts. If Drafts Inbox is on in Settings, check back tomorrow — it drafts at most one post a day from what you engaged with most.</p>
           </div>
         ) : (
-          <div className="space-y-5">
+          <div className="space-y-3">
             {visibleIdeaGroups.map(group => (
-              <div key={group[0].topic} className="space-y-2">
+              <div key={group[0].topic} className="space-y-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-400 truncate">💡 {group[0].source_title || group[0].topic}</p>
                   <button onClick={() => doSmartGenerate()} disabled={smartGenerating}
@@ -756,9 +759,9 @@ export default function TodayPage() {
               const { headline, teaser } = draftPreview(draft.final_content)
               const draftExpanded = expandedDraftId === draft.id
               return (
-                <div key={draft.id} className="rounded-2xl border border-violet-200 dark:border-violet-800 bg-violet-50/30 dark:bg-violet-950/10 overflow-hidden">
+                <div key={draft.id} className="rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/30 dark:bg-violet-950/10 overflow-hidden">
                   <div className="flex items-start">
-                  <button onClick={() => setExpandedDraftId(prev => prev === draft.id ? null : draft.id)} className="flex-1 min-w-0 text-left p-4">
+                  <button onClick={() => setExpandedDraftId(prev => prev === draft.id ? null : draft.id)} className="flex-1 min-w-0 text-left p-3">
                     <p className="text-xs font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400">{draft.format} · {formatRelativeTime(draft.created_at)}</p>
                     <p className="mt-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{headline}</p>
                     {teaser && <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400 line-clamp-1">{teaser}</p>}
@@ -769,7 +772,7 @@ export default function TodayPage() {
                     )}
                   </button>
                   <button onClick={() => reviewDraft(draft.id, 'dismiss')} disabled={draftActioning === draft.id}
-                    className="shrink-0 m-4 mb-0 text-xs font-medium text-zinc-400 hover:text-red-600 dark:hover:text-red-400" title="Skip this draft">⏭️ Skip</button>
+                    className="shrink-0 m-3 mb-0 text-xs font-medium text-zinc-400 hover:text-red-600 dark:hover:text-red-400" title="Skip this draft">⏭️ Skip</button>
                   </div>
                   {draftExpanded && (
                     <div className="px-4 pb-4">

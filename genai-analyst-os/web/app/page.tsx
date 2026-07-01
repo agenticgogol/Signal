@@ -2,30 +2,30 @@ import Link from 'next/link'
 
 const VALUE_PROPS = [
   {
-    icon: '⏱️',
-    title: 'One page. 15 minutes. You are caught up and ahead.',
-    body: 'Today blends your Feed, Reading List, and breaking AI News into one ranked queue, sized to the time you actually have. No tab-hopping between a news reader, a notes app, and a drafting tool — one page tells you what to read and what to publish.',
+    icon: '🕵️',
+    title: 'We do the hard work. You get the 15 minutes.',
+    body: 'Signal scrapes the sources that matter for your career, compiles everything, ranks it by relevance to you, and hands you exactly what to read — not a raw firehose you have to triage yourself. No more juggling RSS readers, five open tabs, and a notes app just to stay current.',
     accent: 'from-violet-500 to-indigo-500',
   },
   {
-    icon: '✍️',
-    title: 'From ranked evidence to publish-ready drafts, N ideas at a time',
-    body: 'Signal picks the topic — blending your engagement, reading behavior, and trending news — drafts it with an eight-agent pipeline in your voice, and can spin up 2-3 distinct ideas across every platform you publish to in one click.',
+    icon: '🧭',
+    title: 'The more you read, the sharper it gets',
+    body: 'Every open, like, pin, and skip teaches Signal what actually matters to you — so the ranking, and eventually the content ideas it suggests, get more accurate the more you use it. This isn\'t a static feed; it\'s a system that learns your beat.',
     accent: 'from-blue-500 to-cyan-500',
   },
   {
-    icon: '🔥',
-    title: 'Built to make the habit stick, not just the tool useful',
-    body: 'Reading and publishing streaks track your consistency week over week. Ask Signal remembers everything you have read so a follow-up question is one click away, not a re-search. The more you use it, the sharper it gets at picking what matters to you.',
+    icon: '✍️',
+    title: 'From "I read this" to "I published this" — same page',
+    body: 'As you read, Signal starts surfacing writing and content ideas from what you engaged with most, then drafts them — verified, critiqued, humanized to your voice — across every platform you publish to, in one click. Reading turns directly into your next post.',
     accent: 'from-emerald-500 to-teal-500',
   },
 ]
 
 const HOW_IT_WORKS = [
-  { step: '01', label: 'One ranked queue', desc: 'Feed, Reading List, and News are merged into a single daily queue, sized to your target minutes — not three separate tabs to triage.' },
-  { step: '02', label: 'Read, skip, or undo', desc: 'Mark items read as you go; changed your mind or need to revisit something for a draft? Undo brings it right back.' },
-  { step: '03', label: 'Generate on demand', desc: 'One click drafts publish-ready content from what you engaged with most — pick the platforms, pick how many distinct ideas, review before anything goes out.' },
-  { step: '04', label: 'Ask, don\'t re-search', desc: 'Ask Signal sits inline on the same page, with full recall of everything in your Feed, Reading List, and News — no retyping context, no separate app.' },
+  { step: '01', label: 'We scrape & compile', desc: 'Signal continuously pulls from the AI sources that matter for your career — Feed, Reading List, and breaking News — so you never have to go source-hunting yourself.' },
+  { step: '02', label: 'We rank by relevance', desc: 'Everything is scored against your interests and how you\'ve reacted before, then merged into one queue sized to the time you actually have — 15 minutes, by default.' },
+  { step: '03', label: 'You read, we learn', desc: 'Open, skip, like, pin — every reaction sharpens what gets surfaced next. Undo anything; nothing is ever a dead end.' },
+  { step: '04', label: 'We suggest what to write', desc: 'Based on what you engaged with most, Signal proposes content ideas and drafts them — evidence-grounded, voice-matched, ready to review — across every platform, one click.' },
 ]
 
 const CAPABILITIES = [
@@ -121,23 +121,23 @@ export default function LandingPage() {
         <div className="max-w-4xl mx-auto text-center relative">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-violet-950/60 border border-violet-800/60 text-violet-300 text-xs font-medium mb-8">
             <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
-            15 minutes a day. Know what happened in AI. Say something about it.
+            15 minutes a day for your career in AI
           </div>
 
           <h1 className="text-5xl sm:text-6xl md:text-7xl font-black tracking-tight leading-[1.05] mb-6">
             <span className="bg-gradient-to-br from-white via-white to-zinc-400 bg-clip-text text-transparent">
-              Remove the noise.
+              We do the hard work.
             </span>
             <br />
             <span className="bg-gradient-to-r from-violet-400 via-blue-400 to-cyan-400 bg-clip-text text-transparent">
-              Read, think, publish — one page.
+              You show up for 15 minutes.
             </span>
           </h1>
 
           <p className="text-lg sm:text-xl text-zinc-400 max-w-2xl mx-auto leading-relaxed mb-10">
-            No more RSS readers, News tabs, and copy-paste prompting stitched together by hand. Signal blends
-            your Feed, Reading List, and breaking AI News into one ranked daily queue — and turns what you engaged
-            with most into a publish-ready draft, in your own voice, across every platform you use.
+            We scrape the sources that matter for your career, compile everything, rank it by relevance to you,
+            and show you exactly what to read. As you read — based on your interests and how you interact —
+            we start suggesting your next piece of writing too. One page. Read, think, publish.
           </p>
 
           <div className="mb-10 flex flex-wrap items-center justify-center gap-2 text-xs font-semibold text-zinc-300">

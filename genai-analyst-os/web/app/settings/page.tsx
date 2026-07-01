@@ -35,6 +35,16 @@ const FREQUENCIES = [
   { id: 'on_demand', label: 'On demand' },
 ]
 
+const TABS = [
+  { id: 'model',       label: 'Model Settings',      icon: '🔑' },
+  { id: 'feed_sched',  label: 'Feed Schedule',        icon: '📰' },
+  { id: 'content_gen', label: 'Content Generation',   icon: '🗣️' },
+  { id: 'ranking',     label: 'Content Ranking Logic', icon: '📊' },
+  { id: 'publishing',  label: 'Publisher Platforms',  icon: '🔗' },
+  { id: 'others',      label: 'Others',               icon: '⋯' },
+] as const
+type TabId = typeof TABS[number]['id']
+
 function hourUtcToLocalLabel(hourUtc: number): string {
   const d = new Date(Date.UTC(2024, 0, 1, hourUtc, 0, 0))
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
@@ -64,6 +74,7 @@ interface SettingsPayload {
 export default function SettingsPage() {
   const { session, user, loading } = useAuthSession()
   const userId = user?.id ?? ''
+  const [activeTab, setActiveTab] = useState<TabId>('model')
   const [plan, setPlan] = useState<'free' | 'pro'>('free')
   const [canUsePaidFeatures, setCanUsePaidFeatures] = useState(false)
 
@@ -534,7 +545,7 @@ export default function SettingsPage() {
     return (
       <div className="mx-auto max-w-4xl px-6 py-8">
         <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-8">
-          <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Profile Settings</h1>
           <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">Sign in first to manage your model provider, API key, and subscription-backed generation settings.</p>
         </div>
       </div>
@@ -543,9 +554,31 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-8 pb-20">
+      <div className="mb-5">
+        <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-600 dark:text-violet-400">Profile Settings</p>
+        <h1 className="mt-1 text-2xl font-black tracking-tight text-zinc-950 dark:text-white">Manage your Signal account</h1>
+      </div>
+
+      <div className="mb-6 flex flex-wrap gap-1.5 border-b border-zinc-200 dark:border-zinc-800 pb-3">
+        {TABS.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition-all ${
+              activeTab === t.id
+                ? 'bg-violet-600 text-white'
+                : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
+          >
+            <span>{t.icon}</span>{t.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'model' && (
+      <>
       <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-7">
         <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-600 dark:text-violet-400">Account model settings</p>
-        <h1 className="mt-2 text-3xl font-black tracking-tight text-zinc-950 dark:text-white">Bring your own provider, model, and API key</h1>
+        <h2 className="mt-2 text-3xl font-black tracking-tight text-zinc-950 dark:text-white">Bring your own provider, model, and API key</h2>
         <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-600 dark:text-zinc-300">Admin-free premium actions require both subscription entitlement and your account-level provider settings. This controls weekly digest regeneration, topic ideas, outline generation, voice analysis, and the full multi-agent content writer stack.</p>
         <div className="mt-5 grid gap-3 md:grid-cols-3">
           <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4 text-sm"><strong className="block text-zinc-900 dark:text-zinc-100">What Signal charges for</strong><span className="mt-1 block text-zinc-500 dark:text-zinc-400">Product access, orchestration, ranking, synthesis, and workflow UX.</span></div>
@@ -553,73 +586,6 @@ export default function SettingsPage() {
           <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4 text-sm"><strong className="block text-zinc-900 dark:text-zinc-100">Trust boundary</strong><span className="mt-1 block text-zinc-500 dark:text-zinc-400">The key is stored server-side in encrypted form and is never exposed in browser code.</span></div>
         </div>
       </div>
-
-      <section className="mt-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
-        <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Your preferences</h2>
-        <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">These drive feed ranking and digest cadence. Change them any time — Signal re-ranks immediately.</p>
-
-        <div className="mt-5">
-          <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Role</label>
-          <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {ROLES.map(r => (
-              <button key={r.id} onClick={() => setRole(r.id)}
-                className={`flex items-center gap-2 rounded-xl border-2 px-3 py-2 text-left text-xs font-medium transition-all ${
-                  role === r.id ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300' : 'border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:border-violet-300'}`}>
-                <span>{r.icon}</span>{r.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-5">
-          <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Interest areas</label>
-          <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {INTERESTS.map(i => (
-              <button key={i.id} onClick={() => toggleInterest(i.id)}
-                className={`flex items-center gap-2 rounded-xl border-2 px-3 py-2 text-left text-xs font-medium transition-all ${
-                  interestAreas.has(i.id) ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300' : 'border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:border-violet-300'}`}>
-                <span>{i.icon}</span>{i.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-5 grid gap-5 sm:grid-cols-2">
-          <div>
-            <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Main goal</label>
-            <div className="mt-2 flex flex-col gap-1.5">
-              {GOALS.map(g => (
-                <button key={g.id} onClick={() => setReadingGoal(g.id)}
-                  className={`rounded-xl border-2 px-3 py-2 text-left text-sm font-medium transition-all ${
-                    readingGoal === g.id ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300' : 'border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:border-violet-300'}`}>
-                  {g.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Reading cadence</label>
-            <div className="mt-2 flex flex-col gap-1.5">
-              {FREQUENCIES.map(f => (
-                <button key={f.id} onClick={() => setReadingFrequency(f.id)}
-                  className={`rounded-xl border-2 px-3 py-2 text-left text-sm font-medium transition-all ${
-                    readingFrequency === f.id ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300' : 'border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:border-violet-300'}`}>
-                  {f.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <button
-          onClick={savePreferences}
-          disabled={prefsSaving}
-          className="mt-5 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-violet-700 disabled:opacity-40"
-        >
-          {prefsSaving ? 'Saving...' : 'Save preferences'}
-        </button>
-        {prefsStatus && <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-300">{prefsStatus}</p>}
-      </section>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
         <section className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
@@ -712,36 +678,11 @@ export default function SettingsPage() {
           </div>
         </section>
       </div>
+      </>
+      )}
 
-      <section className="mt-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
-        <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Digest delivery</h2>
-        <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">Get one consolidated daily digest email with the story behind the day’s strongest AI signals. Weekly digests stay in-app, and both daily and weekly digests keep archives.</p>
-        <div className="mt-5 grid gap-5 md:grid-cols-[1fr_auto] md:items-end">
-          <div>
-            <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Delivery email</label>
-            <input
-              value={digestEmail}
-              onChange={event => setDigestEmail(event.target.value)}
-              type="email"
-              placeholder={user?.email ?? 'you@example.com'}
-              className="mt-2 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-500"
-            />
-            <label className="mt-3 flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-300">
-              <input type="checkbox" checked={dailyDigestEnabled} onChange={event => setDailyDigestEnabled(event.target.checked)} />
-              Email me one Daily Digest per day
-            </label>
-          </div>
-          <button
-            onClick={saveDigestSettings}
-            disabled={saving}
-            className="rounded-xl bg-zinc-950 px-5 py-2.5 text-sm font-bold text-white hover:bg-zinc-800 disabled:opacity-40 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200"
-          >
-            {saving ? 'Saving...' : 'Save digest settings'}
-          </button>
-        </div>
-      </section>
-
-      <section className="mt-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
+      {activeTab === 'feed_sched' && (
+      <section className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
         <div className="flex items-center gap-2">
           <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Feed schedule</h2>
           <span className="rounded-full border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/30 px-2 py-0.5 text-[10px] font-bold text-violet-700 dark:text-violet-300">PRO</span>
@@ -837,10 +778,12 @@ export default function SettingsPage() {
           </>
         )}
       </section>
+      )}
 
-      <section className="mt-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
+      {activeTab === 'content_gen' && (
+      <section className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
         <div className="flex items-center gap-2">
-          <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Drafts Inbox</h2>
+          <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Drafts Inbox — daily content generation</h2>
           <span className="rounded-full border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/30 px-2 py-0.5 text-[10px] font-bold text-violet-700 dark:text-violet-300">PRO</span>
         </div>
         <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">Off by default. When on, once a day Signal looks at what you engaged with most (opened, pinned, or liked) and drafts <strong>one</strong> fully-written post from it — through the same evidence-grounded, citation-verified pipeline as Create — and leaves it in your Drafts Inbox for you to approve or dismiss. Nothing publishes automatically.</p>
@@ -868,10 +811,80 @@ export default function SettingsPage() {
                 <option value="youtube_short">YouTube Short Script</option>
               </select>
             </div>
-            <p className="mt-2 text-xs text-zinc-400">Capped at one draft per account per day. Review pending drafts on the Today page.</p>
+            <p className="mt-2 text-xs text-zinc-400">Capped at one automatic draft per account per day. This is separate from the manual "Generate today's content" button on the Today page, which you can run anytime for as many ideas/platforms as you choose. Review pending drafts on the Today page.</p>
             {draftsInboxStatus && <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-300">{draftsInboxStatus}</p>}
           </>
         )}
+      </section>
+      )}
+
+      {activeTab === 'ranking' && (
+      <>
+      <section className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
+        <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Your preferences</h2>
+        <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">These drive feed ranking and digest cadence. Change them any time — Signal re-ranks immediately.</p>
+
+        <div className="mt-5">
+          <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Role</label>
+          <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {ROLES.map(r => (
+              <button key={r.id} onClick={() => setRole(r.id)}
+                className={`flex items-center gap-2 rounded-xl border-2 px-3 py-2 text-left text-xs font-medium transition-all ${
+                  role === r.id ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300' : 'border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:border-violet-300'}`}>
+                <span>{r.icon}</span>{r.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-5">
+          <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Interest areas</label>
+          <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {INTERESTS.map(i => (
+              <button key={i.id} onClick={() => toggleInterest(i.id)}
+                className={`flex items-center gap-2 rounded-xl border-2 px-3 py-2 text-left text-xs font-medium transition-all ${
+                  interestAreas.has(i.id) ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300' : 'border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:border-violet-300'}`}>
+                <span>{i.icon}</span>{i.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-5 sm:grid-cols-2">
+          <div>
+            <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Main goal</label>
+            <div className="mt-2 flex flex-col gap-1.5">
+              {GOALS.map(g => (
+                <button key={g.id} onClick={() => setReadingGoal(g.id)}
+                  className={`rounded-xl border-2 px-3 py-2 text-left text-sm font-medium transition-all ${
+                    readingGoal === g.id ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300' : 'border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:border-violet-300'}`}>
+                  {g.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Reading cadence</label>
+            <div className="mt-2 flex flex-col gap-1.5">
+              {FREQUENCIES.map(f => (
+                <button key={f.id} onClick={() => setReadingFrequency(f.id)}
+                  className={`rounded-xl border-2 px-3 py-2 text-left text-sm font-medium transition-all ${
+                    readingFrequency === f.id ? 'border-violet-500 bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300' : 'border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:border-violet-300'}`}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={savePreferences}
+          disabled={prefsSaving}
+          className="mt-5 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-violet-700 disabled:opacity-40"
+        >
+          {prefsSaving ? 'Saving...' : 'Save preferences'}
+        </button>
+        {prefsStatus && <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-300">{prefsStatus}</p>}
       </section>
 
       <section className="mt-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
@@ -902,8 +915,11 @@ export default function SettingsPage() {
         </div>
         {signalWeightsStatus && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{signalWeightsStatus}</p>}
       </section>
+      </>
+      )}
 
-      <section className="mt-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
+      {activeTab === 'publishing' && (
+      <section className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
         <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Connections</h2>
         <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
           Publish an approved draft directly instead of copy-pasting. Same bring-your-own-credential approach as your model API key — tokens are encrypted at rest and never shown again after saving.
@@ -981,8 +997,39 @@ export default function SettingsPage() {
 
           <div className="rounded-xl border border-dashed border-zinc-200 dark:border-zinc-700 p-4">
             <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100 mb-1">📧 Email / Newsletter, ✍️ Substack, 🎥 YouTube</p>
-            <p className="text-xs text-zinc-400">Email export uses your digest email above — no connection needed. Substack has no public posting API, so it's copy/export only. YouTube isn't applicable here — Create writes video scripts, not rendered video files, so there's nothing to upload.</p>
+            <p className="text-xs text-zinc-400">Email export uses your digest email in the Others tab — no connection needed. Substack has no public posting API, so it's copy/export only. YouTube isn't applicable here — Create writes video scripts, not rendered video files, so there's nothing to upload.</p>
           </div>
+        </div>
+      </section>
+      )}
+
+      {activeTab === 'others' && (
+      <>
+      <section className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
+        <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Digest delivery</h2>
+        <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">Get one consolidated daily digest email with the story behind the day’s strongest AI signals. Weekly digests stay in-app, and both daily and weekly digests keep archives.</p>
+        <div className="mt-5 grid gap-5 md:grid-cols-[1fr_auto] md:items-end">
+          <div>
+            <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Delivery email</label>
+            <input
+              value={digestEmail}
+              onChange={event => setDigestEmail(event.target.value)}
+              type="email"
+              placeholder={user?.email ?? 'you@example.com'}
+              className="mt-2 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-500"
+            />
+            <label className="mt-3 flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-300">
+              <input type="checkbox" checked={dailyDigestEnabled} onChange={event => setDailyDigestEnabled(event.target.checked)} />
+              Email me one Daily Digest per day
+            </label>
+          </div>
+          <button
+            onClick={saveDigestSettings}
+            disabled={saving}
+            className="rounded-xl bg-zinc-950 px-5 py-2.5 text-sm font-bold text-white hover:bg-zinc-800 disabled:opacity-40 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200"
+          >
+            {saving ? 'Saving...' : 'Save digest settings'}
+          </button>
         </div>
       </section>
 
@@ -1036,6 +1083,8 @@ export default function SettingsPage() {
           <p className="mt-4 text-[11px] text-zinc-400">Set <code>ARIZE_API_KEY</code> and <code>ARIZE_SPACE_ID</code> in your environment to also forward these spans to Arize for full-trace observability.</p>
         )}
       </section>
+      </>
+      )}
     </div>
   )
 }
