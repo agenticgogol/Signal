@@ -257,8 +257,9 @@ function FeedInfoTooltip() {
 
 // ── PipelineConfigPanel ───────────────────────────────────────────────────────
 
-function PipelineConfigPanel({ config, onChange, onClose }: {
+function PipelineConfigPanel({ config, onChange, onClose, scheduleInfo }: {
   config: PipelineConfig; onChange: (c: PipelineConfig) => void; onClose: () => void
+  scheduleInfo?: { enabled: boolean; hourUtc: number | null } | null
 }) {
   return (
     <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-2xl p-4 mb-5 shadow-sm">
@@ -298,6 +299,18 @@ function PipelineConfigPanel({ config, onChange, onClose }: {
           </div>
         </div>
         <p className="text-xs text-zinc-400">Settings apply to the next pipeline run. More articles = longer pipeline runtime.</p>
+
+        {scheduleInfo?.enabled && scheduleInfo.hourUtc !== null ? (
+          <div className="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/20 px-3.5 py-3 text-xs text-emerald-800 dark:text-emerald-200 leading-relaxed">
+            🕐 You already have auto-refresh scheduled for ~{hourUtcToLocalLabel(scheduleInfo.hourUtc)} your time, daily — this lookback/max-per-source applies there too.{' '}
+            <a href="/settings" className="font-semibold underline hover:no-underline">Manage in Settings →</a>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/20 px-3.5 py-3 text-xs text-violet-800 dark:text-violet-200 leading-relaxed">
+            💡 Don&apos;t want to click this every day? You can schedule an automatic daily refresh from{' '}
+            <a href="/settings" className="font-semibold underline hover:no-underline">Model Settings</a>.
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1717,7 +1730,7 @@ export default function FeedPage() {
       </div>
 
       {/* Pipeline config */}
-      {showConfig && <PipelineConfigPanel config={pipelineConfig} onChange={saveConfig} onClose={() => setShowConfig(false)} />}
+      {showConfig && <PipelineConfigPanel config={pipelineConfig} onChange={saveConfig} onClose={() => setShowConfig(false)} scheduleInfo={scheduleInfo} />}
 
       {setupStatus && !setupStatus.checklistComplete && (
         <div className="mb-5">
