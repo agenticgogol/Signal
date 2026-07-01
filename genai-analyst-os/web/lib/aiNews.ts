@@ -99,6 +99,12 @@ const STORY_STOPWORDS = new Set([
   'from','by','at','this','that','will','can','says','say','said',
 ])
 
+// Words that are too generic in an AI-news context to count as a shared
+// "entity" between two headlines (everything is about AI here).
+const ENTITY_NOISE_WORDS = new Set([
+  'ai','llm','llms','gpt','api','ceo','cto','new','the','this','that',
+])
+
 function titleTokens(title: string): Set<string> {
   return new Set((title.toLowerCase().match(/[a-z0-9][a-z0-9'-]{2,}/g) ?? []).filter(w => !STORY_STOPWORDS.has(w)))
 }
@@ -110,8 +116,33 @@ function titleOverlap(a: Set<string>, b: Set<string>): number {
   return shared / Math.min(a.size, b.size)
 }
 
+// Different outlets paraphrase headlines heavily — "Meta follows SpaceX's
+// playbook and builds a cloud business to sell spare AI compute" vs "Meta,
+// like SpaceX, looks to turn excess AI compute into cash" describe the same
+// story but share only ~25% of their words. Named entities (proper nouns:
+// "Meta", "SpaceX") survive paraphrasing far better than general wording, so
+// entity overlap is the primary signal; plain word overlap is a fallback
+// for headlines with few/no capitalized names.
+function titleEntities(title: string): Set<string> {
+  const matches = title.match(/\b[A-Z][a-zA-Z0-9]*(?:'s)?\b/g) ?? []
+  return new Set(
+    matches
+      .map(m => m.replace(/'s$/, '').toLowerCase())
+      .filter(w => w.length >= 3 && !ENTITY_NOISE_WORDS.has(w))
+  )
+}
+
+function isSameStory(a: { tokens: Set<string>; entities: Set<string> }, b: { tokens: Set<string>; entities: Set<string> }): boolean {
+  if (a.entities.size >= 2 && b.entities.size >= 2) {
+    let shared = 0
+    for (const e of a.entities) if (b.entities.has(e)) shared++
+    if (shared >= 2 && shared / Math.min(a.entities.size, b.entities.size) >= 0.66) return true
+  }
+  return titleOverlap(a.tokens, b.tokens) >= SAME_STORY_OVERLAP_THRESHOLD
+}
+
 const SAME_STORY_WINDOW_MS = 36 * 60 * 60 * 1000
-const SAME_STORY_OVERLAP_THRESHOLD = 0.55
+const SAME_STORY_OVERLAP_THRESHOLD = 0.4
 
 export interface AiNewsStory {
   title: string
@@ -126,19 +157,23 @@ export interface AiNewsStory {
 
 export async function fetchAiNewsStories(limit = 40): Promise<AiNewsStory[]> {
   const items = await fetchAiNews(120)
-  const clusters: { items: AiNewsItem[]; tokens: Set<string> }[] = []
+  // Compare a candidate against each existing member of a cluster
+  // individually (best match wins) rather than an accumulating merged token
+  // set — a merged set drifts as a cluster grows, eventually looking similar
+  // enough to match unrelated stories that happen to share a few words.
+  const clusters: { items: AiNewsItem[]; signatures: { tokens: Set<string>; entities: Set<string> }[] }[] = []
 
   for (const item of items) {
-    const tokens = titleTokens(item.title)
+    const signature = { tokens: titleTokens(item.title), entities: titleEntities(item.title) }
     const match = clusters.find(cluster =>
       cluster.items.some(existing => Math.abs(existing.pubMs - item.pubMs) <= SAME_STORY_WINDOW_MS) &&
-      titleOverlap(tokens, cluster.tokens) >= SAME_STORY_OVERLAP_THRESHOLD
+      cluster.signatures.some(existing => isSameStory(signature, existing))
     )
     if (match) {
       match.items.push(item)
-      for (const t of tokens) match.tokens.add(t)
+      match.signatures.push(signature)
     } else {
-      clusters.push({ items: [item], tokens })
+      clusters.push({ items: [item], signatures: [signature] })
     }
   }
 
