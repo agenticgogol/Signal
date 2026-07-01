@@ -7,7 +7,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}))
   const userId = typeof body.userId === 'string' ? body.userId : ''
   const queueItemId = typeof body.queueItemId === 'string' ? body.queueItemId : ''
-  const status = body.status === 'read' ? 'read' : body.status === 'skipped' ? 'skipped' : null
+  const status = body.status === 'read' ? 'read' : body.status === 'skipped' ? 'skipped' : body.status === 'unread' ? 'unread' : null
   if (!userId || !queueItemId || !status) {
     return Response.json({ error: 'userId, queueItemId, and a valid status are required' }, { status: 400 })
   }

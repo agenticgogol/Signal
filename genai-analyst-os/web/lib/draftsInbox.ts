@@ -186,7 +186,14 @@ export interface SmartDraftResult {
 // trending news, and emerging/trending topics — each weighted per the
 // user's Settings (or the agreed defaults), with topic-interest alignment
 // applied as a multiplier rather than a sixth competing signal.
-export async function generateSmartDraftsForUser(userId: string, customTopic?: string): Promise<{ drafts: SmartDraftResult[]; skipped?: string }> {
+//
+// Platform selection: if the caller explicitly picks formats (the Today
+// page's "Generate" popup), the first one runs the full pipeline and every
+// additional one is a cheap Republish-adapted variant of it — same idea,
+// however many platforms the user chose, not N full generations. With no
+// explicit choice (the autonomous daily job), falls back to the user's
+// configured default format plus one naturally paired platform.
+export async function generateSmartDraftsForUser(userId: string, customTopic?: string, formats?: string[]): Promise<{ drafts: SmartDraftResult[]; skipped?: string }> {
   const db = createServiceClient()
 
   const trimmedTopic = customTopic?.trim()
@@ -197,8 +204,10 @@ export async function generateSmartDraftsForUser(userId: string, customTopic?: s
 
   const { data: profile } = await db.from('user_profiles').select('voice_fingerprint, drafts_inbox_format').eq('id', userId).maybeSingle()
   const voiceFingerprint = (profile?.voice_fingerprint as VoiceFingerprint | null) ?? null
-  const primaryFormat = String(profile?.drafts_inbox_format || 'linkedin')
-  const secondaryFormat = PAIRED_FORMAT[primaryFormat] ?? 'thread'
+
+  const chosenFormats = formats && formats.length > 0 ? Array.from(new Set(formats)) : null
+  const primaryFormat = chosenFormats ? chosenFormats[0] : String(profile?.drafts_inbox_format || 'linkedin')
+  const remainingFormats = chosenFormats ? chosenFormats.slice(1) : [PAIRED_FORMAT[primaryFormat] ?? 'thread']
 
   const { brief, title, sourceUrl, sources } = trimmedTopic
     ? buildSourcesFromCustomTopic(trimmedTopic)
@@ -214,15 +223,16 @@ export async function generateSmartDraftsForUser(userId: string, customTopic?: s
   if (primaryInsert.error && primaryInsert.error.code !== '23505') throw primaryInsert.error
   if (!primaryInsert.error) results.push({ format: primaryFormat, itemId: primaryInsert.data.id, isNew: true })
 
-  if (secondaryFormat !== primaryFormat) {
-    const secondaryContent = await runRepublishAgent(userId, primaryContent, primaryFormat, secondaryFormat, sources, voiceFingerprint)
-    const secondaryInsert = await db
+  for (const extraFormat of remainingFormats) {
+    if (extraFormat === primaryFormat) continue
+    const extraContent = await runRepublishAgent(userId, primaryContent, primaryFormat, extraFormat, sources, voiceFingerprint)
+    const extraInsert = await db
       .from('draft_inbox_items')
-      .insert({ user_id: userId, topic: title.slice(0, 200), format: secondaryFormat, brief, final_content: secondaryContent, source_title: title, source_url: sourceUrl })
+      .insert({ user_id: userId, topic: title.slice(0, 200), format: extraFormat, brief, final_content: extraContent, source_title: title, source_url: sourceUrl })
       .select('id')
       .single()
-    if (secondaryInsert.error && secondaryInsert.error.code !== '23505') throw secondaryInsert.error
-    if (!secondaryInsert.error) results.push({ format: secondaryFormat, itemId: secondaryInsert.data.id, isNew: true })
+    if (extraInsert.error && extraInsert.error.code !== '23505') throw extraInsert.error
+    if (!extraInsert.error) results.push({ format: extraFormat, itemId: extraInsert.data.id, isNew: true })
   }
 
   if (results.length === 0) {

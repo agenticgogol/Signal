@@ -135,7 +135,7 @@ export default function TodayPage() {
     setRefreshing(false)
   }
 
-  const setQueueStatus = async (queueItemId: string, status: 'read' | 'skipped') => {
+  const setQueueStatus = async (queueItemId: string, status: 'read' | 'skipped' | 'unread') => {
     setActioningId(queueItemId)
     try {
       const res = await fetch('/api/today/queue/complete', {
@@ -195,6 +195,8 @@ export default function TodayPage() {
   const [smartGenerateNote, setSmartGenerateNote] = useState<string | null>(null)
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false)
   const [showGenerateAdminGate, setShowGenerateAdminGate] = useState(false)
+  const [showPlatformPicker, setShowPlatformPicker] = useState(false)
+  const [selectedFormats, setSelectedFormats] = useState<string[]>(['linkedin'])
   const [expandedDraftId, setExpandedDraftId] = useState<string | null>(null)
   const [customTopic, setCustomTopic] = useState('')
   const [feedbackDraftId, setFeedbackDraftId] = useState<string | null>(null)
@@ -250,6 +252,11 @@ export default function TodayPage() {
       const json = await res.json()
       if (res.ok) setCanUsePaidFeatures(Boolean(json.canUsePaidFeatures))
     } catch {}
+    try {
+      const res = await fetch(`/api/data/drafts-inbox-settings?userId=${encodeURIComponent(userId)}`, { headers: authHeaders() })
+      const json = await res.json()
+      if (res.ok && json.format) setSelectedFormats([json.format])
+    } catch {}
   }
 
   const fetchStreaks = async () => {
@@ -302,7 +309,11 @@ export default function TodayPage() {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
       if (adminToken) headers['x-admin-token'] = adminToken
-      const res = await fetch('/api/today/generate', { method: 'POST', headers, body: JSON.stringify({ userId, customTopic: customTopic.trim() || undefined }) })
+      const res = await fetch('/api/today/generate', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ userId, customTopic: customTopic.trim() || undefined, formats: selectedFormats }),
+      })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Could not generate content')
       if (json.skipped) setSmartGenerateNote(json.skipped)
@@ -318,6 +329,16 @@ export default function TodayPage() {
   }
 
   const handleSmartGenerateClick = () => {
+    setShowPlatformPicker(true)
+  }
+
+  const toggleFormatSelection = (format: string) => {
+    setSelectedFormats(prev => prev.includes(format) ? prev.filter(f => f !== format) : [...prev, format])
+  }
+
+  const confirmPlatformPicker = () => {
+    if (selectedFormats.length === 0) return
+    setShowPlatformPicker(false)
     if (canUsePaidFeatures) setShowGenerateConfirm(true)
     else setShowGenerateAdminGate(true)
   }
@@ -363,12 +384,36 @@ export default function TodayPage() {
       {showGenerateConfirm && (
         <ActionConfirmModal
           title="Confirm API usage"
-          description="Picks your best-engaged topic and writes it up for your configured platform, plus one cheap adapted variant for a paired platform — uses your configured model, costs API credits."
+          description={`Picks your best-engaged topic and writes it up for ${selectedFormats.join(', ')}${selectedFormats.length > 1 ? ' — first one gets the full pipeline, the rest are cheap adapted variants of it' : ''} — uses your configured model, costs API credits.`}
           confirmLabel="Generate"
           action="generate today's content"
           onConfirm={() => { setShowGenerateConfirm(false); doSmartGenerate() }}
           onCancel={() => setShowGenerateConfirm(false)}
         />
+      )}
+      {showPlatformPicker && (
+        <SimpleModal title="Which platform(s)?" onClose={() => setShowPlatformPicker(false)}>
+          <p className="text-xs text-zinc-400 mb-3">The first one gets the full evidence-grounded pipeline; any others are cheap adapted variants of that same draft.</p>
+          <div className="space-y-2 mb-4">
+            {[
+              { id: 'linkedin', label: 'LinkedIn' },
+              { id: 'substack', label: 'Substack' },
+              { id: 'thread', label: 'Twitter/X Thread' },
+              { id: 'blog', label: 'Blog Post' },
+              { id: 'youtube_long', label: 'YouTube Long Script' },
+              { id: 'youtube_short', label: 'YouTube Short Script' },
+            ].map(({ id, label }) => (
+              <label key={id} className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200">
+                <input type="checkbox" checked={selectedFormats.includes(id)} onChange={() => toggleFormatSelection(id)} />
+                {label}
+              </label>
+            ))}
+          </div>
+          <button onClick={confirmPlatformPicker} disabled={selectedFormats.length === 0}
+            className="w-full rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-50 px-4 py-2 text-sm font-bold text-white transition-colors">
+            Continue
+          </button>
+        </SimpleModal>
       )}
       {showRefreshConfirm && (
         <SimpleModal title="Refresh your reading queue?" onClose={() => setShowRefreshConfirm(false)}>
@@ -537,9 +582,14 @@ export default function TodayPage() {
                 <p className="text-xs font-bold uppercase tracking-wide text-zinc-400 mb-2">Done today</p>
                 <div className="space-y-1.5">
                   {doneEntries.map(entry => (
-                    <div key={entry.id} className="flex items-center gap-3 rounded-xl border border-zinc-100 dark:border-zinc-800 px-4 py-2.5 opacity-60">
-                      <span className="shrink-0 text-sm">{entry.status === 'read' ? '✅' : '⏭️'}</span>
+                    <div key={entry.id} className="flex items-center gap-3 rounded-xl border border-zinc-100 dark:border-zinc-800 px-4 py-2.5">
+                      <button onClick={() => setQueueStatus(entry.id, 'unread')} disabled={actioningId === entry.id}
+                        className="shrink-0 text-sm hover:opacity-60 transition-opacity" title="Move back to unread">
+                        {entry.status === 'read' ? '✅' : '⏭️'}
+                      </button>
                       <p className="flex-1 min-w-0 text-sm text-zinc-500 dark:text-zinc-400 truncate line-through">{entry.title}</p>
+                      <button onClick={() => setQueueStatus(entry.id, 'unread')} disabled={actioningId === entry.id}
+                        className="shrink-0 text-[11px] font-medium text-zinc-400 hover:text-violet-600 dark:hover:text-violet-400">↩ Undo</button>
                     </div>
                   ))}
                 </div>

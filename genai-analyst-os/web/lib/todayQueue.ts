@@ -245,11 +245,15 @@ export async function regenerateTodayQueue(userId: string): Promise<{ entries: Q
   return { entries, targetMinutes }
 }
 
-export async function markQueueItemStatus(userId: string, queueItemId: string, status: 'read' | 'skipped'): Promise<void> {
+export async function markQueueItemStatus(userId: string, queueItemId: string, status: 'read' | 'skipped' | 'unread'): Promise<void> {
   const db = createServiceClient()
   const { error } = await db
     .from('daily_reading_queue')
-    .update({ status, completed_at: new Date().toISOString() })
+    // Undoing back to 'unread' clears completed_at too — it's genuinely
+    // not done anymore, not just relabeled, so it shouldn't keep a stale
+    // completion timestamp around (streaks/candidate-cooldown logic both
+    // read completed_at as "when this was actually finished").
+    .update({ status, completed_at: status === 'unread' ? null : new Date().toISOString() })
     .eq('user_id', userId)
     .eq('id', queueItemId)
   if (error) throw error
