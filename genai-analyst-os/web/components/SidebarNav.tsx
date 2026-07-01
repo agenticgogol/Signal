@@ -5,15 +5,16 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
 const CORE_ITEMS = [
-  { href: '/feed',      label: 'Feed',     icon: '📰' },
-  { href: '/ideas',     label: 'Ideas',    icon: '💡' },
-  { href: '/create',    label: 'Create',   icon: '✍️' },
-  { href: '/knowledge', label: 'Reading List', icon: '📖' },
-  { href: '/sources',   label: 'Sources',  icon: '🔗' },
+  { href: '/today',       label: 'Today',        icon: '📋' },
+  { href: '/drafts-inbox', label: 'Drafts Inbox', icon: '📥' },
+  { href: '/feed',        label: 'Feed',         icon: '📰' },
+  { href: '/ideas',       label: 'Ideas',        icon: '💡' },
+  { href: '/create',      label: 'Create',       icon: '✍️' },
+  { href: '/knowledge',   label: 'Reading List', icon: '📖' },
+  { href: '/sources',     label: 'Sources',      icon: '🔗' },
 ]
 
 const MORE_ITEMS = [
-  { href: '/drafts-inbox',          label: 'Drafts Inbox',     icon: '📥' },
   { href: '/memory',                label: 'Memory Assistant', icon: '🧠' },
   { href: '/voice',                 label: 'My Voice',         icon: '🎙️' },
   { href: '/settings',              label: 'Settings',         icon: '⚙️' },
