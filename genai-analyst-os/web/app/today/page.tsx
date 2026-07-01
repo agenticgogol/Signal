@@ -200,6 +200,8 @@ export default function TodayPage() {
   const [selectedFormats, setSelectedFormats] = useState<string[]>(['linkedin'])
   const [ideaCount, setIdeaCount] = useState(1)
   const [showAllIdeas, setShowAllIdeas] = useState(false)
+  const [showAllReading, setShowAllReading] = useState(false)
+  const [showDoneToday, setShowDoneToday] = useState(false)
   const [askExternalQuestion, setAskExternalQuestion] = useState<{ text: string; nonce: number } | null>(null)
 
   const askAbout = (title: string) => {
@@ -310,10 +312,14 @@ export default function TodayPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, session?.access_token, userId])
 
+  // Fire-and-poll: the actual generation runs server-side via Next.js
+  // after(), decoupled from this request's connection, so navigating away
+  // (or even closing the tab) can no longer cut it short — the job keeps
+  // running and the result is there next time you check.
   const doSmartGenerate = async (adminToken?: string) => {
     setSmartGenerating(true)
     setSmartGenerateError(null)
-    setSmartGenerateNote(null)
+    setSmartGenerateNote('Generating in the background — feel free to browse elsewhere, this will finish on its own.')
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
@@ -324,17 +330,40 @@ export default function TodayPage() {
         body: JSON.stringify({ userId, customTopic: customTopic.trim() || undefined, formats: selectedFormats, ideaCount: customTopic.trim() ? 1 : ideaCount }),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error ?? 'Could not generate content')
-      if (json.skipped) setSmartGenerateNote(json.skipped)
-      else {
-        setSmartGenerateNote(`Generated ${json.drafts.length} draft${json.drafts.length !== 1 ? 's' : ''}: ${json.drafts.map((d: { format: string }) => d.format).join(', ')}.`)
-        setCustomTopic('')
-      }
-      await fetchDrafts()
+      if (!res.ok) throw new Error(json.error ?? 'Could not start generation')
+      setCustomTopic('')
+      pollGenerateStatus(json.jobId)
     } catch (e) {
       setSmartGenerateError(e instanceof Error ? e.message : String(e))
+      setSmartGenerating(false)
     }
-    setSmartGenerating(false)
+  }
+
+  const pollGenerateStatus = (jobId: string, attempt = 0) => {
+    if (attempt > 90) {
+      setSmartGenerateError('Still running after several minutes — check back later, it will show up here once done.')
+      setSmartGenerating(false)
+      return
+    }
+    setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/today/generate/status?userId=${encodeURIComponent(userId)}&jobId=${encodeURIComponent(jobId)}`, { headers: authHeaders() })
+        const json = await res.json()
+        if (json.status === 'completed') {
+          const drafts = json.result?.drafts ?? []
+          setSmartGenerateNote(json.result?.skipped ?? `Generated ${drafts.length} draft${drafts.length !== 1 ? 's' : ''}: ${drafts.map((d: { format: string }) => d.format).join(', ')}.`)
+          setSmartGenerating(false)
+          await fetchDrafts()
+        } else if (json.status === 'failed') {
+          setSmartGenerateError(json.error ?? 'Generation failed')
+          setSmartGenerating(false)
+        } else {
+          pollGenerateStatus(jobId, attempt + 1)
+        }
+      } catch {
+        pollGenerateStatus(jobId, attempt + 1)
+      }
+    }, 4000)
   }
 
   const handleSmartGenerateClick = () => {
@@ -374,6 +403,7 @@ export default function TodayPage() {
 
   const pendingEntries = entries.filter(e => e.status === 'unread')
   const doneEntries = entries.filter(e => e.status !== 'unread')
+  const visiblePendingEntries = showAllReading ? pendingEntries : pendingEntries.slice(0, 3)
   const progressPct = entries.length > 0 ? Math.min(100, Math.round((doneEntries.length / entries.length) * 100)) : 0
   const allDone = entries.length > 0 && pendingEntries.length === 0
   const pendingDrafts = drafts.filter(d => d.status === 'pending')
@@ -486,29 +516,30 @@ export default function TodayPage() {
       </div>
 
       {streaks && (streaks.reading.currentStreak > 0 || streaks.publishing.currentStreak > 0 || streaks.reading.isMilestoneToday || streaks.publishing.isMilestoneToday) && (
-        <div className="mb-8 grid grid-cols-2 gap-4">
+        <div className="mb-6 flex items-center gap-4 flex-wrap rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-2 text-xs">
           {([
-            { info: streaks.reading, label: 'Reading streak', icon: '📖' },
-            { info: streaks.publishing, label: 'Publishing streak', icon: '🗣️' },
+            { info: streaks.reading, label: 'Reading', icon: '📖' },
+            { info: streaks.publishing, label: 'Publishing', icon: '🗣️' },
           ] as const).map(({ info, label, icon }) => (
-            <div key={label} className={`rounded-2xl border p-4 ${info.isMilestoneToday ? 'border-amber-300 dark:border-amber-700 bg-amber-50/60 dark:bg-amber-950/20' : 'border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900'}`}>
-              <div className="flex items-center gap-2">
-                <span className="text-xl">{info.currentStreak > 0 ? '🔥' : icon}</span>
-                <div>
-                  <p className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{info.currentStreak} day{info.currentStreak === 1 ? '' : 's'}</p>
-                  <p className="text-[11px] text-zinc-400">{label} · {info.last7Days}/7 this week · {info.last30Days}/30 this month</p>
-                </div>
-              </div>
-              {info.isMilestoneToday && (
-                <p className="mt-2 text-xs font-semibold text-amber-700 dark:text-amber-300">🎉 {info.currentStreak}-day milestone — nice consistency!</p>
-              )}
-              {!info.isMilestoneToday && info.nextMilestone && (
-                <p className="mt-2 text-[11px] text-zinc-400">{info.nextMilestone - info.currentStreak} more day{info.nextMilestone - info.currentStreak === 1 ? '' : 's'} to a {info.nextMilestone}-day streak</p>
-              )}
-            </div>
+            <span key={label} className="flex items-center gap-1.5">
+              <span>{info.currentStreak > 0 ? '🔥' : icon}</span>
+              <span className="font-bold text-zinc-900 dark:text-zinc-100">{info.currentStreak}d</span>
+              <span className="text-zinc-400">{label} · {info.last7Days}/7 wk</span>
+              {info.isMilestoneToday && <span className="font-semibold text-amber-600 dark:text-amber-400">🎉 milestone!</span>}
+            </span>
           ))}
         </div>
       )}
+
+      {/* ══ Ask Signal — right up top and inline, so it's impossible to
+          miss, no navigation away needed to use it ══════════════════════ */}
+      <section id="today-ask-signal" className="mb-6">
+        <div className="flex items-center gap-1.5 mb-1">
+          <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">💬 Ask Signal</h2>
+          <span className="text-xs text-zinc-400">— searches Feed, Reading List, and News together</span>
+        </div>
+        <AskSignalPanel variant="compact" externalQuestion={askExternalQuestion} crossLink={{ href: '/memory', label: 'Open full Memory Assistant →' }} />
+      </section>
 
       <div className="grid gap-8 lg:grid-cols-2 mb-10">
       {/* ══ JOB 1: What to read ═══════════════════════════════════════════ */}
@@ -558,7 +589,7 @@ export default function TodayPage() {
           </div>
         ) : (
           <div className="space-y-2">
-            {pendingEntries.map(entry => {
+            {visiblePendingEntries.map(entry => {
               const expanded = expandedId === entry.id
               const previewText = entry.whyItMatters || entry.summary || (entry.takeaways[0] ?? '')
               return (
@@ -612,9 +643,18 @@ export default function TodayPage() {
               )
             })}
 
+            {pendingEntries.length > visiblePendingEntries.length && (
+              <button onClick={() => setShowAllReading(true)} className="text-xs font-semibold text-violet-600 dark:text-violet-400 hover:underline">
+                Show {pendingEntries.length - visiblePendingEntries.length} more →
+              </button>
+            )}
+
             {doneEntries.length > 0 && (
               <div className="pt-2">
-                <p className="text-xs font-bold uppercase tracking-wide text-zinc-400 mb-2">Done today</p>
+                <button onClick={() => setShowDoneToday(v => !v)} className="text-xs font-bold uppercase tracking-wide text-zinc-400 mb-2 hover:text-violet-600 dark:hover:text-violet-400">
+                  {showDoneToday ? '▲' : '▼'} Done today ({doneEntries.length})
+                </button>
+                {showDoneToday && (
                 <div className="space-y-1.5">
                   {doneEntries.map(entry => (
                     <div key={entry.id} className="flex items-center gap-3 rounded-xl border border-zinc-100 dark:border-zinc-800 px-4 py-2.5">
@@ -628,6 +668,7 @@ export default function TodayPage() {
                     </div>
                   ))}
                 </div>
+                )}
               </div>
             )}
           </div>
@@ -766,13 +807,6 @@ export default function TodayPage() {
         )}
       </section>
       </div>
-
-      {/* ══ Ask Signal — inline, no navigation away ═════════════════════ */}
-      <section id="today-ask-signal" className="mb-10">
-        <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100 mb-1">💬 Ask Signal</h2>
-        <p className="text-xs text-zinc-400 mb-3">Searches your Feed, Reading List, and News together. Click "💬 Ask about this" / "💬 Ask" on anything above to jump straight to a question about it.</p>
-        <AskSignalPanel variant="compact" externalQuestion={askExternalQuestion} crossLink={{ href: '/memory', label: 'Open full Memory Assistant →' }} />
-      </section>
 
       {/* ══ Explore more ═══════════════════════════════════════════════ */}
       <section>

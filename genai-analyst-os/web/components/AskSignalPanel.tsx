@@ -77,6 +77,8 @@ export default function AskSignalPanel({
   const [chatHistory, setChatHistory] = useState<ChatHistoryItem[]>([])
   const [articleHistory, setArticleHistory] = useState<ArticleHistoryItem[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [showChatHistory, setShowChatHistory] = useState(false)
+  const [showArticleHistory, setShowArticleHistory] = useState(false)
   const [showAdminGate, setShowAdminGate] = useState(false)
 
   const fetchHistory = useCallback(async () => {
@@ -216,11 +218,17 @@ export default function AskSignalPanel({
       </div>
 
       {/* Prior questions — shared across both surfaces, so a question asked
-          on the Feed tab shows up here and vice versa. */}
+          on the Feed tab shows up here and vice versa. Collapsed by default
+          so this panel doesn't dominate pages (like Today) where it's one
+          of several sections competing for space. */}
       {!historyLoading && chatHistory.length > 0 && (
-        <div className={`rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 ${compact ? 'mb-5' : 'mb-6'}`}>
-          <p className="text-xs font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400 mb-3">Recent questions</p>
-          <div className="space-y-2">
+        <div className={`rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 ${compact ? 'mb-5' : 'mb-6'} ${showChatHistory ? 'p-5' : 'px-5 py-3'}`}>
+          <button onClick={() => setShowChatHistory(v => !v)} className="w-full flex items-center justify-between gap-2">
+            <p className="text-xs font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400">Recent questions ({chatHistory.length})</p>
+            <span className="text-xs text-zinc-400">{showChatHistory ? '▲ Hide' : '▼ Show'}</span>
+          </button>
+          {showChatHistory && (
+          <div className="space-y-2 mt-3">
             {chatHistory.slice(0, compact ? 8 : 12).map(item => (
               <button
                 key={item.id}
@@ -237,14 +245,19 @@ export default function AskSignalPanel({
               </button>
             ))}
           </div>
+          )}
         </div>
       )}
 
-      {/* Reading history — "you saw this before" */}
+      {/* Reading history — "you saw this before" — also collapsed by default */}
       {!historyLoading && articleHistory.length > 0 && (
-        <div className={`rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 ${compact ? 'mb-5' : 'mb-6'}`}>
-          <p className="text-xs font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400 mb-3">Your reading history</p>
-          <div className="space-y-2">
+        <div className={`rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 ${compact ? 'mb-5' : 'mb-6'} ${showArticleHistory ? 'p-5' : 'px-5 py-3'}`}>
+          <button onClick={() => setShowArticleHistory(v => !v)} className="w-full flex items-center justify-between gap-2">
+            <p className="text-xs font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">Your reading history ({articleHistory.length})</p>
+            <span className="text-xs text-zinc-400">{showArticleHistory ? '▲ Hide' : '▼ Show'}</span>
+          </button>
+          {showArticleHistory && (
+          <div className="space-y-2 mt-3">
             {articleHistory.slice(0, compact ? 10 : 14).map(item => (
               <a
                 key={item.articleId}
@@ -265,6 +278,7 @@ export default function AskSignalPanel({
               </a>
             ))}
           </div>
+          )}
         </div>
       )}
 
