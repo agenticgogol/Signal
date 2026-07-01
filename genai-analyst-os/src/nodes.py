@@ -383,9 +383,29 @@ def ideas(state: PipelineState) -> dict:
     logger.info("node_start", node="ideas", session_id=state.user_id)
     _start("ideas", f"feed_items={len(state.feed_items)}, style={state.style_seed}")
 
-    # Idempotency: skip if 5 ideas already generated today
+    # Idempotency: skip if 5 ideas already generated today. This must still
+    # close THIS run's crawl_runs row — the crawl/rank steps above already
+    # ran for this specific invocation; only idea-generation is redundant.
+    # Skipping the close here used to leave the UI's status poll stuck on
+    # "running" forever any time a user triggered a second run (manual or
+    # scheduled) on a day ideas already existed for.
     if len(state.daily_ideas) == 5:
         log_event({"type": "node_start", "node": "ideas", "input_preview": "SKIPPED — already generated today"})
+        if not _IS_MOCK() and state.crawl_run_id:
+            from src.db import get_client
+            try:
+                get_client().table("crawl_runs").update({
+                    "completed_at":          datetime.now(tz=timezone.utc).isoformat(),
+                    "status":                "degraded" if state.errors else "completed",
+                    "articles_fetched":      len(state.raw_articles),
+                    "articles_new":          len(state.summaries),
+                    "articles_failed":       sum(1 for e in state.errors if e.get("node") == "summarise"),
+                    "users_ranked":          1 if state.feed_items else 0,
+                    "users_ideas_generated": 1,
+                    "error_log":             state.errors,
+                }).eq("id", state.crawl_run_id).execute()
+            except Exception as exc:
+                logger.warning("crawl_run_close_failed_on_idea_skip", error=str(exc))
         logger.info("node_end", node="ideas", session_id=state.user_id, output_keys=[], skipped=True)
         return {}
 
