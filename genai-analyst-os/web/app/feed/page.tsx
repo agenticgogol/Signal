@@ -255,62 +255,179 @@ function FeedInfoTooltip() {
   )
 }
 
-// ── PipelineConfigPanel ───────────────────────────────────────────────────────
+// ── PipelineConfigFields ──────────────────────────────────────────────────────
 
-function PipelineConfigPanel({ config, onChange, onClose, scheduleInfo }: {
-  config: PipelineConfig; onChange: (c: PipelineConfig) => void; onClose: () => void
+// Lookback/max-per-source picker + schedule nudge, rendered inline inside
+// the "Get Latest Feed" modal below — there is no separate gear icon
+// anymore, since that was confusing users about how it related to the
+// trigger button and the "Subscription + API key required" label next to it.
+function PipelineConfigFields({ config, onChange, scheduleInfo }: {
+  config: PipelineConfig; onChange: (c: PipelineConfig) => void
   scheduleInfo?: { enabled: boolean; hourUtc: number | null } | null
 }) {
   return (
-    <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-2xl p-4 mb-5 shadow-sm">
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Pipeline settings</p>
-        <button onClick={onClose} className="text-zinc-400 hover:text-zinc-600 text-xl leading-none">×</button>
+    <div className="space-y-4">
+      <div>
+        <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Lookback — how far back to fetch articles</p>
+        <div className="flex gap-2 flex-wrap">
+          {[1, 3, 7, 14].map(n => (
+            <button key={n} onClick={() => onChange({ ...config, lookbackDays: n })}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                config.lookbackDays === n
+                  ? 'bg-violet-600 text-white border-violet-600'
+                  : 'bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-violet-300'
+              }`}>
+              {n} day{n > 1 ? 's' : ''}{n === 7 ? ' (default)' : ''}
+            </button>
+          ))}
+        </div>
       </div>
-      <div className="space-y-4">
-        <div>
-          <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Lookback — how far back to fetch articles</p>
-          <div className="flex gap-2 flex-wrap">
-            {[1, 3, 7, 14].map(n => (
-              <button key={n} onClick={() => onChange({ ...config, lookbackDays: n })}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                  config.lookbackDays === n
-                    ? 'bg-violet-600 text-white border-violet-600'
-                    : 'bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-violet-300'
-                }`}>
-                {n} day{n > 1 ? 's' : ''}{n === 7 ? ' (default)' : ''}
-              </button>
-            ))}
-          </div>
+      <div>
+        <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Max articles per source per run</p>
+        <div className="flex gap-2 flex-wrap">
+          {[1, 3, 5, 10].map(n => (
+            <button key={n} onClick={() => onChange({ ...config, maxPerSource: n })}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                config.maxPerSource === n
+                  ? 'bg-violet-600 text-white border-violet-600'
+                  : 'bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-violet-300'
+              }`}>
+              {n}{n === 5 ? ' (default)' : ''}
+            </button>
+          ))}
         </div>
-        <div>
-          <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Max articles per source per run</p>
-          <div className="flex gap-2 flex-wrap">
-            {[1, 3, 5, 10].map(n => (
-              <button key={n} onClick={() => onChange({ ...config, maxPerSource: n })}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                  config.maxPerSource === n
-                    ? 'bg-violet-600 text-white border-violet-600'
-                    : 'bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-violet-300'
-                }`}>
-                {n}{n === 5 ? ' (default)' : ''}
-              </button>
-            ))}
-          </div>
-        </div>
-        <p className="text-xs text-zinc-400">Settings apply to the next pipeline run. More articles = longer pipeline runtime.</p>
+      </div>
+      <p className="text-xs text-zinc-400">More articles = longer pipeline runtime.</p>
 
-        {scheduleInfo?.enabled && scheduleInfo.hourUtc !== null ? (
-          <div className="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/20 px-3.5 py-3 text-xs text-emerald-800 dark:text-emerald-200 leading-relaxed">
-            🕐 You already have auto-refresh scheduled for ~{hourUtcToLocalLabel(scheduleInfo.hourUtc)} your time, daily — this lookback/max-per-source applies there too.{' '}
-            <a href="/settings" className="font-semibold underline hover:no-underline">Manage in Settings →</a>
-          </div>
-        ) : (
-          <div className="rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/20 px-3.5 py-3 text-xs text-violet-800 dark:text-violet-200 leading-relaxed">
-            💡 Don&apos;t want to click this every day? You can schedule an automatic daily refresh from{' '}
-            <a href="/settings" className="font-semibold underline hover:no-underline">Model Settings</a>.
-          </div>
-        )}
+      {scheduleInfo?.enabled && scheduleInfo.hourUtc !== null ? (
+        <div className="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/20 px-3.5 py-3 text-xs text-emerald-800 dark:text-emerald-200 leading-relaxed">
+          🕐 You already have auto-refresh scheduled for ~{hourUtcToLocalLabel(scheduleInfo.hourUtc)} your time, daily — this lookback/max-per-source applies there too.{' '}
+          <a href="/settings" className="font-semibold underline hover:no-underline">Manage in Settings →</a>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/20 px-3.5 py-3 text-xs text-violet-800 dark:text-violet-200 leading-relaxed">
+          💡 Don&apos;t want to click this every day? You can schedule an automatic daily refresh from{' '}
+          <a href="/settings" className="font-semibold underline hover:no-underline">Model Settings</a>.
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── GetLatestFeedModal ────────────────────────────────────────────────────────
+// Combines the pipeline settings with the trigger confirmation into a single
+// flow, so clicking "Get Latest Feed" makes it unmistakable that lookback/
+// max-per-source belong to this action — instead of relying on users to
+// separately notice and click the small gear icon beforehand.
+
+function GetLatestFeedModal({
+  config, onChangeConfig, scheduleInfo, canUsePaidFeatures, onCancel, onConfirmPaid, onAdminSuccess,
+}: {
+  config: PipelineConfig
+  onChangeConfig: (c: PipelineConfig) => void
+  scheduleInfo?: { enabled: boolean; hourUtc: number | null } | null
+  canUsePaidFeatures: boolean
+  onCancel: () => void
+  onConfirmPaid: () => void
+  onAdminSuccess: (token: string) => void
+}) {
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [authError, setAuthError] = useState('')
+  const [authLoading, setAuthLoading] = useState(false)
+  const [showAdminFallback, setShowAdminFallback] = useState(false)
+
+  const submitAdmin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setAuthLoading(true)
+    setAuthError('')
+    try {
+      const res = await fetch('/api/auth/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      })
+      const json = await res.json()
+      if (json.ok) onAdminSuccess(json.token)
+      else setAuthError('Invalid username or password')
+    } catch {
+      setAuthError('Auth request failed')
+    }
+    setAuthLoading(false)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-700 p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="mb-5">
+          <h3 className="font-bold text-zinc-900 dark:text-zinc-100 text-lg">⚡ Get Latest Feed</h3>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">Choose how deep this run should look, then confirm.</p>
+        </div>
+
+        <PipelineConfigFields config={config} onChange={onChangeConfig} scheduleInfo={scheduleInfo} />
+
+        <div className="mt-5 pt-5 border-t border-zinc-100 dark:border-zinc-800">
+          {canUsePaidFeatures ? (
+            <>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">This will run a paid background refresh for your account using the settings above. No admin credentials are needed.</p>
+              <div className="flex gap-2">
+                <button onClick={onCancel} className="flex-1 py-2.5 text-sm font-medium text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
+                  Cancel
+                </button>
+                <button onClick={onConfirmPaid} className="flex-1 py-2.5 text-sm font-medium bg-violet-600 hover:bg-violet-700 text-white rounded-xl transition-colors">
+                  Run with these settings
+                </button>
+              </div>
+            </>
+          ) : !showAdminFallback ? (
+            <>
+              <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20 px-3.5 py-3 text-sm text-amber-900 dark:text-amber-200 leading-relaxed mb-4">
+                🔒 This account needs an active subscription and a configured model API key before it can run this itself. Add both in Settings — it only takes a minute.
+              </div>
+              <div className="flex gap-2">
+                <button onClick={onCancel} className="flex-1 py-2.5 text-sm font-medium text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
+                  Cancel
+                </button>
+                <a href="/settings" className="flex-1 py-2.5 text-sm font-medium bg-violet-600 hover:bg-violet-700 text-white rounded-xl transition-colors text-center">
+                  Go to Settings →
+                </a>
+              </div>
+              <button onClick={() => setShowAdminFallback(true)} className="mt-4 text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 underline">
+                I have admin credentials instead
+              </button>
+            </>
+          ) : (
+            <form onSubmit={submitAdmin} className="space-y-3">
+              <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">Enter admin credentials to run the feed pipeline with the settings above.</p>
+              <input
+                type="text"
+                placeholder="Username"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                autoFocus
+                className="w-full text-sm rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-violet-500 placeholder-zinc-400"
+              />
+              <input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className="w-full text-sm rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-violet-500 placeholder-zinc-400"
+              />
+              {authError && <p className="text-xs text-red-600 dark:text-red-400">{authError}</p>}
+              <div className="flex gap-2 pt-1">
+                <button type="button" onClick={onCancel}
+                  className="flex-1 py-2.5 text-sm font-medium text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
+                  Cancel
+                </button>
+                <button type="submit" disabled={authLoading || !username || !password}
+                  className="flex-1 py-2.5 text-sm font-medium bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white rounded-xl transition-colors">
+                  {authLoading ? 'Checking…' : 'Run with these settings'}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -845,9 +962,9 @@ export default function FeedPage() {
   const [pipelineResult, setPipelineResult] = useState<string | null>(null)
   const [showAdminGate, setShowAdminGate] = useState(false)
   const [showPaidConfirm, setShowPaidConfirm] = useState(false)
-  const [pendingFreeAction, setPendingFreeAction] = useState<'feed' | 'narrative' | 'daily' | null>(null)
-  const [pendingPaidAction, setPendingPaidAction] = useState<'feed' | 'narrative' | 'daily' | null>(null)
-  const [showConfig, setShowConfig] = useState(false)
+  const [pendingFreeAction, setPendingFreeAction] = useState<'narrative' | 'daily' | null>(null)
+  const [pendingPaidAction, setPendingPaidAction] = useState<'narrative' | 'daily' | null>(null)
+  const [showFeedModal, setShowFeedModal] = useState(false)
   const [pipelineConfig, setPipelineConfig] = useState<PipelineConfig>(DEFAULT_CONFIG)
   const [scheduleInfo, setScheduleInfo] = useState<{ enabled: boolean; hourUtc: number | null } | null>(null)
 
@@ -1240,7 +1357,7 @@ export default function FeedPage() {
     setDailyDigestProvenance(null)
   }, [userId])
 
-  const promptForCostlyAction = (action: 'feed' | 'narrative' | 'daily') => {
+  const promptForCostlyAction = (action: 'narrative' | 'daily') => {
     if (canUsePaidFeatures) {
       setPendingPaidAction(action)
       setShowPaidConfirm(true)
@@ -1384,7 +1501,7 @@ export default function FeedPage() {
   }
 
   const handleTrigger = () => {
-    promptForCostlyAction('feed')
+    setShowFeedModal(true)
   }
 
   const handleReact = async (articleId: string, r: 'like' | 'dislike') => {
@@ -1609,7 +1726,6 @@ export default function FeedPage() {
     .slice(0, 6)
 
   const selectedCount = selectedForCreate.size
-  const isNonDefaultConfig = pipelineConfig.lookbackDays !== DEFAULT_CONFIG.lookbackDays || pipelineConfig.maxPerSource !== DEFAULT_CONFIG.maxPerSource
 
   // Elapsed progress estimate (pipeline typically 90-150s)
   const pipelineEstimate = 150000
@@ -1622,24 +1738,13 @@ export default function FeedPage() {
       {showAdminGate && (
         <AdminGateModal
           persistSession={false}
-          action={
-            pendingFreeAction === 'narrative'
-              ? 'regenerate the weekly digest'
-              : pendingFreeAction === 'daily'
-                ? 'regenerate the daily digest'
-                : 'run the feed pipeline'
-          }
+          action={pendingFreeAction === 'narrative' ? 'regenerate the weekly digest' : 'regenerate the daily digest'}
           onSuccess={token => {
             setShowAdminGate(false)
             const action = pendingFreeAction
             setPendingFreeAction(null)
-            if (action === 'narrative') {
-              fetchNarrative(true, token)
-            } else if (action === 'daily') {
-              regenerateDailyDigest(token)
-            } else {
-              doTrigger(token)
-            }
+            if (action === 'narrative') fetchNarrative(true, token)
+            else if (action === 'daily') regenerateDailyDigest(token)
           }}
           onCancel={() => {
             setShowAdminGate(false)
@@ -1649,29 +1754,31 @@ export default function FeedPage() {
       {showPaidConfirm && (
         <ActionConfirmModal
           title="Confirm API usage"
-          description={pendingPaidAction === 'feed'
-            ? 'This will run a paid background refresh for your account. No admin credentials are needed.'
-            : 'This will call your configured provider and use your stored account API key. No admin credentials are needed.'}
+          description="This will call your configured provider and use your stored account API key. No admin credentials are needed."
           confirmLabel="Proceed"
-          action={
-            pendingPaidAction === 'narrative'
-              ? 'regenerate the weekly digest'
-              : pendingPaidAction === 'daily'
-                ? 'regenerate the daily digest'
-                : 'run the feed pipeline'
-          }
+          action={pendingPaidAction === 'narrative' ? 'regenerate the weekly digest' : 'regenerate the daily digest'}
           onConfirm={() => {
             const action = pendingPaidAction
             setShowPaidConfirm(false)
             setPendingPaidAction(null)
             if (action === 'narrative') fetchNarrative(true)
             else if (action === 'daily') regenerateDailyDigest()
-            else doTrigger()
           }}
           onCancel={() => {
             setShowPaidConfirm(false)
             setPendingPaidAction(null)
           }}
+        />
+      )}
+      {showFeedModal && (
+        <GetLatestFeedModal
+          config={pipelineConfig}
+          onChangeConfig={saveConfig}
+          scheduleInfo={scheduleInfo}
+          canUsePaidFeatures={canUsePaidFeatures}
+          onCancel={() => setShowFeedModal(false)}
+          onConfirmPaid={() => { setShowFeedModal(false); doTrigger() }}
+          onAdminSuccess={token => { setShowFeedModal(false); doTrigger(token) }}
         />
       )}
 
@@ -1712,25 +1819,22 @@ export default function FeedPage() {
               📌 {selectedCount} → Create
             </a>
           )}
-          <button onClick={() => setShowConfig(s => !s)} title="Pipeline settings"
-            className={`p-2 rounded-xl border transition-all ${isNonDefaultConfig
-              ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700 text-amber-600'
-              : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 text-zinc-400 hover:text-zinc-600'}`}>
-            ⚙️
-          </button>
+          {/* Single button — settings, the trigger, and the subscription/API
+              key requirement all live in one place now (the modal this
+              opens), instead of a separate gear icon that looked unrelated
+              to the "Subscription + API key required" label next to it. */}
           <button onClick={handleTrigger} disabled={triggering || pipelineStarted}
             className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-70 disabled:cursor-not-allowed text-white rounded-xl font-medium text-sm transition-colors shadow-sm">
             {triggering
               ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />Starting…</>
               : pipelineStarted
               ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" />Running {fmtElapsed(elapsed)}</>
-              : <>{canUsePaidFeatures ? '⚡ Get Latest Feed' : '🔒 Subscription + API key required'}</>}
+              : canUsePaidFeatures
+              ? <>⚡ Get Latest Feed</>
+              : <>🔒 Get Latest Feed — unlock</>}
           </button>
         </div>
       </div>
-
-      {/* Pipeline config */}
-      {showConfig && <PipelineConfigPanel config={pipelineConfig} onChange={saveConfig} onClose={() => setShowConfig(false)} scheduleInfo={scheduleInfo} />}
 
       {setupStatus && !setupStatus.checklistComplete && (
         <div className="mb-5">
