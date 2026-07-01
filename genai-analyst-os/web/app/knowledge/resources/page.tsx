@@ -141,7 +141,7 @@ export default function KnowledgeResourcesPage() {
   return (
     <div className="mx-auto max-w-6xl px-6 py-8 pb-20">
       <div className="flex items-center justify-between gap-3 mb-2">
-        <Link href="/knowledge" className="text-xs font-semibold text-violet-600 dark:text-violet-400 hover:underline">← Knowledge Base</Link>
+        <Link href="/knowledge" className="text-xs font-semibold text-violet-600 dark:text-violet-400 hover:underline">← Reading List</Link>
       </div>
 
       <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-7">

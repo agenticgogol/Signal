@@ -2034,7 +2034,7 @@ export default function FeedPage() {
           { id: 'feed'    as Tab, label: `Your Feed${articles.length ? ` (${articles.length})` : ''}` },
           { id: 'digest'  as Tab, label: '✦ Digest' },
           { id: 'news'    as Tab, label: '🌐 Live News' },
-          { id: 'library' as Tab, label: `📚 Knowledge${knowledgeItems.length ? ` (${knowledgeItems.length})` : ''}` },
+          { id: 'library' as Tab, label: `📖 Reading List${knowledgeItems.length ? ` (${knowledgeItems.length})` : ''}` },
           { id: 'chat'    as Tab, label: '💬 Ask Signal' },
         ]).map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
@@ -2108,7 +2108,7 @@ export default function FeedPage() {
             className="w-full mb-5 flex items-center gap-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-left hover:border-violet-300 dark:hover:border-violet-700 transition-colors"
           >
             <span className="text-lg">💬</span>
-            <span className="flex-1 text-sm text-zinc-400 dark:text-zinc-500">Ask Signal anything about your feed or knowledge base…</span>
+            <span className="flex-1 text-sm text-zinc-400 dark:text-zinc-500">Ask Signal anything about your feed or reading list…</span>
             <span className="text-xs font-medium text-violet-600 dark:text-violet-400 shrink-0">Ask Signal →</span>
           </button>
 
@@ -2333,7 +2333,7 @@ export default function FeedPage() {
         <div className="max-w-3xl">
           <div className="mb-6">
             <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Ask Signal</h2>
-            <p className="text-sm text-zinc-400 mt-1">Search across your feed and knowledge base together. Signal finds relevant articles and notes, then synthesises a grounded answer with citations.</p>
+            <p className="text-sm text-zinc-400 mt-1">Search across your feed and reading list together. Signal finds relevant articles and notes, then synthesises a grounded answer with citations.</p>
           </div>
 
           <AskSignalPanel
@@ -2381,7 +2381,7 @@ export default function FeedPage() {
                 href="/knowledge"
                 className="text-xs text-violet-600 dark:text-violet-400 px-3 py-1.5 bg-violet-50 dark:bg-violet-950/30 rounded-lg border border-violet-200 dark:border-violet-800 hover:bg-violet-100 transition-colors font-medium"
               >
-                Manage notebooks
+                + Add reading source
               </a>
               <button
                 onClick={fetchKnowledgeFeed}
@@ -2442,8 +2442,8 @@ export default function FeedPage() {
             <div className="text-center py-16 text-zinc-400">
               <div className="text-5xl mb-4">📝</div>
               <p className="font-medium text-zinc-600 dark:text-zinc-400">No notebook knowledge yet</p>
-              <p className="text-sm mt-2">Save a few links or notes in Knowledge Base first. Signal will extract summaries, why-it-matters notes, and topic tags and then rank them here.</p>
-              <a href="/knowledge" className="inline-flex mt-4 px-4 py-2 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700">Open Knowledge Base</a>
+              <p className="text-sm mt-2">Save a few links, videos, or notes in Reading List first. Signal will extract summaries, why-it-matters notes, and topic tags and then rank them here.</p>
+              <a href="/knowledge" className="inline-flex mt-4 px-4 py-2 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700">Open Reading List</a>
             </div>
           ) : (
             <div className="space-y-8">

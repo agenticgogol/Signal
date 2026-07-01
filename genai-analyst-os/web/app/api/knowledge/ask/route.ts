@@ -13,6 +13,7 @@ export async function POST(req: NextRequest) {
   const userId = typeof body.userId === 'string' ? body.userId : ''
   const question = typeof body.question === 'string' ? body.question.trim() : ''
   const notebookId = typeof body.notebookId === 'string' && body.notebookId ? body.notebookId : null
+  const itemId = typeof body.itemId === 'string' && body.itemId ? body.itemId : null
 
   if (!userId || !question) {
     return Response.json({ error: 'userId and question are required' }, { status: 400 })
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest) {
   if (access instanceof Response) return access
 
   try {
-    const result = await answerKnowledgeBaseQuestion({ userId: access.userId, question, notebookId })
+    const result = await answerKnowledgeBaseQuestion({ userId: access.userId, question, notebookId, itemId })
     await logChatEvent({
       userId: access.userId,
       scope: 'notebook',
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
       question,
       answerSummary: result.answer.slice(0, 600),
       citations: result.citations,
-      metadata: { mode: access.mode, matchCount: result.matchCount },
+      metadata: { mode: access.mode, matchCount: result.matchCount, itemId },
     })
     return Response.json(result)
   } catch (error) {

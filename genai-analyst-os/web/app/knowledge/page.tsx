@@ -34,7 +34,7 @@ interface RankedItem {
   notebook_id: string
   notebook_title: string
   title: string
-  source_type: 'url' | 'note'
+  source_type: 'url' | 'note' | 'youtube'
   source_url: string | null
   summary: string | null
   why_it_matters: string | null
@@ -48,15 +48,20 @@ interface RankedItem {
   is_fresh: boolean
 }
 
-type SourceMode = 'url' | 'github' | 'note' | 'file' | 'image'
+type SourceMode = 'url' | 'youtube' | 'github' | 'note' | 'file' | 'image'
 
 const SOURCE_MODES: { id: SourceMode; icon: string; label: string }[] = [
   { id: 'url', icon: '🔗', label: 'URL' },
+  { id: 'youtube', icon: '▶️', label: 'YouTube Video' },
   { id: 'github', icon: '🐙', label: 'GitHub Repo' },
   { id: 'note', icon: '📋', label: 'Paste Text / LinkedIn Post' },
   { id: 'file', icon: '📄', label: 'Word / PDF' },
   { id: 'image', icon: '🖼️', label: 'Screenshot / Image' },
 ]
+
+function isLikelyYouTubeUrl(url: string): boolean {
+  return /youtube\.com\/(watch|shorts|live)|youtu\.be\//.test(url)
+}
 
 function TopicPill({ tag }: { tag: string }) {
   const cls = TAG_COLORS[tag.toLowerCase()] ?? 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
@@ -94,6 +99,10 @@ export default function KnowledgePage() {
   const [asking, setAsking] = useState(false)
   const [askError, setAskError] = useState<string | null>(null)
   const [askAnswer, setAskAnswer] = useState<{ answer: string; citations: { title: string; url: string }[] } | null>(null)
+  // When set, Ask is scoped to conversing with ONE saved item instead of
+  // blending across the whole library — set via "Ask about this" on any
+  // item's detail panel, shown as a clearable chip above the search bar.
+  const [scopedItem, setScopedItem] = useState<{ id: string; title: string } | null>(null)
 
   // Connection Agent — button-triggered only, never automatic
   const [findingConnections, setFindingConnections] = useState(false)
@@ -112,6 +121,7 @@ export default function KnowledgePage() {
   // Add-source panel
   const [sourceMode, setSourceMode] = useState<SourceMode>('url')
   const [urlInput, setUrlInput] = useState('')
+  const [youtubeInput, setYoutubeInput] = useState('')
   const [githubInput, setGithubInput] = useState('')
   const [noteText, setNoteText] = useState('')
   const [noteTitle, setNoteTitle] = useState('')
@@ -151,7 +161,7 @@ export default function KnowledgePage() {
       const profileJson = await profileRes.json()
       const itemsJson = await itemsRes.json()
       if (!profileRes.ok) throw new Error(profileJson.error ?? 'Could not load profile')
-      if (!itemsRes.ok) throw new Error(itemsJson.error ?? 'Could not load knowledge base')
+      if (!itemsRes.ok) throw new Error(itemsJson.error ?? 'Could not load your reading list')
       setPlan(profileJson.plan === 'pro' ? 'pro' : 'free')
       setCanUsePaidFeatures(Boolean(profileJson.canUsePaidFeatures))
       setItems(itemsJson.items ?? [])
@@ -235,7 +245,12 @@ export default function KnowledgePage() {
       const res = await fetch('/api/knowledge/ask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders(adminToken) },
-        body: JSON.stringify({ userId, question: question.trim(), notebookId: notebookFilter === 'all' ? null : notebookFilter }),
+        body: JSON.stringify({
+          userId,
+          question: question.trim(),
+          notebookId: notebookFilter === 'all' ? null : notebookFilter,
+          itemId: scopedItem?.id ?? null,
+        }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Could not answer that question')
@@ -268,7 +283,7 @@ export default function KnowledgePage() {
   }
 
   const handleFindConnections = () => {
-    runOrGate('This scans your knowledge base and recent feed for free, then makes one LLM call to explain any real connections it finds — uses your configured model, costs API credits.', doFindConnections)
+    runOrGate('This scans your reading list and recent feed for free, then makes one LLM call to explain any real connections it finds — uses your configured model, costs API credits.', doFindConnections)
   }
 
   // ── Declutter — free heuristic scan, no LLM, no gating ─────────────────
@@ -333,6 +348,7 @@ export default function KnowledgePage() {
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Could not save this source')
       setUrlInput('')
+      setYoutubeInput('')
       setGithubInput('')
       setAddStatus(`Saved "${json.item?.title || url}" — extracting links and summarizing now.`)
       await fetchAll()
@@ -390,6 +406,12 @@ export default function KnowledgePage() {
   const handleAddClick = () => {
     if (sourceMode === 'url' && urlInput.trim()) {
       runOrGate('This will fetch the page and use your configured model to summarize and tag it.', doAddUrl(urlInput.trim()))
+    } else if (sourceMode === 'youtube' && youtubeInput.trim()) {
+      if (!isLikelyYouTubeUrl(youtubeInput.trim())) {
+        setAddError('That does not look like a YouTube video URL.')
+        return
+      }
+      runOrGate('This will fetch the video\'s transcript and use your configured model to summarize and tag it.', doAddUrl(youtubeInput.trim()))
     } else if (sourceMode === 'github' && githubInput.trim()) {
       const url = githubInput.trim().startsWith('http') ? githubInput.trim() : `https://github.com/${githubInput.trim()}`
       runOrGate('This will fetch the repo page and use your configured model to summarize and tag it.', doAddUrl(url))
@@ -405,7 +427,7 @@ export default function KnowledgePage() {
 
   const handleAsk = () => {
     if (!question.trim()) return
-    runOrGate('This will use your configured model to answer from your knowledge base.', doAsk)
+    runOrGate('This will use your configured model to answer from your reading list.', doAsk)
   }
 
   if (loading) {
@@ -423,7 +445,7 @@ export default function KnowledgePage() {
           />
         )}
         <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-8">
-          <h1 className="text-3xl font-black tracking-tight text-zinc-950 dark:text-white">Knowledge Base</h1>
+          <h1 className="text-3xl font-black tracking-tight text-zinc-950 dark:text-white">Reading List</h1>
           <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">Sign in to use your private knowledge workspace, or unlock the admin workspace to ingest links, files, and notes without signing in.</p>
           <div className="mt-5 flex items-center gap-3">
             <button onClick={() => setShowAdminGate(true)} className="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-violet-700">Unlock admin workspace</button>
@@ -457,7 +479,7 @@ export default function KnowledgePage() {
 
       <div className="flex items-center justify-between gap-3 mb-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">Knowledge Base</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">Reading List</h1>
           <p className="text-xs text-zinc-400 mt-0.5">Ask questions, add sources, and see what each topic in your library talks about — all in one place.</p>
         </div>
         <div className="flex items-center gap-2">
@@ -493,13 +515,25 @@ export default function KnowledgePage() {
 
       {/* ── Top: Ask bar ─────────────────────────────────────────────────── */}
       <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
-        <p className="text-xs font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400 mb-1">Ask your knowledge base</p>
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <p className="text-xs font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400">
+            {scopedItem ? 'Ask about this item' : 'Ask your reading list'}
+          </p>
+        </div>
+        {scopedItem && (
+          <div className="mb-2 flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-800 px-2.5 py-1 rounded-full max-w-full">
+              💬 Asking about: <span className="truncate max-w-[240px]">{scopedItem.title}</span>
+            </span>
+            <button onClick={() => setScopedItem(null)} className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">✕ back to whole library</button>
+          </div>
+        )}
         <div className="flex gap-2">
           <input
             value={question}
             onChange={e => setQuestion(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleAsk() }}
-            placeholder="What did I save about agent evaluation? What repos have I bookmarked on RAG?"
+            placeholder={scopedItem ? `Ask anything about "${scopedItem.title}"…` : 'What did I save about agent evaluation? What repos have I bookmarked on RAG?'}
             className="flex-1 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-500"
           />
           <button onClick={handleAsk} disabled={asking || !question.trim()}
@@ -546,6 +580,11 @@ export default function KnowledgePage() {
                 placeholder="https://example.com/article"
                 className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-500" />
             )}
+            {sourceMode === 'youtube' && (
+              <input value={youtubeInput} onChange={e => setYoutubeInput(e.target.value)}
+                placeholder="https://www.youtube.com/watch?v=... or https://youtu.be/..."
+                className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-500" />
+            )}
             {sourceMode === 'github' && (
               <input value={githubInput} onChange={e => setGithubInput(e.target.value)}
                 placeholder="https://github.com/owner/repo or owner/repo"
@@ -581,7 +620,7 @@ export default function KnowledgePage() {
             <>
               <button onClick={handleAddClick} disabled={adding}
                 className="mt-3 w-full rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-50 px-4 py-2.5 text-sm font-bold text-white transition-colors">
-                {adding ? 'Saving…' : '+ Add to knowledge base'}
+                {adding ? 'Saving…' : '+ Add to reading list'}
               </button>
               <CostNotice text="Summarizing, tagging, and link extraction uses your configured LLM — costs API credits." />
             </>
@@ -633,7 +672,10 @@ export default function KnowledgePage() {
                         className={`w-full text-left rounded-xl border p-3 transition-colors ${
                           selectedItem?.id === item.id ? 'border-violet-400 bg-violet-50/60 dark:bg-violet-950/20' : 'border-zinc-100 dark:border-zinc-800 hover:border-violet-300 dark:hover:border-violet-700'}`}>
                         <div className="flex items-center justify-between gap-2">
-                          <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 line-clamp-1">{item.title}</p>
+                          <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 line-clamp-1">
+                            <span className="mr-1">{item.source_type === 'youtube' ? '▶️' : item.source_type === 'note' ? '📋' : '🔗'}</span>
+                            {item.title}
+                          </p>
                           {idx === 0 && <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">Top pick</span>}
                         </div>
                         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2">{item.why_it_matters || item.summary || ''}</p>
@@ -766,7 +808,12 @@ export default function KnowledgePage() {
             {selectedItem.source_url && (
               <a href={selectedItem.source_url} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-violet-600 dark:text-violet-400 hover:underline">Open source →</a>
             )}
-            <button onClick={() => { setQuestion(`Summarize what "${selectedItem.title}" says and why it matters.`) }}
+            <button onClick={() => {
+              setScopedItem({ id: selectedItem.id, title: selectedItem.title })
+              setQuestion('')
+              setAskAnswer(null)
+              window.scrollTo({ top: 0, behavior: 'smooth' })
+            }}
               className="text-xs font-semibold text-zinc-600 dark:text-zinc-300 hover:underline">💬 Ask about this</button>
             <Link href={`/knowledge/${selectedItem.notebook_id}`} className="text-xs font-semibold text-zinc-400 hover:underline">View in notebook →</Link>
           </div>

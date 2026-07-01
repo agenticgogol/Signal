@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase'
 import { generateJsonForUser } from '@/lib/llmClient'
 import { embedTextForUser, embedTextsForUser, toVectorLiteral } from '@/lib/embeddings'
+import { extractYouTubeTranscript, isYouTubeUrl } from '@/lib/youtubeTranscript'
 
 export interface KnowledgeNotebook {
   id: string
@@ -15,7 +16,7 @@ export interface KnowledgeItem {
   id: string
   user_id: string
   notebook_id: string
-  source_type: 'url' | 'note'
+  source_type: 'url' | 'note' | 'youtube'
   source_url: string | null
   title: string
   raw_text: string
@@ -209,12 +210,13 @@ async function semanticNotebookSearch(params: {
 
 export async function summarizeKnowledge(params: {
   userId: string
-  sourceType: 'url' | 'note'
+  sourceType: 'url' | 'note' | 'youtube'
   sourceUrl?: string | null
   text: string
   fallbackTitle?: string
 }) {
-  const prompt = `Analyze this saved ${params.sourceType === 'url' ? 'web source' : 'note'} for a GenAI practitioner.
+  const sourceLabel = params.sourceType === 'url' ? 'web source' : params.sourceType === 'youtube' ? 'YouTube video transcript' : 'note'
+  const prompt = `Analyze this saved ${sourceLabel} for a GenAI practitioner.
 
 Source URL: ${params.sourceUrl || 'N/A'}
 Fallback title: ${params.fallbackTitle || 'N/A'}
@@ -253,16 +255,22 @@ Return:
 export async function ingestKnowledgeItem(params: {
   userId: string
   notebookId: string
-  sourceType: 'url' | 'note'
+  sourceType: 'url' | 'note' | 'youtube'
   sourceUrl?: string
   noteText?: string
   title?: string
 }) {
   const db = createServiceClient()
+  // A YouTube link pasted into the generic URL field still gets routed to
+  // transcript extraction — no need to remember which button to click.
+  const effectiveSourceType = params.sourceType === 'url' && params.sourceUrl && isYouTubeUrl(params.sourceUrl)
+    ? 'youtube'
+    : params.sourceType
+
   const inserted = await db.from('knowledge_items').insert({
     user_id: params.userId,
     notebook_id: params.notebookId,
-    source_type: params.sourceType,
+    source_type: effectiveSourceType,
     source_url: params.sourceUrl?.trim() || null,
     title: params.title?.trim() || '',
     status: 'processing',
@@ -274,7 +282,11 @@ export async function ingestKnowledgeItem(params: {
   try {
     let rawText = ''
     let fallbackTitle = params.title?.trim() || ''
-    if (params.sourceType === 'url') {
+    if (effectiveSourceType === 'youtube') {
+      const { title: videoTitle, transcript } = await extractYouTubeTranscript(params.sourceUrl!)
+      rawText = normalizeText(transcript)
+      fallbackTitle = fallbackTitle || videoTitle
+    } else if (effectiveSourceType === 'url') {
       const response = await fetch(params.sourceUrl!, { headers: { 'User-Agent': 'Signal Knowledge Bot/1.0' } })
       const html = await response.text()
       const extracted = extractReadableText(html)
@@ -289,7 +301,7 @@ export async function ingestKnowledgeItem(params: {
 
     const analyzed = await summarizeKnowledge({
       userId: params.userId,
-      sourceType: params.sourceType,
+      sourceType: effectiveSourceType,
       sourceUrl: params.sourceUrl,
       text: rawText,
       fallbackTitle,
@@ -541,25 +553,50 @@ export async function answerKnowledgeBaseQuestion(params: {
   userId: string
   question: string
   notebookId?: string | null
+  // When set, this scopes the whole answer to one saved item — "converse
+  // with this specific reading list entry" instead of blending across the
+  // whole library. Skips the keyword-overlap requirement entirely (a
+  // "summarize this" question has no lexical overlap with its own content)
+  // and pulls the item's full chunk set in reading order instead of a
+  // relevance-ranked top 10.
+  itemId?: string | null
 }) {
   const db = createServiceClient()
-  let chunkQuery = db.from('knowledge_chunks').select('id, item_id, content').eq('user_id', params.userId).limit(600)
-  if (params.notebookId) chunkQuery = chunkQuery.eq('notebook_id', params.notebookId)
-  const { data: chunks, error } = await chunkQuery
-  if (error) throw error
 
-  const chunkRows = (chunks ?? [])
-    .map((chunk: Record<string, unknown>) => ({
-      itemId: String(chunk.item_id),
-      content: String(chunk.content || ''),
-      score: overlapScore(params.question, String(chunk.content || '')),
-    }))
-    .filter(row => row.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 10)
+  let chunkRows: { itemId: string; content: string }[]
 
-  if (chunkRows.length === 0) {
-    throw new Error('Nothing in your knowledge base matches this question yet. Add a source below, or try rephrasing.')
+  if (params.itemId) {
+    const { data: itemChunks, error: itemChunksError } = await db
+      .from('knowledge_chunks')
+      .select('id, item_id, content, chunk_index')
+      .eq('user_id', params.userId)
+      .eq('item_id', params.itemId)
+      .order('chunk_index', { ascending: true })
+      .limit(40)
+    if (itemChunksError) throw itemChunksError
+    if (!itemChunks || itemChunks.length === 0) {
+      throw new Error('This item has no processed content yet — it may still be summarizing, or failed to process.')
+    }
+    chunkRows = itemChunks.map((chunk: Record<string, unknown>) => ({ itemId: String(chunk.item_id), content: String(chunk.content || '') }))
+  } else {
+    let chunkQuery = db.from('knowledge_chunks').select('id, item_id, content').eq('user_id', params.userId).limit(600)
+    if (params.notebookId) chunkQuery = chunkQuery.eq('notebook_id', params.notebookId)
+    const { data: chunks, error } = await chunkQuery
+    if (error) throw error
+
+    chunkRows = (chunks ?? [])
+      .map((chunk: Record<string, unknown>) => ({
+        itemId: String(chunk.item_id),
+        content: String(chunk.content || ''),
+        score: overlapScore(params.question, String(chunk.content || '')),
+      }))
+      .filter(row => row.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10)
+
+    if (chunkRows.length === 0) {
+      throw new Error('Nothing in your knowledge base matches this question yet. Add a source below, or try rephrasing.')
+    }
   }
 
   const itemIds = Array.from(new Set(chunkRows.map(row => row.itemId)))
@@ -581,7 +618,9 @@ export async function answerKnowledgeBaseQuestion(params: {
   }>({
     userId: params.userId,
     agent: 'knowledge_ask',
-    system: 'You answer questions only from the supplied knowledge base context below. If the context does not address the question, say so plainly rather than guessing or using outside knowledge. Be concise and cite the sources you used.',
+    system: params.itemId
+      ? 'You answer questions only from the supplied excerpt of ONE saved reading list item below — this is a focused conversation about that single source, not the whole library. If the excerpt does not address the question, say so plainly rather than guessing.'
+      : 'You answer questions only from the supplied knowledge base context below. If the context does not address the question, say so plainly rather than guessing or using outside knowledge. Be concise and cite the sources you used.',
     prompt: `Question: ${params.question}\n\nKNOWLEDGE BASE CONTEXT:\n${context}\n\nReturn a grounded answer and citations.`,
     schema: {
       type: 'object',

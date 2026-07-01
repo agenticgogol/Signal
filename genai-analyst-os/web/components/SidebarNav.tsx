@@ -8,7 +8,7 @@ const CORE_ITEMS = [
   { href: '/feed',      label: 'Feed',     icon: '📰' },
   { href: '/ideas',     label: 'Ideas',    icon: '💡' },
   { href: '/create',    label: 'Create',   icon: '✍️' },
-  { href: '/knowledge', label: 'Knowledge', icon: '📚' },
+  { href: '/knowledge', label: 'Reading List', icon: '📖' },
   { href: '/sources',   label: 'Sources',  icon: '🔗' },
 ]
 

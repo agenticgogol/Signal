@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
           notebook_id: String(item.notebook_id),
           notebook_title: notebookMap.get(String(item.notebook_id)) ?? 'Notebook',
           title: String(item.title || ''),
-          source_type: item.source_type === 'note' ? 'note' : 'url',
+          source_type: item.source_type === 'note' ? 'note' : item.source_type === 'youtube' ? 'youtube' : 'url',
           source_url: typeof item.source_url === 'string' ? item.source_url : null,
           summary: typeof item.summary === 'string' ? item.summary : null,
           why_it_matters: typeof item.why_it_matters === 'string' ? item.why_it_matters : null,

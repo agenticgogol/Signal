@@ -3,7 +3,7 @@ import { Arrow, Callout, FeatureCard, FlowNode, GuideHero, GuideSection, Screens
 
 const toc = [
   ['quick-start', 'Quick start'], ['feed', 'Your Feed'], ['news', 'AI News'],
-  ['digest', 'Digest (Today + This Week)'], ['knowledge', 'Knowledge Base'], ['ask-signal', 'Ask Signal & Memory'],
+  ['digest', 'Digest (Today + This Week)'], ['knowledge', 'Reading List'], ['ask-signal', 'Ask Signal & Memory'],
   ['ideas', 'Idea Wizard'], ['content-workflow', 'Content Studio'],
   ['voice', 'My Voice'], ['settings', 'Settings'], ['create', 'Create walkthrough'], ['formats', 'Formats'], ['sources', 'Sources'], ['faq', 'FAQ'],
 ]
@@ -64,18 +64,18 @@ export default function UserGuidePage() {
         <Callout title="Archive behavior" tone="amber"><p>Recent daily briefs stay close at hand and move into archive views after 7 days. Weekly digests move into archive views after 8 weeks. Regenerate either view after a meaningful feed refresh or when you want the latest context — otherwise the cached version keeps things fast and consistent.</p></Callout>
       </GuideSection>
 
-      <GuideSection id="knowledge" eyebrow="Personal library" title="Knowledge Base: your saved links and notes, ranked and reusable" description="Save URLs or notes into notebooks. Signal extracts a summary, a why-it-matters note, and topic tags for each item, then ranks your library the same way it ranks the feed.">
+      <GuideSection id="knowledge" eyebrow="Personal library" title="Reading List: your saved links, videos, and notes, ranked and reusable" description="Save URLs, YouTube videos, or notes into notebooks. Signal extracts a summary, a why-it-matters note, and topic tags for each item, then ranks your library the same way it ranks the feed.">
         <div className="grid gap-4 md:grid-cols-3">
-          <FeatureCard icon="📚" title="Notebooks" value="Organize by project">Group saved links and notes into notebooks — one per project, client, or research thread.</FeatureCard>
-          <FeatureCard icon="🔗" title="Backed by your library" value="Feed ↔ Knowledge">Feed articles that are genuinely related to something in your library show a "Backed by your library" badge with a match score, so public news and your own saved thinking connect automatically.</FeatureCard>
-          <FeatureCard icon="🧭" title="Knowledge Feed tab" value="Ranked, not chronological">The Knowledge tab surfaces your library the same way the main Feed does — Fresh, Top picks, and Explore sections instead of a flat list.</FeatureCard>
+          <FeatureCard icon="📖" title="Notebooks" value="Organize by project">Group saved links, videos, and notes into notebooks — one per project, client, or research thread.</FeatureCard>
+          <FeatureCard icon="🔗" title="Backed by your library" value="Feed ↔ Reading List">Feed articles that are genuinely related to something in your library show a "Backed by your library" badge with a match score, so public news and your own saved thinking connect automatically.</FeatureCard>
+          <FeatureCard icon="🧭" title="Reading List tab" value="Ranked, not chronological">The Reading List tab surfaces your library the same way the main Feed does — Fresh, Top picks, and Explore sections instead of a flat list.</FeatureCard>
         </div>
-        <Callout title="How matching stays precise" tone="green"><p>Matches require real textual overlap between an article and a knowledge item, not just a shared topic tag — there are only 7 tags in the taxonomy, so a tag alone isn&apos;t enough signal. This keeps the badge meaningful instead of attaching the same popular note to everything in a tag bucket.</p></Callout>
+        <Callout title="How matching stays precise" tone="green"><p>Matches require real textual overlap between an article and a saved item, not just a shared topic tag — there are only 7 tags in the taxonomy, so a tag alone isn&apos;t enough signal. This keeps the badge meaningful instead of attaching the same popular note to everything in a tag bucket.</p></Callout>
       </GuideSection>
 
       <GuideSection id="ask-signal" eyebrow="Recall" title="Ask Signal & Memory Assistant: one recall engine, two entry points" description="Ask Signal (on the Feed tab) and the standalone Memory Assistant page used to be two separate implementations of the same idea. They now share one engine, so a question asked in either place shows up in both.">
         <div className="grid gap-5 lg:grid-cols-[1.45fr_1fr]">
-          <Callout title="Ask Signal — quick recall in the flow"><p>Search your feed and knowledge base together without leaving the Feed tab. Good for "what was that thing I saw last week" moments mid-browse.</p></Callout>
+          <Callout title="Ask Signal — quick recall in the flow"><p>Search your feed and reading list together without leaving the Feed tab. Good for "what was that thing I saw last week" moments mid-browse.</p></Callout>
           <Callout title="Memory Assistant — the deep-dive view" tone="green"><p>The same engine with more room: suggested example questions, your full notebook list, and more history at once. Reach it from the sidebar or the "Open full Memory Assistant" link inside Ask Signal.</p></Callout>
         </div>
         <Callout title="Shared history" tone="amber"><p>Recent questions and your reading history (articles you opened, pinned, or liked) are the same list in both places — there is one implementation behind them, not two that happen to look similar.</p></Callout>

@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}))
   const userId = typeof body.userId === 'string' ? body.userId : ''
   let notebookId = typeof body.notebookId === 'string' ? body.notebookId : ''
-  const sourceType = body.sourceType === 'url' ? 'url' : body.sourceType === 'note' ? 'note' : null
+  const sourceType = body.sourceType === 'url' ? 'url' : body.sourceType === 'note' ? 'note' : body.sourceType === 'youtube' ? 'youtube' : null
   const sourceUrl = typeof body.sourceUrl === 'string' ? body.sourceUrl.trim() : ''
   const noteText = typeof body.noteText === 'string' ? body.noteText : ''
   const title = typeof body.title === 'string' ? body.title.trim() : ''
@@ -23,8 +23,8 @@ export async function POST(req: NextRequest) {
   const access = await resolveSignedInOrAdmin(req, userId)
   if (access instanceof Response) return access
 
-  if (sourceType === 'url' && !sourceUrl) {
-    return Response.json({ error: 'sourceUrl is required for URL ingestion' }, { status: 400 })
+  if ((sourceType === 'url' || sourceType === 'youtube') && !sourceUrl) {
+    return Response.json({ error: 'sourceUrl is required for this source type' }, { status: 400 })
   }
   if (sourceType === 'note' && !noteText.trim()) {
     return Response.json({ error: 'noteText is required for note ingestion' }, { status: 400 })
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
       userId: access.userId,
       notebookId,
       knowledgeItemId: item.id,
-      eventType: sourceType === 'url' ? 'save_url' : 'save_note',
+      eventType: sourceType === 'url' ? 'save_url' : sourceType === 'youtube' ? 'save_url' : 'save_note',
       metadata: { mode: access.mode, sourceUrl: sourceUrl || null, title: title || item.title },
     })
     return Response.json({ item, notebookId })
