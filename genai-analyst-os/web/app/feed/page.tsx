@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { TAG_COLORS, TAG_LABELS } from '@/lib/tagColors'
 import { ActionConfirmModal, AdminGateModal, getAdminToken } from '@/components/AdminGate'
 import OnboardingChecklist, { type SetupStatus } from '@/components/OnboardingChecklist'
+import AskSignalPanel from '@/components/AskSignalPanel'
 import { useAuthSession } from '@/lib/useAuthSession'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -167,7 +168,8 @@ interface DigestProvenance {
 interface PipelineConfig { lookbackDays: number; maxPerSource: number }
 type DateRange = 'today' | '7d' | '30d'
 type SortBy   = 'ranking' | 'recency'
-type Tab      = 'feed' | 'chat' | 'daily' | 'news' | 'weekly' | 'library'
+type Tab      = 'feed' | 'chat' | 'digest' | 'news' | 'library'
+type DigestScope = 'today' | 'week'
 
 interface KnowledgeNotebookFilter {
   id: string
@@ -201,31 +203,6 @@ interface RelatedKnowledgeMatch {
   whyItMatters: string | null
   matchScore: number
   sourceUrl: string | null
-}
-
-interface RecallAnswer {
-  answer: string
-  citations: { title: string; url: string }[]
-  feedMatches: number
-  knowledgeMatches: number
-}
-
-interface ChatHistoryItem {
-  id: string
-  question: string
-  answerSummary: string
-  citations: { title: string; url: string }[]
-  scope: string
-  createdAt: string
-}
-
-interface ArticleHistoryItem {
-  articleId: string
-  title: string
-  url: string
-  eventType: string
-  publishedAt: string | null
-  seenAt: string
 }
 
 const DEFAULT_CONFIG: PipelineConfig = { lookbackDays: 7, maxPerSource: 5 }
@@ -706,6 +683,45 @@ function LiveNewsRail({ items, onViewAll }: { items: NewsItem[]; onViewAll: () =
   )
 }
 
+// Shared accent-coded highlight grid — used by both Daily Digest's "Daily
+// highlights" and Weekly Digest's "Three Things To Watch" so the two
+// surfaces feel like the same product. Each card gets a numbered badge and
+// a rotating accent color instead of identical flat gray boxes.
+const HIGHLIGHT_ACCENTS = [
+  { badge: 'bg-violet-600', border: 'hover:border-violet-300 dark:hover:border-violet-700', glow: 'from-violet-500/10' },
+  { badge: 'bg-blue-600',   border: 'hover:border-blue-300 dark:hover:border-blue-700',     glow: 'from-blue-500/10' },
+  { badge: 'bg-emerald-600', border: 'hover:border-emerald-300 dark:hover:border-emerald-700', glow: 'from-emerald-500/10' },
+  { badge: 'bg-amber-600',  border: 'hover:border-amber-300 dark:hover:border-amber-700',    glow: 'from-amber-500/10' },
+]
+
+function HighlightGrid({ title, items }: { title: string; items: Array<{ title: string; why: string }> }) {
+  if (items.length === 0) return null
+  return (
+    <div>
+      <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">{title}</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {items.map((item, idx) => {
+          const accent = HIGHLIGHT_ACCENTS[idx % HIGHLIGHT_ACCENTS.length]
+          return (
+            <div key={idx} className={`group relative overflow-hidden rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4 transition-colors ${accent.border}`}>
+              <div className={`pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-gradient-to-br ${accent.glow} to-transparent blur-xl opacity-0 group-hover:opacity-100 transition-opacity`} />
+              <div className="relative flex items-start gap-3">
+                <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${accent.badge} text-[11px] font-bold text-white`}>
+                  {idx + 1}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 leading-snug">{item.title}</p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1.5 leading-relaxed">{item.why}</p>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function FeedSection({ title, subtitle, items, reactions, onReact, selectedForCreate, onSelect, onOpen, freshArticleIds, relatedKnowledgeMap, defaultVisible = 3 }: {
   title: string
   subtitle: string
@@ -784,6 +800,7 @@ export default function FeedPage() {
 
   // Tabs
   const [activeTab, setActiveTab] = useState<Tab>('feed')
+  const [digestScope, setDigestScope] = useState<DigestScope>('today')
 
   // Feed tab
   const [dateRange, setDateRange] = useState<DateRange>('today')
@@ -833,13 +850,6 @@ export default function FeedPage() {
   const [knowledgeError, setKnowledgeError] = useState<string | null>(null)
   const [knowledgeNotebooks, setKnowledgeNotebooks] = useState<KnowledgeNotebookFilter[]>([])
   const [knowledgeNotebookFilter, setKnowledgeNotebookFilter] = useState<string>('all')
-  const [recallQuestion, setRecallQuestion] = useState('')
-  const [recallLoading, setRecallLoading] = useState(false)
-  const [recallError, setRecallError] = useState<string | null>(null)
-  const [recallAnswer, setRecallAnswer] = useState<RecallAnswer | null>(null)
-  const [chatHistory, setChatHistory] = useState<ChatHistoryItem[]>([])
-  const [articleHistory, setArticleHistory] = useState<ArticleHistoryItem[]>([])
-  const [historyLoading, setHistoryLoading] = useState(false)
 
   // Weekly digest tab
   const [weeklyItems, setWeeklyItems] = useState<WeeklyItem[]>([])
@@ -869,7 +879,12 @@ export default function FeedPage() {
     const params = new URLSearchParams(window.location.search)
     const tab = params.get('tab')
     const view = params.get('view')
-    if (tab === 'feed' || tab === 'chat' || tab === 'daily' || tab === 'news' || tab === 'weekly' || tab === 'library') setActiveTab(tab)
+    // 'daily' and 'weekly' were separate tabs before they merged into one
+    // 'digest' tab with a Today/This Week scope toggle — keep old bookmarks
+    // and links (e.g. from onboarding) working.
+    if (tab === 'daily') { setActiveTab('digest'); setDigestScope('today') }
+    else if (tab === 'weekly') { setActiveTab('digest'); setDigestScope('week') }
+    else if (tab === 'feed' || tab === 'chat' || tab === 'digest' || tab === 'news' || tab === 'library') setActiveTab(tab)
     if (view === 'narrative' || view === 'list') setWeeklyView(view)
 
     try {
@@ -1112,52 +1127,6 @@ export default function FeedPage() {
     setKnowledgeLoading(false)
   }, [session?.access_token, user?.id, knowledgeNotebookFilter])
 
-  const askRecall = useCallback(async (question?: string) => {
-    const q = (question ?? recallQuestion).trim()
-    if (!q || !userId) return
-    setRecallLoading(true)
-    setRecallError(null)
-    try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
-      const token = getAdminToken()
-      if (!session?.access_token && token) headers['x-admin-token'] = token
-      const res = await fetch('/api/knowledge/recall', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ userId, question: q }),
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error ?? 'Could not answer recall question')
-      setRecallAnswer(json)
-    } catch (e) {
-      setRecallError(e instanceof Error ? e.message : String(e))
-      setRecallAnswer(null)
-    }
-    setRecallLoading(false)
-  }, [recallQuestion, session?.access_token, userId])
-
-  const fetchChatHistory = useCallback(async () => {
-    if (!session?.access_token || !user?.id) return
-    setHistoryLoading(true)
-    try {
-      const res = await fetch(`/api/memory/history?userId=${encodeURIComponent(user.id)}`, {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      })
-      if (!res.ok) return
-      const json = await res.json()
-      setChatHistory(json.chatHistory ?? [])
-      setArticleHistory(json.articleHistory ?? [])
-    } catch {}
-    setHistoryLoading(false)
-  }, [session?.access_token, user?.id])
-
-  // Refresh history panel after each new recall answer is returned
-  useEffect(() => {
-    if (recallAnswer && activeTab === 'chat') fetchChatHistory()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recallAnswer])
-
   const fetchWeekly = useCallback(async () => {
     setWeeklyLoading(true)
     try {
@@ -1304,14 +1273,14 @@ export default function FeedPage() {
 
   useEffect(() => {
     if (user?.id && knowledgeItems.length === 0) fetchKnowledgeFeed()
-    if (activeTab === 'chat' && user?.id) { fetchYesterdayFeed(); fetchChatHistory() }
+    if (activeTab === 'chat' && user?.id) fetchYesterdayFeed()
     if (activeTab === 'library' && user?.id) fetchKnowledgeFeed()
     if (activeTab === 'news' && newsItems.length === 0) fetchNews()
-    if ((activeTab === 'daily' || activeTab === 'weekly') && newsItems.length === 0) fetchNews()
-    if (activeTab === 'daily' && !dailyDigestFetched && !dailyDigestLoading) fetchDailyDigest()
-    if (activeTab === 'weekly' && weeklyItems.length === 0) fetchWeekly()
-    if (activeTab === 'weekly' && weeklyView === 'narrative' && !narrative && !narrativeLoading) fetchNarrative()
-  }, [activeTab, weeklyView, user?.id, knowledgeItems.length, newsItems.length, weeklyItems.length, dailyDigestFetched, dailyDigestLoading, fetchKnowledgeFeed, fetchYesterdayFeed, fetchChatHistory, fetchNews, fetchWeekly, fetchNarrative, fetchDailyDigest])
+    if (activeTab === 'digest' && newsItems.length === 0) fetchNews()
+    if (activeTab === 'digest' && digestScope === 'today' && !dailyDigestFetched && !dailyDigestLoading) fetchDailyDigest()
+    if (activeTab === 'digest' && digestScope === 'week' && weeklyItems.length === 0) fetchWeekly()
+    if (activeTab === 'digest' && digestScope === 'week' && weeklyView === 'narrative' && !narrative && !narrativeLoading) fetchNarrative()
+  }, [activeTab, digestScope, weeklyView, user?.id, knowledgeItems.length, newsItems.length, weeklyItems.length, dailyDigestFetched, dailyDigestLoading, fetchKnowledgeFeed, fetchYesterdayFeed, fetchNews, fetchWeekly, fetchNarrative, fetchDailyDigest])
 
   // ── pipeline trigger ──────────────────────────────────────────────────────
 
@@ -1805,8 +1774,7 @@ export default function FeedPage() {
       <div className="flex gap-1 overflow-x-auto border-b border-zinc-200 dark:border-zinc-800 mb-5 -mx-1 px-1">
         {([
           { id: 'feed'    as Tab, label: `Your Feed${articles.length ? ` (${articles.length})` : ''}` },
-          { id: 'daily'   as Tab, label: '✦ Daily Digest' },
-          { id: 'weekly'  as Tab, label: '📰 Weekly Digest' },
+          { id: 'digest'  as Tab, label: '✦ Digest' },
           { id: 'news'    as Tab, label: '🌐 Live News' },
           { id: 'library' as Tab, label: `📚 Knowledge${knowledgeItems.length ? ` (${knowledgeItems.length})` : ''}` },
           { id: 'chat'    as Tab, label: '💬 Ask Signal' },
@@ -2059,98 +2027,14 @@ export default function FeedPage() {
             <p className="text-sm text-zinc-400 mt-1">Search across your feed and knowledge base together. Signal finds relevant articles and notes, then synthesises a grounded answer with citations.</p>
           </div>
 
-          {/* Search box */}
-          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 mb-5">
-            <div className="flex gap-2">
-              <input
-                value={recallQuestion}
-                onChange={e => setRecallQuestion(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') askRecall() }}
-                placeholder="What was that agent reliability concept I saw last week?"
-                className="flex-1 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-500"
-              />
-              <button
-                onClick={() => askRecall()}
-                disabled={recallLoading || !recallQuestion.trim()}
-                className="rounded-xl bg-violet-600 hover:bg-violet-700 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50 transition-colors"
-              >
-                {recallLoading ? 'Searching…' : 'Ask'}
-              </button>
-            </div>
-            {recallError && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{recallError}</p>}
-            {recallAnswer && (
-              <div className="mt-5 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/40 p-4">
-                <p className="text-sm leading-6 text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap">{recallAnswer.answer}</p>
-                <p className="mt-3 text-[11px] text-zinc-400">Searched: {recallAnswer.feedMatches} feed articles · {recallAnswer.knowledgeMatches} knowledge items</p>
-                {recallAnswer.citations.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {recallAnswer.citations.slice(0, 6).map((citation, idx) => (
-                      <a key={`${citation.url}-${idx}`} href={citation.url} target="_blank" rel="noopener noreferrer"
-                        className="text-xs text-violet-600 dark:text-violet-400 hover:underline border border-violet-200 dark:border-violet-800 rounded-lg px-2 py-1">
-                        {citation.title}
-                      </a>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Prior questions — click to re-ask */}
-          {!historyLoading && chatHistory.length > 0 && (
-            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 mb-5">
-              <p className="text-xs font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400 mb-3">Recent questions</p>
-              <div className="space-y-2">
-                {chatHistory.slice(0, 8).map(item => (
-                  <button
-                    key={item.id}
-                    onClick={() => { setRecallQuestion(item.question); askRecall(item.question) }}
-                    className="w-full text-left rounded-xl border border-zinc-100 dark:border-zinc-800 p-3 hover:border-violet-300 dark:hover:border-violet-700 transition-colors group"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 line-clamp-1 group-hover:text-violet-700 dark:group-hover:text-violet-300 transition-colors">{item.question}</p>
-                      <span className="text-[10px] text-zinc-400 shrink-0 mt-0.5">{formatRelativeTime(item.createdAt)}</span>
-                    </div>
-                    {item.answerSummary && (
-                      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2">{item.answerSummary}</p>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Article history — "you saw this on X date" */}
-          {!historyLoading && articleHistory.length > 0 && (
-            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 mb-5">
-              <p className="text-xs font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400 mb-3">Your reading history</p>
-              <div className="space-y-2">
-                {articleHistory.slice(0, 10).map(item => (
-                  <a
-                    key={item.articleId}
-                    href={item.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-start gap-3 rounded-xl border border-zinc-100 dark:border-zinc-800 p-3 hover:border-violet-300 dark:hover:border-violet-700 transition-colors"
-                  >
-                    <span className="mt-0.5 text-base leading-none shrink-0">
-                      {item.eventType === 'pin' ? '📌' : item.eventType === 'like' ? '👍' : '📖'}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 line-clamp-2 leading-snug">{item.title}</p>
-                      <p className="text-[11px] text-zinc-400 mt-0.5">
-                        You {item.eventType === 'pin' ? 'pinned' : item.eventType === 'like' ? 'liked' : 'opened'} this · {formatRelativeTime(item.seenAt)}
-                      </p>
-                    </div>
-                  </a>
-                ))}
-              </div>
-            </div>
-          )}
+          <AskSignalPanel
+            variant="compact"
+            crossLink={{ href: '/memory', label: 'Open the full Memory Assistant for notebooks & deep search →' }}
+          />
 
           {/* Continue from yesterday */}
           {yesterdayItems.length > 0 && (
-            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
+            <div className="mt-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
               <p className="text-xs font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400 mb-1">Continue from yesterday</p>
               <p className="text-xs text-zinc-400 mb-4">Strongest signals from yesterday&apos;s feed.</p>
               <div className="space-y-3">
@@ -2339,7 +2223,33 @@ export default function FeedPage() {
       )}
 
       {/* ══ DAILY DIGEST TAB ═══════════════════════════════════════════════ */}
-      {activeTab === 'daily' && (
+      {activeTab === 'digest' && (
+        <div>
+          {/* Today / This Week scope toggle — Daily and Weekly are two zoom
+              levels of the same synthesis, not unrelated features, so they
+              now share one tab instead of competing for attention in the bar. */}
+          <div className="flex items-center justify-between mb-5">
+            <div>
+              <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Digest</h2>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                {digestScope === 'today'
+                  ? 'A consolidated story from today\'s strongest ranked articles.'
+                  : 'A week-long briefing connecting your top articles with the broader AI conversation.'}
+              </p>
+            </div>
+            <div className="flex gap-1 bg-zinc-100 dark:bg-zinc-800 p-0.5 rounded-lg">
+              {([{ id: 'today' as DigestScope, label: '✦ Today' }, { id: 'week' as DigestScope, label: '📰 This Week' }]).map(opt => (
+                <button key={opt.id} onClick={() => setDigestScope(opt.id)}
+                  className={`px-3.5 py-1.5 rounded-md text-sm font-medium transition-all ${
+                    digestScope === opt.id ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm'
+                    : 'text-zinc-500 dark:text-zinc-400'}`}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+      {digestScope === 'today' && (
         <div>
           <div className="flex items-center justify-between mb-5">
             <div>
@@ -2397,19 +2307,7 @@ export default function FeedPage() {
                 <div className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed whitespace-pre-wrap">{dailyDigest.signal}</div>
               </div>
 
-              {dailyDigest.highlights.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">Daily highlights</p>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {dailyDigest.highlights.map((item, idx) => (
-                      <div key={idx} className="rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-4">
-                        <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{item.title}</p>
-                        <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1.5 leading-relaxed">{item.why}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <HighlightGrid title="Daily highlights" items={dailyDigest.highlights} />
 
               <div className="bg-emerald-50 dark:bg-emerald-950/20 rounded-2xl border border-emerald-200 dark:border-emerald-800 p-5">
                 <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 uppercase tracking-wide mb-3">Why this matters</p>
@@ -2418,17 +2316,21 @@ export default function FeedPage() {
 
               <LiveNewsRail items={newsItems} onViewAll={() => setActiveTab('news')} />
 
-              {/* Footer metadata row — provenance, recent briefs, and archives as compact horizontal cards */}
-              <div className="grid gap-4 sm:grid-cols-3">
-                <ProvenancePanel
-                  label="Pipeline-generated daily digest"
-                  mode={dailyDigestProvenance?.generationMode}
-                  provider={dailyDigestProvenance?.modelProvider}
-                  model={dailyDigestProvenance?.modelName}
-                  sourceArticles={dailyDigestProvenance?.sourceArticles}
-                />
+              {/* Footer metadata row — flex-wrap, not a fixed 3-col grid, so cards
+                  only ever take the width they need instead of leaving phantom
+                  empty columns when fewer than 3 panels have content. */}
+              <div className="flex flex-wrap gap-4 items-start">
+                <div className="flex-1 min-w-[260px]">
+                  <ProvenancePanel
+                    label="Pipeline-generated daily digest"
+                    mode={dailyDigestProvenance?.generationMode}
+                    provider={dailyDigestProvenance?.modelProvider}
+                    model={dailyDigestProvenance?.modelName}
+                    sourceArticles={dailyDigestProvenance?.sourceArticles}
+                  />
+                </div>
                 {dailyDigestRecent.length > 0 && (
-                  <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-5">
+                  <div className="flex-1 min-w-[260px] bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-5">
                     <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">Recent daily briefs</p>
                     <div className="space-y-2">
                       {dailyDigestRecent.map((item, idx) => (
@@ -2444,7 +2346,7 @@ export default function FeedPage() {
                   </div>
                 )}
                 {(dailyDigestArchive.length > 0 || weeklyArchive.length > 0) && (
-                  <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-5">
+                  <div className="flex-1 min-w-[260px] bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-5">
                     <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">Archives</p>
                     {dailyDigestArchive.length > 0 && (
                       <div className="mb-4">
@@ -2487,63 +2389,7 @@ export default function FeedPage() {
         </div>
       )}
 
-      {/* ══ AI NEWS WORLDOVER TAB ═══════════════════════════════════════════ */}
-      {activeTab === 'news' && (
-        <div>
-          <div className="flex items-center justify-between mb-5">
-            <div>
-              <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Live AI headlines from 6 curated sources</p>
-              <p className="text-xs text-zinc-400 mt-0.5">
-                The Decoder · TechCrunch AI · VentureBeat · MIT Tech Review · Import AI · Last Week in AI
-                {newsFetchedAt && ` · fetched ${formatRelativeTime(newsFetchedAt)}`}
-              </p>
-            </div>
-            <button onClick={fetchNews} disabled={newsLoading}
-              className="text-xs text-violet-600 dark:text-violet-400 px-3 py-1.5 bg-violet-50 dark:bg-violet-950/30 rounded-lg border border-violet-200 dark:border-violet-800 hover:bg-violet-100 transition-colors font-medium disabled:opacity-50">
-              {newsLoading ? 'Fetching…' : '↺ Refresh'}
-            </button>
-          </div>
-
-          {/* Source filter */}
-          {!newsLoading && newsSources.length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-5">
-              <button onClick={() => setNewsFilter('all')}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
-                  newsFilter === 'all' ? 'bg-violet-600 text-white border-violet-600'
-                  : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-violet-300'}`}>
-                All ({newsItems.length})
-              </button>
-              {newsSources.map(s => (
-                <button key={s} onClick={() => setNewsFilter(s)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
-                    newsFilter === s ? 'bg-violet-600 text-white border-violet-600'
-                    : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-violet-300'}`}>
-                  {s}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {newsLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {[0,1,2,3,4,5,6,7,8].map(i => <SkeletonCard key={i} />)}
-            </div>
-          ) : filteredNews.length === 0 ? (
-            <div className="text-center py-16 text-zinc-400">
-              <div className="text-5xl mb-4">🌐</div>
-              <p className="font-medium">No news fetched yet</p>
-              <p className="text-sm mt-1">Click Refresh to load live AI headlines.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-              {filteredNews.map((item, i) => <NewsCard key={i} item={item} />)}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ══ WEEKLY DIGEST TAB ═══════════════════════════════════════════════ */}
-      {activeTab === 'weekly' && (
+      {digestScope === 'week' && (
         <div>
           <div className="flex items-center justify-between mb-5">
             <div>
@@ -2618,22 +2464,10 @@ export default function FeedPage() {
                   </div>
 
                   {/* Watch */}
-                  {narrative.watch?.length > 0 && (
-                    <div>
-                      <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-3">Three Things To Watch</p>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        {narrative.watch.map((w, i) => (
-                          <div key={i} className="flex gap-3 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-4">
-                            <div className="flex-shrink-0 w-7 h-7 rounded-full bg-violet-100 dark:bg-violet-900/40 text-violet-600 dark:text-violet-400 flex items-center justify-center text-xs font-bold">{i + 1}</div>
-                            <div>
-                              <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{w.item}</p>
-                              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">{w.why}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  <HighlightGrid
+                    title="Three Things To Watch"
+                    items={(narrative.watch ?? []).map(w => ({ title: w.item, why: w.why }))}
+                  />
 
                   {/* Practitioner takeaway */}
                   {narrative.takeaway && (
@@ -2646,14 +2480,16 @@ export default function FeedPage() {
                   <LiveNewsRail items={newsItems} onViewAll={() => setActiveTab('news')} />
 
                   {/* Footer metadata row — matches the Daily Digest layout shape */}
-                  <div className="grid gap-4 sm:grid-cols-3">
-                    <ProvenancePanel
-                      label="Weekly digest"
-                      mode={narrativeMeta?.generationMode}
-                      provider={narrativeMeta?.modelProvider}
-                      model={narrativeMeta?.modelName}
-                      sourceArticles={narrativeMeta?.sourceArticles}
-                    />
+                  <div className="flex flex-wrap gap-4 items-start">
+                    <div className="flex-1 min-w-[260px] max-w-md">
+                      <ProvenancePanel
+                        label="Weekly digest"
+                        mode={narrativeMeta?.generationMode}
+                        provider={narrativeMeta?.modelProvider}
+                        model={narrativeMeta?.modelName}
+                        sourceArticles={narrativeMeta?.sourceArticles}
+                      />
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -2696,6 +2532,65 @@ export default function FeedPage() {
           )}
         </div>
       )}
+        </div>
+      )}
+
+      {/* ══ AI NEWS WORLDOVER TAB ═══════════════════════════════════════════ */}
+      {activeTab === 'news' && (
+        <div>
+          <div className="flex items-center justify-between mb-5">
+            <div>
+              <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Live AI headlines from 6 curated sources</p>
+              <p className="text-xs text-zinc-400 mt-0.5">
+                The Decoder · TechCrunch AI · VentureBeat · MIT Tech Review · Import AI · Last Week in AI
+                {newsFetchedAt && ` · fetched ${formatRelativeTime(newsFetchedAt)}`}
+              </p>
+            </div>
+            <button onClick={fetchNews} disabled={newsLoading}
+              className="text-xs text-violet-600 dark:text-violet-400 px-3 py-1.5 bg-violet-50 dark:bg-violet-950/30 rounded-lg border border-violet-200 dark:border-violet-800 hover:bg-violet-100 transition-colors font-medium disabled:opacity-50">
+              {newsLoading ? 'Fetching…' : '↺ Refresh'}
+            </button>
+          </div>
+
+          {/* Source filter */}
+          {!newsLoading && newsSources.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-5">
+              <button onClick={() => setNewsFilter('all')}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                  newsFilter === 'all' ? 'bg-violet-600 text-white border-violet-600'
+                  : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-violet-300'}`}>
+                All ({newsItems.length})
+              </button>
+              {newsSources.map(s => (
+                <button key={s} onClick={() => setNewsFilter(s)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                    newsFilter === s ? 'bg-violet-600 text-white border-violet-600'
+                    : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-violet-300'}`}>
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {newsLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {[0,1,2,3,4,5,6,7,8].map(i => <SkeletonCard key={i} />)}
+            </div>
+          ) : filteredNews.length === 0 ? (
+            <div className="text-center py-16 text-zinc-400">
+              <div className="text-5xl mb-4">🌐</div>
+              <p className="font-medium">No news fetched yet</p>
+              <p className="text-sm mt-1">Click Refresh to load live AI headlines.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              {filteredNews.map((item, i) => <NewsCard key={i} item={item} />)}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══ WEEKLY DIGEST TAB ═══════════════════════════════════════════════ */}
     </div>
   )
 }
