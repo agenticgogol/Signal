@@ -175,6 +175,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <ThemeToggle />
           <p className="text-xs text-zinc-300 dark:text-zinc-600 px-2">GenAI Intelligence OS</p>
+          <p className="text-[11px] text-zinc-300 dark:text-zinc-700 px-2">© {new Date().getFullYear()} Utsab Chakraborty</p>
         </div>
       </aside>
       <main className="ml-56 flex-1 min-w-0">

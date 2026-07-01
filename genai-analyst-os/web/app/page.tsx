@@ -319,10 +319,12 @@ export default function LandingPage() {
             <Link href="/feed" className="hover:text-zinc-400 transition-colors">Feed</Link>
             <Link href="/ideas" className="hover:text-zinc-400 transition-colors">Ideas</Link>
             <Link href="/create" className="hover:text-zinc-400 transition-colors">Create</Link>
+            <Link href="/knowledge" className="hover:text-zinc-400 transition-colors">Knowledge</Link>
             <Link href="/sources" className="hover:text-zinc-400 transition-colors">Sources</Link>
           </div>
           <span>GenAI Intelligence OS</span>
         </div>
+        <p className="mt-6 text-center text-xs text-zinc-600">© {new Date().getFullYear()} Utsab Chakraborty. All rights reserved.</p>
       </footer>
     </div>
   )

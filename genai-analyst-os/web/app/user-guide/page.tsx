@@ -3,7 +3,8 @@ import { Arrow, Callout, FeatureCard, FlowNode, GuideHero, GuideSection, Screens
 
 const toc = [
   ['quick-start', 'Quick start'], ['feed', 'Your Feed'], ['news', 'AI News'],
-  ['daily-digest', 'Daily Digest'], ['digest', 'Weekly Digest'], ['ideas', 'Idea Wizard'], ['content-workflow', 'Content Studio'],
+  ['digest', 'Digest (Today + This Week)'], ['knowledge', 'Knowledge Base'], ['ask-signal', 'Ask Signal & Memory'],
+  ['ideas', 'Idea Wizard'], ['content-workflow', 'Content Studio'],
   ['voice', 'My Voice'], ['settings', 'Settings'], ['create', 'Create walkthrough'], ['formats', 'Formats'], ['sources', 'Sources'], ['faq', 'FAQ'],
 ]
 
@@ -22,7 +23,7 @@ export default function UserGuidePage() {
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
           <StepCard number={1} title="Choose sources" action="Sources → Add" result="Signal detects and stores the publication's RSS feed." />
           <StepCard number={2} title="Build the feed" action="Feed → ⚡ Get Latest Feed" result="Articles are collected, summarized, tagged, scored, and ranked." />
-          <StepCard number={3} title="Find the signal" action="Daily Digest, AI News, or Weekly Digest" result="See the overnight story, live worldwide context, or the connected weekly narrative." />
+          <StepCard number={3} title="Find the signal" action="Digest (Today / This Week) or AI News" result="See the overnight story, the connected weekly narrative, or live worldwide context — one toggle switches between today and the week." />
           <StepCard number={4} title="Create your angle" action="📌 article → Ideas → Create" result="Turn evidence plus your POV bullets into a draft you control." />
         </div>
         <div className="mt-6 grid gap-4 md:grid-cols-2">
@@ -34,11 +35,12 @@ export default function UserGuidePage() {
       <GuideSection id="feed" eyebrow="Daily workspace" title="Your Feed: ranked intelligence, not an inbox" description="The feed combines freshness, source quality, topic preference, and article depth. It is the best place to decide what deserves your attention.">
         <ScreenshotFrame src="/guides/feed.png" alt="Signal feed showing ranked article cards and filters" number={1} caption="Use date, topic, source, and sort controls to narrow the feed. Open takeaways for detail; pin only the evidence you want to use later." />
         <div className="mt-6 grid gap-4 md:grid-cols-3">
-          <FeatureCard icon="⚡" title="Get Latest Feed" value="Runs the complete pipeline">Use the gear to choose 1–14 days and 1–10 entries per source. The progress banner reports elapsed time and refreshes automatically.</FeatureCard>
+          <FeatureCard icon="⚡" title="Get Latest Feed" value="Runs the complete pipeline">Clicking it opens one panel with everything relevant: choose 1–14 days and 1–10 entries per source, then confirm. The progress banner reports elapsed time and refreshes automatically.</FeatureCard>
           <FeatureCard icon="⭐" title="Priority labels" value="Must Read → Explore">Scores help triage. They are comparative signals—not objective truth—so use topic filters and reactions to shape future ranking.</FeatureCard>
           <FeatureCard icon="📌" title="Pin for Create" value="Evidence handoff">Pin strong articles, then open Create. Likes teach preferences; pins select evidence for a specific piece.</FeatureCard>
         </div>
         <Callout title="Why did this article surface?" tone="green"><p>Use the card-level Signal Notes and article context to understand recency, article depth, and why the item was ranked for you. The feed is intended to be explainable, not mysterious.</p></Callout>
+        <Callout title="Automate the refresh" tone="amber"><p>Pro accounts can schedule a daily auto-refresh from <strong>Settings → Feed schedule</strong> instead of clicking Get Latest Feed every day. The Feed header shows whether a schedule is active and links straight to Settings to change it.</p></Callout>
       </GuideSection>
 
       <GuideSection id="news" eyebrow="External radar" title="AI News Worldover: immediate situational awareness" description="This view fetches current RSS headlines directly from six curated publications. It appears quickly because it does not wait for the enrichment pipeline or an LLM.">
@@ -51,21 +53,32 @@ export default function UserGuidePage() {
         </div>
       </GuideSection>
 
-      <GuideSection id="daily-digest" eyebrow="Morning brief" title="Daily Digest: one story worth reading before you open anything else" description="The overnight pipeline now condenses your strongest ranked articles into a single daily brief. It is designed to read like a sharp editorial note, not a list of links.">
+      <GuideSection id="digest" eyebrow="Synthesis" title="Digest: one tab, two time horizons" description="Daily and Weekly used to be separate tabs presenting the same kind of synthesis at different zoom levels. They now live in one Digest tab with a Today / This Week toggle at the top, so switching horizons doesn't mean relearning a new layout.">
         <div className="grid gap-5 lg:grid-cols-[1.45fr_1fr]">
-          <Callout title="What you get"><p>A headline, the day&apos;s connected story, 3-4 standout highlights, and a clear &quot;why this matters&quot; takeaway. If you enable digest delivery in Settings, Signal emails it once per day.</p></Callout>
-          <Callout title="Archive behavior" tone="green"><p>The app keeps recent daily digests close at hand and moves older ones into archive views after 7 days. Weekly digests move into archive views after 8 weeks.</p></Callout>
-        </div>
-      </GuideSection>
-
-      <GuideSection id="digest" eyebrow="Synthesis" title="Weekly Digest: the connected story behind the links" description="Your configured model reads your strongest deduplicated articles alongside worldwide coverage, then identifies the central theme, tensions, three developments to watch, and a practitioner action.">
-        <div className="grid gap-5 lg:grid-cols-[1.45fr_1fr]">
-          <ScreenshotFrame src="/guides/weekly-digest.png" alt="Signal Weekly Digest article view" number={3} caption="Narrative connects the stories; List exposes the underlying enriched evidence. Later narrative visits use the weekly cache; Regenerate explicitly refreshes it." />
+          <ScreenshotFrame src="/guides/weekly-digest.png" alt="Signal Digest view" number={3} caption="Today gives a headline, the day's connected story, standout highlights, and a why-this-matters takeaway. This Week connects the same kind of story across the last 7 days, with Narrative and List views." />
           <div className="space-y-4">
-            <Callout title="Narrative vs List"><strong>Narrative</strong> explains the pattern across stories. <strong>List</strong> is the auditable article-by-article view with takeaways and source links.</Callout>
-            <Callout title="When to regenerate" tone="green">After a meaningful feed refresh or when you want the latest worldwide context. Otherwise, keep the cached version for speed and consistency.</Callout>
+            <Callout title="Today"><p>The overnight pipeline condenses your strongest ranked articles into a single daily brief — a sharp editorial note, not a list of links. Enable digest delivery in Settings and Signal emails it once per day.</p></Callout>
+            <Callout title="This Week" tone="green"><p>Your configured model reads your strongest deduplicated articles alongside worldwide coverage, then identifies the central theme, tensions, three developments to watch, and a practitioner action. <strong>Narrative</strong> explains the pattern; <strong>List</strong> is the auditable article-by-article view.</p></Callout>
           </div>
         </div>
+        <Callout title="Archive behavior" tone="amber"><p>Recent daily briefs stay close at hand and move into archive views after 7 days. Weekly digests move into archive views after 8 weeks. Regenerate either view after a meaningful feed refresh or when you want the latest context — otherwise the cached version keeps things fast and consistent.</p></Callout>
+      </GuideSection>
+
+      <GuideSection id="knowledge" eyebrow="Personal library" title="Knowledge Base: your saved links and notes, ranked and reusable" description="Save URLs or notes into notebooks. Signal extracts a summary, a why-it-matters note, and topic tags for each item, then ranks your library the same way it ranks the feed.">
+        <div className="grid gap-4 md:grid-cols-3">
+          <FeatureCard icon="📚" title="Notebooks" value="Organize by project">Group saved links and notes into notebooks — one per project, client, or research thread.</FeatureCard>
+          <FeatureCard icon="🔗" title="Backed by your library" value="Feed ↔ Knowledge">Feed articles that are genuinely related to something in your library show a "Backed by your library" badge with a match score, so public news and your own saved thinking connect automatically.</FeatureCard>
+          <FeatureCard icon="🧭" title="Knowledge Feed tab" value="Ranked, not chronological">The Knowledge tab surfaces your library the same way the main Feed does — Fresh, Top picks, and Explore sections instead of a flat list.</FeatureCard>
+        </div>
+        <Callout title="How matching stays precise" tone="green"><p>Matches require real textual overlap between an article and a knowledge item, not just a shared topic tag — there are only 7 tags in the taxonomy, so a tag alone isn&apos;t enough signal. This keeps the badge meaningful instead of attaching the same popular note to everything in a tag bucket.</p></Callout>
+      </GuideSection>
+
+      <GuideSection id="ask-signal" eyebrow="Recall" title="Ask Signal & Memory Assistant: one recall engine, two entry points" description="Ask Signal (on the Feed tab) and the standalone Memory Assistant page used to be two separate implementations of the same idea. They now share one engine, so a question asked in either place shows up in both.">
+        <div className="grid gap-5 lg:grid-cols-[1.45fr_1fr]">
+          <Callout title="Ask Signal — quick recall in the flow"><p>Search your feed and knowledge base together without leaving the Feed tab. Good for "what was that thing I saw last week" moments mid-browse.</p></Callout>
+          <Callout title="Memory Assistant — the deep-dive view" tone="green"><p>The same engine with more room: suggested example questions, your full notebook list, and more history at once. Reach it from the sidebar or the "Open full Memory Assistant" link inside Ask Signal.</p></Callout>
+        </div>
+        <Callout title="Shared history" tone="amber"><p>Recent questions and your reading history (articles you opened, pinned, or liked) are the same list in both places — there is one implementation behind them, not two that happen to look similar.</p></Callout>
       </GuideSection>
 
       <GuideSection id="ideas" eyebrow="Editorial strategy" title="Ideas: five evidence-backed ways to contribute" description="Signal uses the strongest articles and your style to propose formats, hooks, source evidence, and a rationale—without pretending the idea is your final point of view.">
@@ -121,12 +134,16 @@ export default function UserGuidePage() {
       <GuideSection id="settings" eyebrow="Account control" title="Settings: choose the model stack behind your paid workflows" description="Signal lets each signed-in account bring its own provider, model, and API key. That keeps product access separate from model spend and lets you optimize for quality, speed, or open-weight models.">
         <div className="grid gap-5 lg:grid-cols-[1.35fr_1fr]">
           <Callout title="What you configure"><p>Open <strong>Settings</strong> from the left rail, then choose a provider, model name, and API key. Supported providers currently include Anthropic, OpenAI, Groq, and OpenRouter.</p></Callout>
-          <Callout title="What it affects" tone="green"><p>Your configured model is used by Daily Digest generation, Weekly Digest regeneration, Discover New Topic, outline generation, Voice Fingerprinting, and the full Create multi-agent workflow.</p></Callout>
+          <Callout title="What it affects" tone="green"><p>Your configured model is used by Digest generation (Today and This Week), Discover New Topic, outline generation, Voice Fingerprinting, and the full Create multi-agent workflow.</p></Callout>
         </div>
         <div className="mt-6 grid gap-4 md:grid-cols-3">
           <StepCard number={1} title="Sign in" action="Create or log into your account" result="Only signed-in accounts can attach subscription state and private model credentials." />
           <StepCard number={2} title="Subscribe" action="Activate paid access for the account" result="Subscribed accounts can manage their own provider, model, and API key without admin involvement." />
           <StepCard number={3} title="Connect model" action="Settings → provider, model, API key" result="Signal runs premium generation against your account-level LLM configuration. Once the account is subscribed and a key is saved, costly actions stop asking for admin credentials." />
+        </div>
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
+          <Callout title="Feed schedule (Pro)"><p>Turn on daily auto-refresh and pick an hour in your local time. The same lookback/max-per-source settings apply whether the run is scheduled or triggered manually — one setting, not two.</p></Callout>
+          <Callout title="Your preferences" tone="green"><p>Role, interest areas, reading goal, and cadence — set during onboarding and editable any time in Settings. These seed your feed ranking immediately instead of waiting on click history to build up.</p></Callout>
         </div>
         <Callout title="Trust boundary" tone="amber"><p>Your provider key is encrypted before storage. Signal uses it only for workflows tied to your account and does not expose it in the browser.</p></Callout>
       </GuideSection>
@@ -185,7 +202,7 @@ export default function UserGuidePage() {
       <GuideSection id="faq" eyebrow="Troubleshooting" title="Common questions" description="Fast answers for the behavior users notice most often.">
         <div className="grid gap-4 md:grid-cols-2">
           <Callout title="Why did a larger lookback add nothing?">A lookback widens eligibility; it cannot create new source entries. Check RSS status, increase max per source, and confirm the publication actually posted in that period.</Callout>
-          <Callout title="Why is AI News faster than Weekly Digest?">AI News is parallel RSS retrieval. Weekly Digest is a personalized synthesis call. Once generated, its weekly cache makes subsequent loads fast.</Callout>
+          <Callout title="Why is AI News faster than the Digest?">AI News is parallel RSS retrieval. Digest (Today or This Week) is a personalized synthesis call. Once generated, caching makes subsequent loads fast.</Callout>
           <Callout title="Why does a digest say cached or generated?">Cached means Signal is reusing the latest saved personalized digest for speed and consistency. Generated means Signal just called your configured model again.</Callout>
           <Callout title="Why do some cards use color banners?">Not every RSS feed supplies artwork. Signal uses the feed image when available and a stable topic gradient otherwise.</Callout>
           <Callout title="Does Signal publish automatically?">No. Publishing is intentionally outside the autonomous pipeline. POV is optional in the current form, but strongly recommended before generating a draft.</Callout>
