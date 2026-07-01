@@ -486,6 +486,7 @@ export default function KnowledgePage() {
           <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold ${plan === 'pro' ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300' : 'border-zinc-200 bg-white text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400'}`}>
             {plan === 'pro' ? 'Pro access' : 'Free preview'}
           </span>
+          <Link href="/feed?tab=library" className="text-xs font-semibold text-violet-600 dark:text-violet-400 hover:underline">🔎 Explore Full Library →</Link>
           <Link href="/knowledge/resources" className="text-xs font-semibold text-violet-600 dark:text-violet-400 hover:underline">🔗 Resources →</Link>
         </div>
       </div>

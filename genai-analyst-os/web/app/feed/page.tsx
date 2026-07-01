@@ -980,6 +980,18 @@ export default function FeedPage() {
   const [activeTab, setActiveTab] = useState<Tab>('feed')
   const [digestScope, setDigestScope] = useState<DigestScope>('today')
 
+  // Deep-link into a specific tab, e.g. /feed?tab=library from the "Explore
+  // Full Library" button on the Reading List page — read directly off the
+  // URL rather than useSearchParams so this client component doesn't need a
+  // Suspense boundary just for one optional query param.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const tab = new URLSearchParams(window.location.search).get('tab')
+    if (tab === 'feed' || tab === 'chat' || tab === 'digest' || tab === 'news' || tab === 'library') {
+      setActiveTab(tab)
+    }
+  }, [])
+
   // Feed tab
   const [dateRange, setDateRange] = useState<DateRange>('today')
   const [items, setItems] = useState<FeedItem[]>([])
@@ -2373,8 +2385,8 @@ export default function FeedPage() {
         <div>
           <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
             <div>
-              <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Ranked from your saved knowledge</p>
-              <p className="text-xs text-zinc-400 mt-0.5">Personal links and notes scored by topic affinity, recency, and content richness.</p>
+              <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Full library, ranked</p>
+              <p className="text-xs text-zinc-400 mt-0.5">Every saved link, video, and note — scored by topic affinity, recency, and content richness.</p>
             </div>
             <div className="flex items-center gap-2">
               <a
