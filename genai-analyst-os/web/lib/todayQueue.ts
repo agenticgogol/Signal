@@ -32,6 +32,9 @@ export interface QueueEntry {
   score: number
   status: 'unread' | 'read' | 'skipped'
   rank: number
+  summary: string | null
+  whyItMatters: string | null
+  takeaways: string[]
 }
 
 async function generateCandidates(userId: string): Promise<Array<{
@@ -178,8 +181,8 @@ async function fetchTodayQueue(userId: string): Promise<QueueEntry[]> {
   const knowledgeIds = rows.filter(r => r.knowledge_item_id).map(r => r.knowledge_item_id)
 
   const [{ data: articles }, { data: items }] = await Promise.all([
-    articleIds.length ? db.from('articles').select('id, title, url').in('id', articleIds) : Promise.resolve({ data: [] as Record<string, unknown>[] }),
-    knowledgeIds.length ? db.from('knowledge_items').select('id, title, source_url').in('id', knowledgeIds) : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    articleIds.length ? db.from('articles').select('id, title, url, why_it_matters, tldr_bullets, key_takeaways').in('id', articleIds) : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    knowledgeIds.length ? db.from('knowledge_items').select('id, title, source_url, summary, why_it_matters').in('id', knowledgeIds) : Promise.resolve({ data: [] as Record<string, unknown>[] }),
   ])
 
   const articleMap = new Map((articles ?? []).map((a: Record<string, unknown>) => [String(a.id), a]))
@@ -188,6 +191,12 @@ async function fetchTodayQueue(userId: string): Promise<QueueEntry[]> {
   return rows.map(row => {
     const isFeed = row.item_type === 'feed'
     const ref = isFeed ? articleMap.get(String(row.article_id)) : itemMap.get(String(row.knowledge_item_id))
+    const takeaways = isFeed
+      ? [
+          ...(Array.isArray(ref?.key_takeaways) ? ref.key_takeaways.map(String) : []),
+          ...(Array.isArray(ref?.tldr_bullets) ? ref.tldr_bullets.map(String) : []),
+        ]
+      : []
     return {
       id: String(row.id),
       itemType: row.item_type as 'feed' | 'reading_list',
@@ -198,6 +207,9 @@ async function fetchTodayQueue(userId: string): Promise<QueueEntry[]> {
       score: Number(row.score),
       status: row.status as 'unread' | 'read' | 'skipped',
       rank: Number(row.rank),
+      summary: isFeed ? null : (ref?.summary ? String(ref.summary) : null),
+      whyItMatters: ref?.why_it_matters ? String(ref.why_it_matters) : null,
+      takeaways: Array.from(new Set(takeaways)).slice(0, 6),
     }
   })
 }
