@@ -98,6 +98,11 @@ export default function SettingsPage() {
 
   const [draftsInboxEnabled, setDraftsInboxEnabled] = useState(false)
   const [draftsInboxFormat, setDraftsInboxFormat] = useState('linkedin')
+  const [signalWeights, setSignalWeights] = useState<Record<string, number>>({
+    engagement: 0.35, recently_read: 0.25, trending_news: 0.15, recent_trend: 0.15, emerging_topic: 0.10,
+  })
+  const [signalWeightsSaving, setSignalWeightsSaving] = useState(false)
+  const [signalWeightsStatus, setSignalWeightsStatus] = useState<string | null>(null)
   const [draftsInboxSaving, setDraftsInboxSaving] = useState(false)
   const [draftsInboxStatus, setDraftsInboxStatus] = useState<string | null>(null)
 
@@ -208,6 +213,18 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (!session?.access_token || !userId) return
+    fetch(`/api/data/content-signal-weights?userId=${encodeURIComponent(userId)}`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then(async response => {
+        const json = await response.json()
+        if (response.ok && json.weights) setSignalWeights(json.weights)
+      })
+      .catch(() => {})
+  }, [session?.access_token, userId])
+
+  useEffect(() => {
+    if (!session?.access_token || !userId) return
     setTracesLoading(true)
     fetch(`/api/data/llm-traces?userId=${encodeURIComponent(userId)}`, {
       headers: { Authorization: `Bearer ${session.access_token}` },
@@ -261,6 +278,26 @@ export default function SettingsPage() {
       setDraftsInboxStatus(err instanceof Error ? err.message : 'Could not save target platform')
     } finally {
       setDraftsInboxSaving(false)
+    }
+  }
+
+  const saveSignalWeights = async (next: Record<string, number>) => {
+    if (!session?.access_token || !userId) return
+    setSignalWeights(next)
+    setSignalWeightsSaving(true)
+    setSignalWeightsStatus(null)
+    try {
+      const response = await fetch('/api/data/content-signal-weights', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ userId, weights: next }),
+      })
+      const json = await response.json()
+      if (!response.ok) throw new Error(json.error ?? 'Could not save weights')
+    } catch (err) {
+      setSignalWeightsStatus(err instanceof Error ? err.message : 'Could not save weights')
+    } finally {
+      setSignalWeightsSaving(false)
     }
   }
 
@@ -773,6 +810,35 @@ export default function SettingsPage() {
             {draftsInboxStatus && <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-300">{draftsInboxStatus}</p>}
           </>
         )}
+      </section>
+
+      <section className="mt-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
+        <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Content signal weights</h2>
+        <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+          Controls how "Generate today&apos;s content" and Drafts Inbox pick a topic — a blend of five signals. Your declared interest areas above modulate every candidate&apos;s score rather than competing as a sixth signal. If a signal has nothing to go on some day (e.g. no emerging topics), its weight is automatically redistributed across the others, so these don&apos;t need to sum to exactly 100%.
+        </p>
+        <div className="mt-5 space-y-4">
+          {[
+            { key: 'engagement', label: 'Explicit engagement', hint: 'Articles/items you liked, pinned, or saved' },
+            { key: 'recently_read', label: 'Recently read', hint: 'What you\'ve read in the Today queue, last few days' },
+            { key: 'trending_news', label: 'Trending news', hint: 'Stories covered by multiple News sources, relevant to your feed' },
+            { key: 'recent_trend', label: 'Recent trend', hint: 'Terms picking up velocity in your tracked sources' },
+            { key: 'emerging_topic', label: 'Emerging topic', hint: 'Brand-new terms with no prior history' },
+          ].map(({ key, label, hint }) => (
+            <div key={key}>
+              <div className="flex items-center justify-between text-sm mb-1">
+                <span className="font-medium text-zinc-700 dark:text-zinc-200">{label}</span>
+                <span className="text-xs text-zinc-400">{Math.round((signalWeights[key] ?? 0) * 100)}%</span>
+              </div>
+              <input type="range" min={0} max={100} value={Math.round((signalWeights[key] ?? 0) * 100)}
+                disabled={signalWeightsSaving}
+                onChange={event => saveSignalWeights({ ...signalWeights, [key]: Number(event.target.value) / 100 })}
+                className="w-full accent-violet-600" />
+              <p className="text-[11px] text-zinc-400 mt-0.5">{hint}</p>
+            </div>
+          ))}
+        </div>
+        {signalWeightsStatus && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{signalWeightsStatus}</p>}
       </section>
 
       <section className="mt-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">

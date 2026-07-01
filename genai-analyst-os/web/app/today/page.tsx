@@ -165,6 +165,10 @@ export default function TodayPage() {
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false)
   const [showGenerateAdminGate, setShowGenerateAdminGate] = useState(false)
   const [expandedDraftId, setExpandedDraftId] = useState<string | null>(null)
+  const [customTopic, setCustomTopic] = useState('')
+  const [feedbackDraftId, setFeedbackDraftId] = useState<string | null>(null)
+  const [feedbackText, setFeedbackText] = useState('')
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false)
 
   const fetchDrafts = async () => {
     if (!userId) return
@@ -226,11 +230,14 @@ export default function TodayPage() {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
       if (adminToken) headers['x-admin-token'] = adminToken
-      const res = await fetch('/api/today/generate', { method: 'POST', headers, body: JSON.stringify({ userId }) })
+      const res = await fetch('/api/today/generate', { method: 'POST', headers, body: JSON.stringify({ userId, customTopic: customTopic.trim() || undefined }) })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Could not generate content')
       if (json.skipped) setSmartGenerateNote(json.skipped)
-      else setSmartGenerateNote(`Generated ${json.drafts.length} draft${json.drafts.length !== 1 ? 's' : ''}: ${json.drafts.map((d: { format: string }) => d.format).join(', ')}.`)
+      else {
+        setSmartGenerateNote(`Generated ${json.drafts.length} draft${json.drafts.length !== 1 ? 's' : ''}: ${json.drafts.map((d: { format: string }) => d.format).join(', ')}.`)
+        setCustomTopic('')
+      }
       await fetchDrafts()
     } catch (e) {
       setSmartGenerateError(e instanceof Error ? e.message : String(e))
@@ -241,6 +248,26 @@ export default function TodayPage() {
   const handleSmartGenerateClick = () => {
     if (canUsePaidFeatures) setShowGenerateConfirm(true)
     else setShowGenerateAdminGate(true)
+  }
+
+  const submitFeedback = async (draftId: string) => {
+    if (!feedbackText.trim()) return
+    setFeedbackSubmitting(true)
+    try {
+      const res = await fetch('/api/today/draft/regenerate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ userId, itemId: draftId, feedback: feedbackText.trim() }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Could not regenerate this draft')
+      setDrafts(prev => prev.map(d => d.id === draftId ? { ...d, final_content: json.finalContent } : d))
+      setFeedbackDraftId(null)
+      setFeedbackText('')
+    } catch (e) {
+      setDraftsError(e instanceof Error ? e.message : String(e))
+    }
+    setFeedbackSubmitting(false)
   }
 
   const pendingEntries = entries.filter(e => e.status === 'unread')
@@ -401,6 +428,10 @@ export default function TodayPage() {
         </div>
         <p className="text-xs text-zinc-400 mb-3">Auto-drafted from what you've been reading, or generate on demand. Nothing publishes without your approval. Opt in or out, and choose the target platform, in <Link href="/settings" className="text-violet-600 dark:text-violet-400 hover:underline">Settings</Link>.</p>
 
+        <input value={customTopic} onChange={e => setCustomTopic(e.target.value)}
+          placeholder="Optional: type a custom topic instead of auto-picking one…"
+          className="w-full mb-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2 text-xs outline-none focus:ring-2 focus:ring-violet-500" />
+
         {smartGenerateError && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{smartGenerateError}</p>}
         {smartGenerateNote && <p className="mb-3 text-sm text-emerald-600 dark:text-emerald-400">{smartGenerateNote}</p>}
 
@@ -457,7 +488,21 @@ export default function TodayPage() {
                         </button>
                         <button onClick={() => reviewDraft(draft.id, 'dismiss')} disabled={draftActioning === draft.id}
                           className="ml-auto rounded-xl px-4 py-2 text-sm font-medium text-zinc-400 hover:text-red-600 dark:hover:text-red-400">🗑 Dismiss</button>
+                        <button onClick={() => { setFeedbackDraftId(prev => prev === draft.id ? null : draft.id); setFeedbackText('') }}
+                          className="text-sm font-medium text-zinc-500 hover:text-violet-600 dark:hover:text-violet-400">✏️ Feedback</button>
                       </div>
+                      {feedbackDraftId === draft.id && (
+                        <div className="mt-3">
+                          <textarea value={feedbackText} onChange={e => setFeedbackText(e.target.value)} rows={3}
+                            placeholder="What should change? e.g. 'more contrarian', 'shorter', 'drop the stats'…"
+                            className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3.5 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-500" />
+                          <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">⚡ Regenerates this draft now and remembers your feedback for future drafts — uses your configured model, costs API credits.</p>
+                          <button onClick={() => submitFeedback(draft.id)} disabled={feedbackSubmitting || !feedbackText.trim()}
+                            className="mt-2 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-50 px-4 py-2 text-sm font-bold text-white transition-colors">
+                            {feedbackSubmitting ? 'Regenerating…' : 'Regenerate with feedback'}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

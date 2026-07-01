@@ -11,6 +11,8 @@ import {
   runRepublishAgent,
   type SourceArticle,
 } from '@/lib/agents'
+import { pickWeightedCandidate, type ContentCandidate } from '@/lib/contentSignals'
+import { generateJsonForUser } from '@/lib/llmClient'
 import type { VoiceFingerprint } from '@/lib/voice'
 
 // Drafts Inbox — opt-in (user_profiles.drafts_inbox_enabled) autonomous
@@ -22,7 +24,6 @@ import type { VoiceFingerprint } from '@/lib/voice'
 // neither of those are capped either).
 
 const INBOX_MAX_LOOPS = 2
-const ENGAGEMENT_WEIGHT: Record<string, number> = { like: 3, pin: 3, save: 2, open: 1 }
 
 // Which second platform is worth adapting the same idea into — paired by
 // how naturally the content translates (long-form <-> short-form pairs),
@@ -34,32 +35,6 @@ const PAIRED_FORMAT: Record<string, string> = {
   blog: 'linkedin',
   youtube_long: 'thread',
   youtube_short: 'thread',
-}
-
-async function pickEngagementSource(userId: string) {
-  const db = createServiceClient()
-  const since = new Date()
-  since.setUTCDate(since.getUTCDate() - 7)
-
-  const { data: events } = await db
-    .from('user_article_events')
-    .select('event_type, article_id, articles(id, title, url, why_it_matters, tldr_bullets, topic_tags)')
-    .eq('user_id', userId)
-    .in('event_type', ['like', 'pin', 'save', 'open'])
-    .gte('created_at', since.toISOString())
-    .limit(300)
-
-  const scores = new Map<string, { score: number; article: Record<string, unknown> }>()
-  for (const row of events ?? []) {
-    const article = Array.isArray(row.articles) ? row.articles[0] : row.articles as Record<string, unknown> | null
-    if (!article?.id) continue
-    const weight = ENGAGEMENT_WEIGHT[row.event_type] ?? 0
-    const existing = scores.get(String(article.id))
-    scores.set(String(article.id), { score: (existing?.score ?? 0) + weight, article })
-  }
-
-  const ranked = Array.from(scores.values()).sort((a, b) => b.score - a.score)
-  return ranked[0]?.article ?? null
 }
 
 // The full evidence-grounded, citation-verified pipeline (Orchestrator ->
@@ -107,19 +82,26 @@ async function runEvidenceGroundedPipeline(
   return runFinalPolishAgent(userId, currentHumanized, audienceFeedback, format, sources, voiceFingerprint)
 }
 
-function buildSourcesFromArticle(article: Record<string, unknown>): { brief: string; title: string; sourceUrl: string; sources: SourceArticle[] } {
-  const title = String(article.title || '')
-  const whyItMatters = String(article.why_it_matters || '')
-  const tldrBullets = Array.isArray(article.tldr_bullets) ? article.tldr_bullets as string[] : []
-  const sourceUrl = String(article.url || '')
-  const brief = `Write a post reacting to and building on this article, from the practitioner's own perspective: "${title}". ${whyItMatters}`
+function buildSourcesFromCandidate(candidate: ContentCandidate): { brief: string; title: string; sourceUrl: string; sources: SourceArticle[] } {
+  const { title, whyItMatters, url } = candidate
+  const sourceUrl = url || ''
+  const brief = `Write a post reacting to and building on this ${candidate.itemType === 'feed' ? 'article' : 'saved resource'}, from the practitioner's own perspective: "${title}". ${whyItMatters}`
   const sources: SourceArticle[] = [{
     title,
     url: sourceUrl,
     domain: (() => { try { return new URL(sourceUrl).hostname.replace(/^www\./, '') } catch { return '' } })(),
-    evidence: [whyItMatters, ...tldrBullets].filter(Boolean).join('\n'),
+    evidence: whyItMatters,
   }]
   return { brief, title, sourceUrl, sources }
+}
+
+function buildSourcesFromCustomTopic(topic: string): { brief: string; title: string; sourceUrl: string; sources: SourceArticle[] } {
+  return {
+    brief: `Write a post about: ${topic}`,
+    title: topic.slice(0, 200),
+    sourceUrl: '',
+    sources: [], // no external sources — this is the "personal opinion/announcement" path the agents already support
+  }
 }
 
 export interface DraftInboxResult {
@@ -130,14 +112,14 @@ export interface DraftInboxResult {
 export async function generateDailyDraftForUser(userId: string): Promise<DraftInboxResult> {
   const db = createServiceClient()
 
-  const article = await pickEngagementSource(userId)
-  if (!article) return { status: 'skipped_no_engagement' }
+  const candidate = await pickWeightedCandidate(userId)
+  if (!candidate) return { status: 'skipped_no_engagement' }
 
   const { data: profile } = await db.from('user_profiles').select('voice_fingerprint, drafts_inbox_format').eq('id', userId).maybeSingle()
   const voiceFingerprint = (profile?.voice_fingerprint as VoiceFingerprint | null) ?? null
   const format = String(profile?.drafts_inbox_format || 'linkedin')
 
-  const { brief, title, sourceUrl, sources } = buildSourcesFromArticle(article)
+  const { brief, title, sourceUrl, sources } = buildSourcesFromCandidate(candidate)
   const final = await runEvidenceGroundedPipeline(userId, brief, format, sources, voiceFingerprint)
 
   const { data: inserted, error } = await db
@@ -196,18 +178,31 @@ export interface SmartDraftResult {
 // already-verified idea and evidence, adapted for a different platform's
 // structure — the same "same idea, several formats" pattern Republish Pack
 // already uses in Create.
-export async function generateSmartDraftsForUser(userId: string): Promise<{ drafts: SmartDraftResult[]; skipped?: string }> {
+//
+// Topic selection: a user-typed custom topic is a hard override (skips the
+// weighted picker entirely, same "personal post, no sources" path Custom
+// Brief uses in Create). Otherwise pickWeightedCandidate blends five
+// signals — explicit engagement, recent reading behavior, relevance-gated
+// trending news, and emerging/trending topics — each weighted per the
+// user's Settings (or the agreed defaults), with topic-interest alignment
+// applied as a multiplier rather than a sixth competing signal.
+export async function generateSmartDraftsForUser(userId: string, customTopic?: string): Promise<{ drafts: SmartDraftResult[]; skipped?: string }> {
   const db = createServiceClient()
 
-  const article = await pickEngagementSource(userId)
-  if (!article) return { drafts: [], skipped: 'No recent engagement (opens/likes/pins) to base a draft on yet — read a few things first.' }
+  const trimmedTopic = customTopic?.trim()
+  const candidate = trimmedTopic ? null : await pickWeightedCandidate(userId)
+  if (!trimmedTopic && !candidate) {
+    return { drafts: [], skipped: 'Nothing to go on yet — read a few things, or type a custom topic below.' }
+  }
 
   const { data: profile } = await db.from('user_profiles').select('voice_fingerprint, drafts_inbox_format').eq('id', userId).maybeSingle()
   const voiceFingerprint = (profile?.voice_fingerprint as VoiceFingerprint | null) ?? null
   const primaryFormat = String(profile?.drafts_inbox_format || 'linkedin')
   const secondaryFormat = PAIRED_FORMAT[primaryFormat] ?? 'thread'
 
-  const { brief, title, sourceUrl, sources } = buildSourcesFromArticle(article)
+  const { brief, title, sourceUrl, sources } = trimmedTopic
+    ? buildSourcesFromCustomTopic(trimmedTopic)
+    : buildSourcesFromCandidate(candidate!)
   const results: SmartDraftResult[] = []
 
   const primaryContent = await runEvidenceGroundedPipeline(userId, brief, primaryFormat, sources, voiceFingerprint)
@@ -235,4 +230,86 @@ export async function generateSmartDraftsForUser(userId: string): Promise<{ draf
   }
 
   return { drafts: results }
+}
+
+// ── Feedback -> regenerate now, remember for later ─────────────────────────
+// Regenerating targets the specific feedback immediately (like Create's
+// "give feedback & regenerate"); separately, the feedback text is logged and
+// distilled into durable voice_fingerprint traits so future drafts — not
+// just this one — improve. Distillation merges into voice_principles rather
+// than overwriting the fingerprint wholesale, and is capped/deduped so it
+// can't grow into an unbounded or self-contradicting pile of one-off notes.
+
+const MAX_VOICE_PRINCIPLES = 8
+const FEEDBACK_HISTORY_FOR_DISTILLATION = 10
+
+export async function regenerateDraftWithFeedback(userId: string, itemId: string, feedback: string): Promise<{ finalContent: string }> {
+  const db = createServiceClient()
+
+  const { data: draft, error: draftError } = await db
+    .from('draft_inbox_items')
+    .select('id, brief, format, final_content')
+    .eq('user_id', userId)
+    .eq('id', itemId)
+    .single()
+  if (draftError) throw draftError
+
+  const { data: profile } = await db.from('user_profiles').select('voice_fingerprint').eq('id', userId).maybeSingle()
+  const voiceFingerprint = (profile?.voice_fingerprint as VoiceFingerprint | null) ?? null
+
+  const writerContext = `${draft.brief}\n\n---\nPREVIOUS DRAFT (the human reviewed this and asked for changes):\n${draft.final_content}\n\nHUMAN FEEDBACK — you MUST address this while keeping what already worked:\n${feedback}\n\nRewrite the content now, targeting this feedback specifically.`
+  const revisedDraft = await runWriterAgent(userId, writerContext, draft.format, [], voiceFingerprint)
+  const humanized = await runHumanizerAgent(userId, revisedDraft, `Feedback to address: ${feedback}`, draft.format, [], voiceFingerprint)
+
+  const { error: updateError } = await db
+    .from('draft_inbox_items')
+    .update({ final_content: humanized })
+    .eq('id', itemId)
+  if (updateError) throw updateError
+
+  await recordFeedbackAndDistill(userId, itemId, feedback)
+
+  return { finalContent: humanized }
+}
+
+async function recordFeedbackAndDistill(userId: string, draftItemId: string, feedbackText: string): Promise<void> {
+  const db = createServiceClient()
+  await db.from('voice_feedback_events').insert({ user_id: userId, draft_item_id: draftItemId, feedback_text: feedbackText })
+
+  const { data: recentFeedback } = await db
+    .from('voice_feedback_events')
+    .select('feedback_text')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(FEEDBACK_HISTORY_FOR_DISTILLATION)
+
+  const feedbackList = (recentFeedback ?? []).map(r => r.feedback_text).filter(Boolean)
+  if (feedbackList.length === 0) return
+
+  const { data: profile } = await db.from('user_profiles').select('voice_fingerprint').eq('id', userId).maybeSingle()
+  const fingerprint = profile?.voice_fingerprint as VoiceFingerprint | null
+  const existingPrinciples = fingerprint?.voice_principles ?? []
+
+  try {
+    const distilled = await generateJsonForUser<{ principles: string[] }>({
+      userId,
+      agent: 'voice_distillation',
+      maxTokens: 500,
+      system: 'You maintain a short list of durable writing-style rules for a content creator, based on their recent edit feedback. Merge new feedback with existing rules — keep rules that still apply, drop ones contradicted by newer feedback, add genuinely new ones. Keep each rule short and actionable (e.g. "avoid emoji", "open with a contrarian claim, not a question"). Return at most 8 rules, most important first.',
+      prompt: `Existing voice rules:\n${existingPrinciples.join('\n') || '(none yet)'}\n\nRecent edit feedback (most recent first):\n${feedbackList.map((f, i) => `${i + 1}. ${f}`).join('\n')}\n\nReturn the merged, deduplicated rule list.`,
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { principles: { type: 'array', items: { type: 'string' } } },
+        required: ['principles'],
+      },
+    })
+
+    const mergedPrinciples = distilled.principles.slice(0, MAX_VOICE_PRINCIPLES)
+    const updatedFingerprint: Partial<VoiceFingerprint> = { ...(fingerprint ?? {}), voice_principles: mergedPrinciples }
+    await db.from('user_profiles').update({ voice_fingerprint: updatedFingerprint }).eq('id', userId)
+  } catch {
+    // Distillation is a nice-to-have on top of the immediate regeneration —
+    // never let it fail the user-facing feedback/regenerate action.
+  }
 }
