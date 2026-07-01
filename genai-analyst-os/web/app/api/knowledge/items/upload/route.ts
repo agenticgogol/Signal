@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { requirePaidFeature } from '@/lib/featureAccess'
 import { resolveSignedInOrAdmin } from '@/lib/serverAuth'
-import { ingestKnowledgeItem } from '@/lib/knowledge'
+import { ingestKnowledgeItem, getOrCreateDefaultNotebook } from '@/lib/knowledge'
 import { extractUploadText } from '@/lib/knowledgeFiles'
 import { logKnowledgeEvent } from '@/lib/memory'
 
@@ -10,11 +10,11 @@ export async function POST(req: NextRequest) {
   if (!form) return Response.json({ error: 'Invalid upload payload' }, { status: 400 })
 
   const userId = String(form.get('userId') || '').trim()
-  const notebookId = String(form.get('notebookId') || '').trim()
+  let notebookId = String(form.get('notebookId') || '').trim()
   const file = form.get('file')
 
-  if (!userId || !notebookId || !(file instanceof File)) {
-    return Response.json({ error: 'userId, notebookId, and file are required' }, { status: 400 })
+  if (!userId || !(file instanceof File)) {
+    return Response.json({ error: 'userId and file are required' }, { status: 400 })
   }
 
   const paidGate = await requirePaidFeature(req, userId, 'Knowledge ingestion')
@@ -22,6 +22,14 @@ export async function POST(req: NextRequest) {
 
   const access = await resolveSignedInOrAdmin(req, userId)
   if (access instanceof Response) return access
+
+  if (!notebookId) {
+    try {
+      notebookId = await getOrCreateDefaultNotebook(access.userId)
+    } catch (error) {
+      return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 })
+    }
+  }
 
   try {
     const extracted = await extractUploadText(file)

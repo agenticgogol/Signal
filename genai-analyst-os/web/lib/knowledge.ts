@@ -531,6 +531,99 @@ export async function answerNotebookQuestion(params: {
   }
 }
 
+// Cross-notebook, knowledge-only Q&A for the unified Knowledge workspace
+// search bar. Deliberately does NOT blend in feed articles — the user asked
+// for a search that only answers from what has actually been ingested and
+// processed into the knowledge base, not the broader feed.
+export async function answerKnowledgeBaseQuestion(params: {
+  userId: string
+  question: string
+  notebookId?: string | null
+}) {
+  const db = createServiceClient()
+  let chunkQuery = db.from('knowledge_chunks').select('id, item_id, content').eq('user_id', params.userId).limit(600)
+  if (params.notebookId) chunkQuery = chunkQuery.eq('notebook_id', params.notebookId)
+  const { data: chunks, error } = await chunkQuery
+  if (error) throw error
+
+  const chunkRows = (chunks ?? [])
+    .map((chunk: Record<string, unknown>) => ({
+      itemId: String(chunk.item_id),
+      content: String(chunk.content || ''),
+      score: overlapScore(params.question, String(chunk.content || '')),
+    }))
+    .filter(row => row.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10)
+
+  if (chunkRows.length === 0) {
+    throw new Error('Nothing in your knowledge base matches this question yet. Add a source below, or try rephrasing.')
+  }
+
+  const itemIds = Array.from(new Set(chunkRows.map(row => row.itemId)))
+  const { data: items } = await db
+    .from('knowledge_items')
+    .select('id, title, source_url, summary, why_it_matters, topic_tags, notebook_id, knowledge_notebooks(title)')
+    .in('id', itemIds)
+
+  const itemMap = new Map((items ?? []).map((item: Record<string, unknown>) => [String(item.id), item]))
+
+  const context = chunkRows.map((row, index) => {
+    const item = itemMap.get(row.itemId)
+    return `[K${index + 1}] ${item?.title || 'Untitled'}\nURL: ${item?.source_url || 'signal://note'}\nSummary: ${item?.summary || ''}\nWhy it matters: ${item?.why_it_matters || ''}\nExcerpt: ${row.content.slice(0, 1200)}`
+  }).join('\n\n')
+
+  const answer = await generateJsonForUser<{
+    answer: string
+    citations: { title: string; url: string }[]
+  }>({
+    userId: params.userId,
+    system: 'You answer questions only from the supplied knowledge base context below. If the context does not address the question, say so plainly rather than guessing or using outside knowledge. Be concise and cite the sources you used.',
+    prompt: `Question: ${params.question}\n\nKNOWLEDGE BASE CONTEXT:\n${context}\n\nReturn a grounded answer and citations.`,
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        answer: { type: 'string' },
+        citations: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: { title: { type: 'string' }, url: { type: 'string' } },
+            required: ['title', 'url'],
+          },
+        },
+      },
+      required: ['answer', 'citations'],
+    },
+    maxTokens: 1600,
+  })
+
+  return {
+    answer: answer.answer,
+    citations: answer.citations,
+    matchCount: chunkRows.length,
+  }
+}
+
+// Ensures ingestion never blocks on "which notebook?" — if the user has no
+// notebooks yet, or doesn't specify one, everything lands in one obvious
+// place instead of forcing notebook setup before the first save.
+export async function getOrCreateDefaultNotebook(userId: string): Promise<string> {
+  const db = createServiceClient()
+  const existing = await db.from('knowledge_notebooks').select('id').eq('user_id', userId).order('created_at', { ascending: true }).limit(1).maybeSingle()
+  if (existing.data?.id) return String(existing.data.id)
+
+  const created = await db.from('knowledge_notebooks').insert({
+    user_id: userId,
+    title: 'General',
+    description: 'Default notebook — everything you save lands here unless you pick another.',
+  }).select('id').single()
+  if (created.error) throw created.error
+  return String(created.data.id)
+}
+
 export async function answerRecallQuestion(params: {
   userId: string
   question: string
