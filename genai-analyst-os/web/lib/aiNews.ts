@@ -198,3 +198,41 @@ export async function fetchAiNewsStories(limit = 40): Promise<AiNewsStory[]> {
   stories.sort((a, b) => b.sources.length - a.sources.length || b.pubMs - a.pubMs)
   return stories.slice(0, limit)
 }
+
+// ── Trending entities ───────────────────────────────────────────────────
+// Cheap by-product of the entity extraction already built for clustering —
+// aggregates every named entity across ALL live items (not just clustered
+// stories) so single-mention items still contribute to what's "buzzing"
+// right now, Twitter-trends style.
+
+export interface TrendingEntity {
+  entity: string
+  sourceCount: number
+  itemCount: number
+}
+
+export async function fetchTrendingEntities(limit = 8): Promise<TrendingEntity[]> {
+  const items = await fetchAiNews(120)
+  const bySources = new Map<string, Set<string>>()
+  const byCount = new Map<string, number>()
+  // Preserve first-seen display casing (e.g. "SpaceX" not "spacex").
+  const display = new Map<string, string>()
+
+  for (const item of items) {
+    const rawEntities = item.title.match(/\b[A-Z][a-zA-Z0-9]*(?:'s)?\b/g) ?? []
+    for (const raw of rawEntities) {
+      const key = raw.replace(/'s$/, '').toLowerCase()
+      if (key.length < 3 || ENTITY_NOISE_WORDS.has(key)) continue
+      if (!display.has(key)) display.set(key, raw.replace(/'s$/, ''))
+      if (!bySources.has(key)) bySources.set(key, new Set())
+      bySources.get(key)!.add(item.source)
+      byCount.set(key, (byCount.get(key) ?? 0) + 1)
+    }
+  }
+
+  return Array.from(bySources.entries())
+    .map(([key, sources]) => ({ entity: display.get(key) ?? key, sourceCount: sources.size, itemCount: byCount.get(key) ?? 0 }))
+    .filter(e => e.sourceCount >= 2)
+    .sort((a, b) => b.sourceCount - a.sourceCount || b.itemCount - a.itemCount)
+    .slice(0, limit)
+}

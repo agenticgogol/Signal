@@ -701,8 +701,15 @@ const CATEGORY_ACCENTS: Record<string, string> = {
   'Research Digest': 'from-emerald-500/15 to-transparent',
   'Weekly Roundup': 'from-amber-500/15 to-transparent',
 }
+const CATEGORY_DOT_COLORS: Record<string, string> = {
+  'Research & Industry': 'bg-violet-500',
+  'Industry News': 'bg-blue-500',
+  'Research': 'bg-emerald-500',
+  'Research Digest': 'bg-emerald-500',
+  'Weekly Roundup': 'bg-amber-500',
+}
 
-function NewsCard({ item, featured = false }: { item: NewsItem; featured?: boolean }) {
+function NewsCard({ item, featured = false, isNew = false }: { item: NewsItem; featured?: boolean; isNew?: boolean }) {
   const covered = item.sources.length > 1
   return (
     <a href={item.url} target="_blank" rel="noopener noreferrer"
@@ -711,6 +718,7 @@ function NewsCard({ item, featured = false }: { item: NewsItem; featured?: boole
           ? 'border-violet-200 dark:border-violet-800 hover:shadow-lg hover:border-violet-300 dark:hover:border-violet-600 p-5'
           : 'border-zinc-100 dark:border-zinc-800 hover:shadow-md hover:border-zinc-200 dark:hover:border-zinc-700 p-4'
       }`}>
+      {isNew && <span className="absolute top-3 right-3 w-2 h-2 rounded-full bg-violet-500 animate-pulse" title="New since your last visit" />}
       <div className={`absolute inset-x-0 top-0 h-16 bg-gradient-to-b ${CATEGORY_ACCENTS[item.category] ?? 'from-zinc-500/10 to-transparent'} pointer-events-none`} />
       <div className="relative">
         <div className="flex items-center gap-1.5 mb-2 flex-wrap">
@@ -1013,6 +1021,11 @@ export default function FeedPage() {
   const [newsLoading, setNewsLoading] = useState(false)
   const [newsFetchedAt, setNewsFetchedAt] = useState<string | null>(null)
   const [newsFilter, setNewsFilter] = useState<string>('all')
+  const [newsTrending, setNewsTrending] = useState<Array<{ entity: string; sourceCount: number; itemCount: number }>>([])
+  // "New since last visit" — compared against pubMs, not re-set until the
+  // user actually leaves the tab, so items don't lose their "new" dot the
+  // instant they're rendered.
+  const [newsLastVisitMs, setNewsLastVisitMs] = useState<number | null>(null)
 
   // Knowledge feed tab
   const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeFeedItem[]>([])
@@ -1268,10 +1281,26 @@ export default function FeedPage() {
       const res = await fetch('/api/data/ai-news')
       const json = await res.json()
       setNewsItems(json.stories ?? [])
+      setNewsTrending(json.trending ?? [])
       setNewsFetchedAt(json.fetchedAt ?? null)
     } catch { setNewsItems([]) }
     setNewsLoading(false)
   }, [])
+
+  // Read "last visited News tab" once on mount, before any render marks
+  // items as new — then stamp a fresh visit time so the NEXT visit's "new"
+  // markers are based on today, not this one.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const stored = window.localStorage.getItem('signal:news-last-visit')
+    setNewsLastVisitMs(stored ? Number(stored) : Date.now())
+  }, [])
+
+  useEffect(() => {
+    if (activeTab !== 'news' || typeof window === 'undefined') return
+    return () => { window.localStorage.setItem('signal:news-last-visit', String(Date.now())) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab])
 
   const fetchKnowledgeFeed = useCallback(async () => {
     if (!session?.access_token || !user?.id) {
@@ -1752,6 +1781,12 @@ export default function FeedPage() {
   const filteredNews = newsFilter === 'all' ? newsItems : newsItems.filter(n => n.sources.includes(newsFilter))
   const featuredNews = filteredNews.filter(n => n.sources.length > 1).slice(0, 3)
   const restNews = filteredNews.filter(n => !featuredNews.includes(n))
+  const restNewsByCategory = restNews.reduce<Record<string, NewsItem[]>>((acc, item) => {
+    (acc[item.category] ??= []).push(item)
+    return acc
+  }, {})
+  const restNewsCategories = Object.keys(restNewsByCategory).sort((a, b) => restNewsByCategory[b].length - restNewsByCategory[a].length)
+  const isNewsItemNew = (item: NewsItem) => newsLastVisitMs !== null && item.pubMs > newsLastVisitMs
 
   const knowledgeFresh = knowledgeItems.filter(item => item.is_fresh || item.recency_score >= 0.85).slice(0, 6)
   const knowledgeTopPicks = knowledgeItems.filter(item => item.blend_score >= 0.72 && !knowledgeFresh.some(f => f.id === item.id)).slice(0, 8)
@@ -2824,6 +2859,18 @@ export default function FeedPage() {
             </button>
           </div>
 
+          {/* Trending entities — Twitter-trends-style strip, aggregated across all live items */}
+          {!newsLoading && newsTrending.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap mb-5 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-900/40 px-4 py-2.5">
+              <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 shrink-0">🔥 Buzzing:</span>
+              {newsTrending.map(t => (
+                <span key={t.entity} className="text-xs font-medium text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 px-2 py-0.5 rounded-full">
+                  {t.entity} <span className="text-zinc-400">· {t.sourceCount}</span>
+                </span>
+              ))}
+            </div>
+          )}
+
           {/* Source filter */}
           {!newsLoading && newsSources.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-5">
@@ -2863,15 +2910,24 @@ export default function FeedPage() {
                     <span className="text-xs text-zinc-400">Same story, multiple independent sources</span>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {featuredNews.map((item, i) => <NewsCard key={i} item={item} featured />)}
+                    {featuredNews.map((item, i) => <NewsCard key={i} item={item} featured isNew={isNewsItemNew(item)} />)}
                   </div>
                 </div>
               )}
-              <div>
-                {featuredNews.length > 0 && <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-3">More headlines</h3>}
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                  {restNews.map((item, i) => <NewsCard key={i} item={item} />)}
-                </div>
+              <div className="space-y-6">
+                {featuredNews.length > 0 && <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">More headlines</h3>}
+                {restNewsCategories.map(category => (
+                  <div key={category}>
+                    <div className="flex items-center gap-2 mb-2.5">
+                      <div className={`w-2 h-2 rounded-full ${CATEGORY_DOT_COLORS[category] ?? 'bg-zinc-400'}`} />
+                      <h4 className="text-xs font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{category}</h4>
+                      <span className="text-xs text-zinc-400">{restNewsByCategory[category].length}</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                      {restNewsByCategory[category].map((item, i) => <NewsCard key={i} item={item} isNew={isNewsItemNew(item)} />)}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
