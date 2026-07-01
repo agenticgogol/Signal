@@ -57,6 +57,17 @@ function extractJson(text: string) {
   return (fenced ? fenced[1] : text).trim()
 }
 
+// Common, mechanically-fixable ways models produce almost-valid JSON:
+// trailing commas before a closer, and "smart" quotes substituted for
+// straight ones inside string values (breaks any string containing an
+// apostrophe, e.g. "it's" rendered as it’s and then re-quoted).
+function heuristicJsonRepair(text: string): string {
+  return text
+    .replace(/,(\s*[}\]])/g, '$1')
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+}
+
 async function callAnthropic(settings: UserLlmSettings, params: {
   system?: string
   prompt: string
@@ -209,5 +220,34 @@ export async function generateJsonForUser<T>(params: {
     agent: params.agent,
   })
 
-  return JSON.parse(extractJson(text)) as T
+  const candidate = extractJson(text)
+  try {
+    return JSON.parse(candidate) as T
+  } catch {}
+
+  // Models occasionally produce almost-valid JSON — a trailing comma, or a
+  // smart quote inside a string that breaks the surrounding quoting. Try a
+  // cheap mechanical repair before spending another LLM call on it.
+  try {
+    return JSON.parse(heuristicJsonRepair(candidate)) as T
+  } catch {}
+
+  // Last resort: ask the model to fix its own output. One extra call, only
+  // paid when the response was actually malformed — cheaper and more
+  // reliable than trying to hand-write a repair for every failure shape.
+  try {
+    const repaired = await generateTextForUser({
+      userId: params.userId,
+      system: 'You repair malformed JSON. Return ONLY the corrected, valid JSON — no markdown fences, no commentary. Preserve all the original content; fix only syntax errors (missing/extra commas, unescaped quotes, unbalanced brackets).',
+      prompt: candidate,
+      maxTokens: params.maxTokens ?? 2000,
+      agent: `${params.agent ?? 'unspecified'}_json_repair`,
+    })
+    return JSON.parse(extractJson(repaired)) as T
+  } catch (repairError) {
+    throw new Error(
+      `Model returned malformed JSON and automatic repair failed. Original parse error snippet: ${candidate.slice(0, 300)}${candidate.length > 300 ? '…' : ''}`,
+      { cause: repairError },
+    )
+  }
 }
