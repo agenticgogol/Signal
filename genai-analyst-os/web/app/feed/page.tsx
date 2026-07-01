@@ -125,7 +125,12 @@ interface WeeklyItem {
 }
 interface NewsItem {
   title: string; url: string; description: string
-  pubDate: string; pubMs: number; source: string; category: string
+  pubDate: string; pubMs: number; category: string
+  // A "story" clustered across independent RSS sources covering the same
+  // underlying news — sources.length is the only honest "popularity" signal
+  // available here (no view/click data exists for external news items).
+  sources: string[]
+  alternates: { source: string; url: string; title: string }[]
 }
 interface NarrativeData {
   headline: string; signal: string
@@ -689,23 +694,47 @@ function WeeklyArticleRow({ item, reaction, onReact }: {
 
 // ── NewsCard ──────────────────────────────────────────────────────────────────
 
-function NewsCard({ item }: { item: NewsItem }) {
+const CATEGORY_ACCENTS: Record<string, string> = {
+  'Research & Industry': 'from-violet-500/15 to-transparent',
+  'Industry News': 'from-blue-500/15 to-transparent',
+  'Research': 'from-emerald-500/15 to-transparent',
+  'Research Digest': 'from-emerald-500/15 to-transparent',
+  'Weekly Roundup': 'from-amber-500/15 to-transparent',
+}
+
+function NewsCard({ item, featured = false }: { item: NewsItem; featured?: boolean }) {
+  const covered = item.sources.length > 1
   return (
     <a href={item.url} target="_blank" rel="noopener noreferrer"
-      className="block bg-white dark:bg-zinc-900 rounded-xl border border-zinc-100 dark:border-zinc-800 p-4 hover:shadow-md hover:border-zinc-200 dark:hover:border-zinc-700 transition-all group">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-800 px-2 py-0.5 rounded-full">
-          {item.source}
-        </span>
-        <span className="text-xs text-zinc-400">{item.category}</span>
-        {item.pubDate && <span className="text-xs text-zinc-300 dark:text-zinc-600 ml-auto">{formatPubFull(item.pubDate)}</span>}
+      className={`relative block overflow-hidden bg-white dark:bg-zinc-900 rounded-2xl border transition-all group ${
+        featured
+          ? 'border-violet-200 dark:border-violet-800 hover:shadow-lg hover:border-violet-300 dark:hover:border-violet-600 p-5'
+          : 'border-zinc-100 dark:border-zinc-800 hover:shadow-md hover:border-zinc-200 dark:hover:border-zinc-700 p-4'
+      }`}>
+      <div className={`absolute inset-x-0 top-0 h-16 bg-gradient-to-b ${CATEGORY_ACCENTS[item.category] ?? 'from-zinc-500/10 to-transparent'} pointer-events-none`} />
+      <div className="relative">
+        <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+          {covered && (
+            <span className="text-[11px] font-bold text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-800 px-2 py-0.5 rounded-full">
+              🔥 {item.sources.length} sources
+            </span>
+          )}
+          <span className="text-xs font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-800 px-2 py-0.5 rounded-full">
+            {item.sources[0]}
+          </span>
+          <span className="text-xs text-zinc-400">{item.category}</span>
+          {item.pubDate && <span className="text-xs text-zinc-300 dark:text-zinc-600 ml-auto">{formatPubFull(item.pubDate)}</span>}
+        </div>
+        <p className={`font-semibold text-zinc-900 dark:text-zinc-100 group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors leading-snug mb-1 ${featured ? 'text-base line-clamp-3' : 'text-sm line-clamp-2'}`}>
+          {item.title}
+        </p>
+        {item.description && (
+          <p className={`text-zinc-500 dark:text-zinc-400 leading-relaxed ${featured ? 'text-sm line-clamp-3' : 'text-xs line-clamp-2'}`}>{item.description}</p>
+        )}
+        {covered && item.alternates.length > 0 && (
+          <p className="mt-2 text-[11px] text-zinc-400">Also covered by {item.alternates.slice(0, 2).map(a => a.source).join(', ')}{item.alternates.length > 2 ? ` +${item.alternates.length - 2} more` : ''}</p>
+        )}
       </div>
-      <p className="font-semibold text-sm text-zinc-900 dark:text-zinc-100 group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors leading-snug mb-1 line-clamp-2">
-        {item.title}
-      </p>
-      {item.description && (
-        <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed line-clamp-2">{item.description}</p>
-      )}
     </a>
   )
 }
@@ -805,7 +834,9 @@ function LiveNewsRail({ items, onViewAll }: { items: NewsItem[]; onViewAll: () =
           <a key={`${item.url}-${idx}`} href={item.url} target="_blank" rel="noopener noreferrer"
             className="block rounded-xl border border-zinc-100 dark:border-zinc-800 px-3 py-2.5 hover:border-violet-300 dark:hover:border-violet-700 transition-colors">
             <p className="text-xs font-medium text-zinc-800 dark:text-zinc-200 line-clamp-2">{item.title}</p>
-            <p className="mt-1 text-[11px] text-zinc-400">{item.source}</p>
+            <p className="mt-1 text-[11px] text-zinc-400">
+              {item.sources[0]}{item.sources.length > 1 ? ` +${item.sources.length - 1} more · 🔥 trending` : ''}
+            </p>
           </a>
         ))}
       </div>
@@ -1236,7 +1267,7 @@ export default function FeedPage() {
     try {
       const res = await fetch('/api/data/ai-news')
       const json = await res.json()
-      setNewsItems(json.items ?? [])
+      setNewsItems(json.stories ?? [])
       setNewsFetchedAt(json.fetchedAt ?? null)
     } catch { setNewsItems([]) }
     setNewsLoading(false)
@@ -1717,8 +1748,10 @@ export default function FeedPage() {
   const weeklyTopics = Object.keys(weeklyByTopic).sort((a, b) => weeklyByTopic[b].length - weeklyByTopic[a].length)
 
   // AI news sources for filter
-  const newsSources = [...new Set(newsItems.map(n => n.source))]
-  const filteredNews = newsFilter === 'all' ? newsItems : newsItems.filter(n => n.source === newsFilter)
+  const newsSources = [...new Set(newsItems.flatMap(n => n.sources))]
+  const filteredNews = newsFilter === 'all' ? newsItems : newsItems.filter(n => n.sources.includes(newsFilter))
+  const featuredNews = filteredNews.filter(n => n.sources.length > 1).slice(0, 3)
+  const restNews = filteredNews.filter(n => !featuredNews.includes(n))
 
   const knowledgeFresh = knowledgeItems.filter(item => item.is_fresh || item.recency_score >= 0.85).slice(0, 6)
   const knowledgeTopPicks = knowledgeItems.filter(item => item.blend_score >= 0.72 && !knowledgeFresh.some(f => f.id === item.id)).slice(0, 8)
@@ -2822,8 +2855,24 @@ export default function FeedPage() {
               <p className="text-sm mt-1">Click Refresh to load live AI headlines.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-              {filteredNews.map((item, i) => <NewsCard key={i} item={item} />)}
+            <div className="space-y-8">
+              {featuredNews.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">🔥 Most covered right now</h3>
+                    <span className="text-xs text-zinc-400">Same story, multiple independent sources</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {featuredNews.map((item, i) => <NewsCard key={i} item={item} featured />)}
+                  </div>
+                </div>
+              )}
+              <div>
+                {featuredNews.length > 0 && <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-3">More headlines</h3>}
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {restNews.map((item, i) => <NewsCard key={i} item={item} />)}
+                </div>
+              </div>
             </div>
           )}
         </div>

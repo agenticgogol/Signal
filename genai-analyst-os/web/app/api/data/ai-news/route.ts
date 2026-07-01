@@ -1,8 +1,8 @@
-import { fetchAiNews } from '@/lib/aiNews'
+import { fetchAiNewsStories } from '@/lib/aiNews'
 
 export const revalidate = 0
 
 export async function GET() {
-  const items = await fetchAiNews()
-  return Response.json({ items, fetchedAt: new Date().toISOString() })
+  const stories = await fetchAiNewsStories()
+  return Response.json({ stories, fetchedAt: new Date().toISOString() })
 }

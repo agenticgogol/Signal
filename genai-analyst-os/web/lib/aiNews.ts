@@ -84,3 +84,82 @@ export async function fetchAiNews(limit = 40): Promise<AiNewsItem[]> {
     return true
   }).slice(0, limit)
 }
+
+// ── Story clustering — "popularity" = independent-source coverage ─────────
+// This feed has no view/click data to rank by, so the honest signal
+// available is: how many of the 6 tracked sources are covering the same
+// underlying story. Two items are the same story if their titles overlap
+// heavily AND they were published within a day of each other — the time
+// bound exists so an old story with similar wording doesn't get merged with
+// an unrelated new one.
+
+const STORY_STOPWORDS = new Set([
+  'the','a','an','and','or','but','of','to','in','on','for','with','is','are',
+  'was','were','how','why','what','new','after','over','into','its','it','as',
+  'from','by','at','this','that','will','can','says','say','said',
+])
+
+function titleTokens(title: string): Set<string> {
+  return new Set((title.toLowerCase().match(/[a-z0-9][a-z0-9'-]{2,}/g) ?? []).filter(w => !STORY_STOPWORDS.has(w)))
+}
+
+function titleOverlap(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0
+  let shared = 0
+  for (const w of a) if (b.has(w)) shared++
+  return shared / Math.min(a.size, b.size)
+}
+
+const SAME_STORY_WINDOW_MS = 36 * 60 * 60 * 1000
+const SAME_STORY_OVERLAP_THRESHOLD = 0.55
+
+export interface AiNewsStory {
+  title: string
+  url: string
+  description: string
+  pubDate: string
+  pubMs: number
+  category: string
+  sources: string[]
+  alternates: { source: string; url: string; title: string }[]
+}
+
+export async function fetchAiNewsStories(limit = 40): Promise<AiNewsStory[]> {
+  const items = await fetchAiNews(120)
+  const clusters: { items: AiNewsItem[]; tokens: Set<string> }[] = []
+
+  for (const item of items) {
+    const tokens = titleTokens(item.title)
+    const match = clusters.find(cluster =>
+      cluster.items.some(existing => Math.abs(existing.pubMs - item.pubMs) <= SAME_STORY_WINDOW_MS) &&
+      titleOverlap(tokens, cluster.tokens) >= SAME_STORY_OVERLAP_THRESHOLD
+    )
+    if (match) {
+      match.items.push(item)
+      for (const t of tokens) match.tokens.add(t)
+    } else {
+      clusters.push({ items: [item], tokens })
+    }
+  }
+
+  const stories: AiNewsStory[] = clusters.map(cluster => {
+    // Prefer the earliest-published item as the canonical one — it broke
+    // the story first, later coverage is corroboration.
+    const sorted = [...cluster.items].sort((a, b) => a.pubMs - b.pubMs)
+    const primary = sorted[0]
+    const uniqueSources = Array.from(new Set(cluster.items.map(i => i.source)))
+    return {
+      title: primary.title,
+      url: primary.url,
+      description: cluster.items.reduce((best, i) => i.description.length > best.length ? i.description : best, primary.description),
+      pubDate: primary.pubDate,
+      pubMs: Math.max(...cluster.items.map(i => i.pubMs)),
+      category: primary.category,
+      sources: uniqueSources,
+      alternates: cluster.items.filter(i => i.url !== primary.url).map(i => ({ source: i.source, url: i.url, title: i.title })),
+    }
+  })
+
+  stories.sort((a, b) => b.sources.length - a.sources.length || b.pubMs - a.pubMs)
+  return stories.slice(0, limit)
+}

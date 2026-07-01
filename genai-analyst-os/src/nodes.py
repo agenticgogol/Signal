@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import math
 import os
+import re
 from datetime import date, timezone, datetime
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
 import structlog
 
@@ -124,6 +126,55 @@ def crawler(state: PipelineState) -> dict:
 # Node: summarise
 # ---------------------------------------------------------------------------
 
+# Tracking-param / trailing-slash variants of the same URL used to create
+# distinct `articles` rows even though the `url` column is unique — e.g.
+# "example.com/post?utm_source=x" and "example.com/post" both pass the
+# constraint but are the same story. Normalizing before the upsert collapses
+# these into one row instead of relying on the DB to catch them.
+_TRACKING_PARAM_PREFIXES = ("utm_", "ref", "fbclid", "gclid", "mc_", "igshid", "s=")
+
+def normalize_article_url(url: str) -> str:
+    if not url:
+        return url
+    try:
+        parts = urlsplit(url.strip())
+        kept_params = [
+            (k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
+            if not any(k.lower().startswith(p) for p in _TRACKING_PARAM_PREFIXES)
+        ]
+        path = parts.path.rstrip("/") or "/"
+        return urlunsplit((
+            parts.scheme.lower(),
+            parts.netloc.lower(),
+            path,
+            urlencode(kept_params),
+            "",  # drop fragment
+        ))
+    except Exception:
+        return url
+
+
+_TITLE_STOPWORDS = {
+    "the", "a", "an", "and", "or", "but", "of", "to", "in", "on", "for", "with",
+    "is", "are", "was", "were", "how", "why", "what", "new", "after", "over",
+    "into", "its", "it", "as", "from", "by", "at", "this", "that", "will", "can",
+}
+
+def _title_tokens(title: str) -> set[str]:
+    words = re.findall(r"[a-z0-9][a-z0-9'-]{2,}", title.lower())
+    return {w for w in words if w not in _TITLE_STOPWORDS}
+
+
+def _title_overlap(a: set[str], b: set[str]) -> float:
+    if not a or not b:
+        return 0.0
+    shared = len(a & b)
+    return shared / min(len(a), len(b))
+
+
+_SAME_STORY_TITLE_OVERLAP = 0.7
+
+
 def summarise(state: PipelineState) -> dict:
     """Call summarise_article + embed_article for each raw article.
     Real mode: upserts into articles table (ON CONFLICT url → update).
@@ -143,7 +194,7 @@ def summarise(state: PipelineState) -> dict:
         db = get_client()
 
     for article in state.raw_articles:
-        url = article["url"]
+        url = normalize_article_url(article["url"])
         if url in seen_urls:
             continue
         seen_urls.add(url)
@@ -254,6 +305,21 @@ def rank(state: PipelineState) -> dict:
         })
 
     feed_items.sort(key=lambda x: x["blend_score"], reverse=True)
+
+    # Two different sources can syndicate the same underlying story under
+    # different URLs — each becomes its own `articles` row (unique on url),
+    # but a user shouldn't see the same story twice in one feed. Since the
+    # list is already sorted best-first, this keeps the highest-scoring
+    # instance of each story and drops near-duplicate titles.
+    seen_title_tokens: list[set[str]] = []
+    deduped_feed_items = []
+    for item in feed_items:
+        tokens = _title_tokens(item["article"].get("title", "") or "")
+        if any(_title_overlap(tokens, existing) >= _SAME_STORY_TITLE_OVERLAP for existing in seen_title_tokens):
+            continue
+        deduped_feed_items.append(item)
+        seen_title_tokens.append(tokens)
+    feed_items = deduped_feed_items
 
     # Real mode: persist to user_feed_items
     if not _IS_MOCK() and feed_items:
