@@ -131,6 +131,52 @@ function formatRelativeTime(iso: string): string {
   } catch { return '' }
 }
 
+// ── Evidence gap pre-flight ─────────────────────────────────────────────────
+// Pure heuristics, zero LLM calls — this must be free and instant since it
+// runs on every keystroke/selection change to warn the user BEFORE the
+// 8-agent loop burns tokens on a topic their sources can't actually support.
+
+const STOPWORDS = new Set([
+  'the','a','an','and','or','but','of','to','in','on','for','with','is','are','was','were',
+  'this','that','these','those','it','its','as','at','by','from','be','been','being','can',
+  'will','would','should','could','what','why','how','your','you','we','our','their','they',
+  'not','no','do','does','did','have','has','had','more','most','than','into','about','if',
+])
+function tokenize(text: string): Set<string> {
+  return new Set((text.toLowerCase().match(/[a-z][a-z0-9-]{2,}/g) ?? []).filter(w => !STOPWORDS.has(w)))
+}
+function textOverlapScore(a: string, b: string): number {
+  const tokensA = tokenize(a)
+  const tokensB = tokenize(b)
+  if (tokensA.size === 0 || tokensB.size === 0) return 0
+  let shared = 0
+  for (const word of tokensA) if (tokensB.has(word)) shared++
+  return shared / Math.min(tokensA.size, tokensB.size)
+}
+
+interface EvidenceAssessment {
+  level: 'good' | 'thin' | 'none'
+  message: string | null
+}
+
+function EvidenceGapBanner({ assessment, onGoToSources }: { assessment: EvidenceAssessment; onGoToSources: () => void }) {
+  if (assessment.level === 'good' || !assessment.message) return null
+  const isNone = assessment.level === 'none'
+  return (
+    <div className={`mb-5 rounded-2xl border p-4 ${isNone
+      ? 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/20'
+      : 'border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20'}`}>
+      <p className={`text-sm font-semibold ${isNone ? 'text-red-800 dark:text-red-200' : 'text-amber-800 dark:text-amber-200'}`}>
+        {isNone ? '🚫 No evidence to cite yet' : '⚠️ Thin evidence for this topic'}
+      </p>
+      <p className={`mt-1 text-xs leading-5 ${isNone ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>{assessment.message}</p>
+      <button onClick={onGoToSources} className={`mt-2 text-xs font-semibold underline ${isNone ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>
+        ← Go back and adjust sources
+      </button>
+    </div>
+  )
+}
+
 function CreatePageInner() {
   const searchParams = useSearchParams()
   const { session, user } = useAuthSession()
@@ -323,6 +369,13 @@ function CreatePageInner() {
       setSourceMode('notebook')
       const notebookId = searchParams.get('notebook_id')
       if (notebookId) setSelectedNotebookId(notebookId)
+    } else if (src === 'custom') {
+      setSourceMode('custom')
+      const topicParam = searchParams.get('topic')
+      if (topicParam) {
+        setTopic(topicParam.slice(0, 120))
+        setCustomBriefInput(topicParam)
+      }
     }
     if (fmtParam) setFormat(fmtParam)
   }, [searchParams])
@@ -616,6 +669,46 @@ function CreatePageInner() {
   }
 
   const spec = PLATFORM_SPECS[format]
+
+  const evidenceAssessment: EvidenceAssessment = (() => {
+    // Custom briefs and frozen outlines are already vetted / don't need
+    // external evidence (a personal opinion post has nothing to cite).
+    if (sourceMode === 'custom' || sourceMode === 'outline') return { level: 'good', message: null }
+
+    if (sourceMode === 'feed') {
+      const selected = feedArticles.filter(a => selectedArticleIds.has(a.id))
+      if (selected.length === 0) {
+        return { level: 'none', message: 'No source articles selected yet — this draft would have nothing to cite. Pin articles in Feed first, or switch to Custom Brief for a personal post.' }
+      }
+      const evidenceText = selected.map(a => [a.why_it_matters, ...(a.tldr_bullets ?? [])].filter(Boolean).join(' ')).join(' ')
+      if (evidenceText.trim().length < 200) {
+        return { level: 'thin', message: `Your ${selected.length} selected article${selected.length > 1 ? 's have' : ' has'} very little summary detail (~${evidenceText.trim().length} characters total) — the Claim Verifier may flag citations as unsupported. Consider picking articles with fuller "why it matters" notes.` }
+      }
+      const topicText = [topic, keyAngle].filter(Boolean).join(' ')
+      if (topicText.trim() && textOverlapScore(topicText, evidenceText) < 0.05) {
+        return { level: 'thin', message: 'Your topic doesn\'t seem to overlap much with your selected articles — double-check you picked the right sources before generating.' }
+      }
+      return { level: 'good', message: null }
+    }
+
+    if (sourceMode === 'notebook') {
+      const selected = notebookItems.filter(item => selectedNotebookItemIds.has(item.id))
+      if (selected.length === 0) {
+        return { level: 'none', message: 'No notebook items selected yet — this draft would have nothing to cite. Select items below, or switch to Custom Brief for a personal post.' }
+      }
+      const evidenceText = selected.map(item => [item.summary, item.why_it_matters].filter(Boolean).join(' ')).join(' ')
+      if (evidenceText.trim().length < 200) {
+        return { level: 'thin', message: `Your ${selected.length} selected notebook item${selected.length > 1 ? 's have' : ' has'} very little summary detail — the Claim Verifier may flag citations as unsupported.` }
+      }
+      const topicText = [topic, keyAngle].filter(Boolean).join(' ')
+      if (topicText.trim() && textOverlapScore(topicText, evidenceText) < 0.05) {
+        return { level: 'thin', message: 'Your topic doesn\'t seem to overlap much with your selected notebook items — double-check you picked the right sources before generating.' }
+      }
+      return { level: 'good', message: null }
+    }
+
+    return { level: 'good', message: null }
+  })()
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-8">
@@ -913,6 +1006,7 @@ function CreatePageInner() {
       {step === 2 && (
         <div>
           <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mb-5">Define your brief</h2>
+          <EvidenceGapBanner assessment={evidenceAssessment} onGoToSources={() => setStep(1)} />
           <div className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-2xl p-6 space-y-4">
             <div>
               <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">Topic</label>
@@ -959,6 +1053,7 @@ function CreatePageInner() {
         <div>
           <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mb-2">Choose your platform</h2>
           <p className="text-sm text-zinc-500 mb-5">Each platform has different word limits, structure, and writing style.</p>
+          <EvidenceGapBanner assessment={evidenceAssessment} onGoToSources={() => setStep(1)} />
 
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
             {FORMATS.map(f => (

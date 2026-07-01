@@ -768,3 +768,175 @@ export async function answerRecallQuestion(params: {
     priorChatMatches: priorChatMatches.length,
   }
 }
+
+// ── Connection Agent ──────────────────────────────────────────────────────
+// On-demand only (button-triggered from the UI, never scheduled) — finds
+// where something already in the knowledge base intersects with what's
+// currently in the feed. Matching itself is pure heuristics (topic tag
+// overlap + word overlap), zero LLM cost, so the expensive step only runs
+// once, in a single batched call, over the handful of pairs that actually
+// look connected — not once per pair, and never automatically in the
+// background.
+
+export interface KnowledgeConnection {
+  knowledgeTitle: string
+  knowledgeUrl: string | null
+  feedTitle: string
+  feedUrl: string
+  insight: string
+  worthPost: boolean
+}
+
+interface ConnectionCandidate {
+  knowledgeTitle: string
+  knowledgeUrl: string | null
+  knowledgeText: string
+  feedTitle: string
+  feedUrl: string
+  feedText: string
+  score: number
+}
+
+function tagOverlapCount(a: string[], b: string[]): number {
+  const setB = new Set(b)
+  return a.filter(t => setB.has(t)).length
+}
+
+export async function findKnowledgeConnections(userId: string): Promise<{ connections: KnowledgeConnection[]; candidatesScanned: number }> {
+  const db = createServiceClient()
+  const since = new Date()
+  since.setUTCDate(since.getUTCDate() - 14)
+
+  const [{ data: knowledgeItems }, { data: knowledgeLinks }, { data: feedItems }] = await Promise.all([
+    db.from('knowledge_items')
+      .select('id, title, source_url, summary, why_it_matters, topic_tags')
+      .eq('user_id', userId)
+      .eq('status', 'ready')
+      .order('processed_at', { ascending: false })
+      .limit(150),
+    db.from('knowledge_links')
+      .select('url, label, link_type, topic_tags')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(100),
+    db.from('user_feed_items')
+      .select('blend_score, feed_date, articles(id, title, url, why_it_matters, tldr_bullets, topic_tags, published_at)')
+      .eq('user_id', userId)
+      .gte('feed_date', since.toISOString().slice(0, 10))
+      .order('blend_score', { ascending: false })
+      .limit(150),
+  ])
+
+  const knowledgeEntries = [
+    ...(knowledgeItems ?? []).map((item: Record<string, unknown>) => ({
+      title: String(item.title || ''),
+      url: item.source_url ? String(item.source_url) : null,
+      text: [item.summary, item.why_it_matters].filter(Boolean).join(' '),
+      tags: Array.isArray(item.topic_tags) ? item.topic_tags.map(String) : [],
+    })),
+    ...(knowledgeLinks ?? []).map((link: Record<string, unknown>) => ({
+      title: `${link.link_type === 'github' ? '🐙 ' : ''}${String(link.label || link.url)}`,
+      url: String(link.url),
+      text: String(link.label || ''),
+      tags: Array.isArray(link.topic_tags) ? link.topic_tags.map(String) : [],
+    })),
+  ].filter(entry => entry.title)
+
+  const feedEntries = (feedItems ?? [])
+    .map((item: Record<string, unknown>) => {
+      const article = Array.isArray(item.articles) ? item.articles[0] : item.articles as Record<string, unknown> | null
+      if (!article) return null
+      return {
+        title: String(article.title || ''),
+        url: String(article.url || ''),
+        text: [article.why_it_matters, ...(Array.isArray(article.tldr_bullets) ? article.tldr_bullets : [])].filter(Boolean).join(' '),
+        tags: Array.isArray(article.topic_tags) ? article.topic_tags.map(String) : [],
+      }
+    })
+    .filter((entry): entry is { title: string; url: string; text: string; tags: string[] } => Boolean(entry) && Boolean(entry?.title))
+
+  // Free heuristic pass: score every knowledge x feed pair, keep only the
+  // ones with a real topic + text signal, take the strongest handful.
+  const MIN_TAG_OVERLAP = 1
+  const MIN_TEXT_SCORE = 3
+  const candidates: ConnectionCandidate[] = []
+  let scanned = 0
+
+  for (const k of knowledgeEntries) {
+    for (const f of feedEntries) {
+      scanned++
+      const tagHits = tagOverlapCount(k.tags, f.tags)
+      if (tagHits < MIN_TAG_OVERLAP) continue
+      const textScore = overlapScore(k.text || k.title, f.text || f.title)
+      if (textScore < MIN_TEXT_SCORE) continue
+      candidates.push({
+        knowledgeTitle: k.title,
+        knowledgeUrl: k.url,
+        knowledgeText: k.text || k.title,
+        feedTitle: f.title,
+        feedUrl: f.url,
+        feedText: f.text || f.title,
+        score: tagHits * 10 + textScore,
+      })
+    }
+  }
+
+  candidates.sort((a, b) => b.score - a.score)
+  const top = candidates.slice(0, 8)
+
+  if (top.length === 0) {
+    return { connections: [], candidatesScanned: scanned }
+  }
+
+  // One batched LLM call for every candidate pair — not one call per pair.
+  const pairsBlock = top.map((pair, i) =>
+    `[${i + 1}] KNOWLEDGE: "${pair.knowledgeTitle}" — ${pair.knowledgeText.slice(0, 400)}\n    FEED: "${pair.feedTitle}" — ${pair.feedText.slice(0, 400)}`
+  ).join('\n\n')
+
+  const result = await generateJsonForUser<{
+    connections: { index: number; insight: string; worth_post: boolean }[]
+  }>({
+    userId,
+    maxTokens: 1400,
+    system: 'You find genuinely interesting connections between something a practitioner saved earlier and something new in their feed. For each numbered pair, write ONE sharp sentence explaining the actual connection or why it matters together — not a generic summary of either item alone. Mark worth_post=true only if the connection itself would make a compelling post (a real insight, contradiction, or update), not just "these are related."',
+    prompt: `Candidate pairs:\n\n${pairsBlock}\n\nReturn one connection entry per numbered pair.`,
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        connections: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              index: { type: 'number' },
+              insight: { type: 'string' },
+              worth_post: { type: 'boolean' },
+            },
+            required: ['index', 'insight', 'worth_post'],
+          },
+        },
+      },
+      required: ['connections'],
+    },
+  })
+
+  const connections: KnowledgeConnection[] = (result.connections ?? [])
+    .map(entry => {
+      const pair = top[entry.index - 1]
+      if (!pair) return null
+      return {
+        knowledgeTitle: pair.knowledgeTitle,
+        knowledgeUrl: pair.knowledgeUrl,
+        feedTitle: pair.feedTitle,
+        feedUrl: pair.feedUrl,
+        insight: entry.insight,
+        worthPost: Boolean(entry.worth_post),
+      }
+    })
+    .filter((c): c is KnowledgeConnection => c !== null)
+    .sort((a, b) => Number(b.worthPost) - Number(a.worthPost))
+
+  return { connections, candidatesScanned: scanned }
+}

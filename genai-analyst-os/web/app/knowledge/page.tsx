@@ -11,6 +11,15 @@ interface Notebook {
   title: string
 }
 
+interface KnowledgeConnection {
+  knowledgeTitle: string
+  knowledgeUrl: string | null
+  feedTitle: string
+  feedUrl: string
+  insight: string
+  worthPost: boolean
+}
+
 interface RankedItem {
   id: string
   notebook_id: string
@@ -76,6 +85,12 @@ export default function KnowledgePage() {
   const [asking, setAsking] = useState(false)
   const [askError, setAskError] = useState<string | null>(null)
   const [askAnswer, setAskAnswer] = useState<{ answer: string; citations: { title: string; url: string }[] } | null>(null)
+
+  // Connection Agent — button-triggered only, never automatic
+  const [findingConnections, setFindingConnections] = useState(false)
+  const [connectionsError, setConnectionsError] = useState<string | null>(null)
+  const [connections, setConnections] = useState<KnowledgeConnection[] | null>(null)
+  const [connectionsScanned, setConnectionsScanned] = useState<number | null>(null)
 
   // Add-source panel
   const [sourceMode, setSourceMode] = useState<SourceMode>('url')
@@ -213,6 +228,30 @@ export default function KnowledgePage() {
       setAskAnswer(null)
     }
     setAsking(false)
+  }
+
+  const doFindConnections = async (adminToken?: string) => {
+    setFindingConnections(true)
+    setConnectionsError(null)
+    try {
+      const res = await fetch('/api/knowledge/connections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders(adminToken) },
+        body: JSON.stringify({ userId }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Could not scan for connections')
+      setConnections(json.connections ?? [])
+      setConnectionsScanned(json.candidatesScanned ?? null)
+    } catch (e) {
+      setConnectionsError(e instanceof Error ? e.message : String(e))
+      setConnections(null)
+    }
+    setFindingConnections(false)
+  }
+
+  const handleFindConnections = () => {
+    runOrGate('This scans your knowledge base and recent feed for free, then makes one LLM call to explain any real connections it finds — uses your configured model, costs API credits.', doFindConnections)
   }
 
   // ── Add source ────────────────────────────────────────────────────────
@@ -543,6 +582,50 @@ export default function KnowledgePage() {
           </div>
         </section>
       </div>
+
+      {/* ── Connection Agent — button-triggered, never automatic ────────── */}
+      <section className="mt-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="text-sm font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">🔎 Find Connections</h2>
+            <p className="text-xs text-zinc-400 mt-0.5">Cross-references what you've saved against your last 14 days of feed. Free to scan — only costs credits if it finds something worth explaining.</p>
+          </div>
+          <button onClick={handleFindConnections} disabled={findingConnections}
+            className="rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-50 px-4 py-2.5 text-sm font-bold text-white transition-colors shrink-0">
+            {findingConnections ? 'Scanning…' : '🔎 Find Connections'}
+          </button>
+        </div>
+        <CostNotice text="Heuristic scan is free. If it finds candidate pairs, one batched LLM call explains them — uses your configured model, costs API credits." />
+
+        {connectionsError && <p className="mt-3 text-xs text-red-600 dark:text-red-400">{connectionsError}</p>}
+
+        {connections !== null && (
+          connections.length === 0 ? (
+            <p className="mt-4 text-sm text-zinc-400">Scanned {connectionsScanned ?? 0} pairs — nothing connected strongly enough to be worth surfacing right now. Save more sources or check back after your next feed refresh.</p>
+          ) : (
+            <div className="mt-4 space-y-3">
+              {connections.map((c, i) => (
+                <div key={i} className="rounded-xl border border-zinc-100 dark:border-zinc-800 p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">{c.insight}</p>
+                    {c.worthPost && <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">💡 Worth a post</span>}
+                  </div>
+                  <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[11px] text-zinc-400">
+                    {c.knowledgeUrl ? (
+                      <a href={c.knowledgeUrl} target="_blank" rel="noopener noreferrer" className="hover:underline text-violet-600 dark:text-violet-400">📚 {c.knowledgeTitle}</a>
+                    ) : <span>📚 {c.knowledgeTitle}</span>}
+                    <span>×</span>
+                    <a href={c.feedUrl} target="_blank" rel="noopener noreferrer" className="hover:underline text-violet-600 dark:text-violet-400">📰 {c.feedTitle}</a>
+                    {c.worthPost && (
+                      <Link href={`/create?source=custom&topic=${encodeURIComponent(c.insight)}`} className="ml-auto font-semibold text-zinc-500 hover:text-violet-600 dark:hover:text-violet-400">→ Create</Link>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        )}
+      </section>
 
       {/* ── Bottom: selected item summary ────────────────────────────────── */}
       {selectedItem && (
