@@ -170,6 +170,8 @@ function CreatePageInner() {
   const [publishModalOpen, setPublishModalOpen] = useState(false)
   const [exportStatus, setExportStatus] = useState<{ ok: boolean; text: string } | null>(null)
   const finalRef = useRef<HTMLTextAreaElement>(null)
+  const [feedbackText, setFeedbackText] = useState('')
+  const [showFeedbackBox, setShowFeedbackBox] = useState(false)
 
   // Admin gate
   const [showAdminGate, setShowAdminGate] = useState(false)
@@ -390,9 +392,15 @@ function CreatePageInner() {
   const doGenerate = async (token?: string) => {
     const { brief, sources } = buildBriefAndSources()
     if (!brief.trim()) return
+    // Capture before clearing — a non-empty feedbackText here means this is
+    // a "regenerate with feedback" run, not a from-scratch generation.
+    const previousDraft = finalOutput
+    const humanFeedback = feedbackText.trim()
     setIsGenerating(true)
     setFinalOutput('')
     setCitationWarning(null)
+    setFeedbackText('')
+    setShowFeedbackBox(false)
     setAgentSteps(INITIAL_STEPS.map(s => ({ ...s, status: 'pending', output: '' })))
     setStep(4)
 
@@ -404,7 +412,10 @@ function CreatePageInner() {
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ brief, sources, format, pov, userId }),
+        body: JSON.stringify({
+          brief, sources, format, pov, userId,
+          ...(humanFeedback ? { previousDraft, humanFeedback } : {}),
+        }),
       })
       if (!response.body) throw new Error('No response body')
 
@@ -1071,8 +1082,48 @@ function CreatePageInner() {
             className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 px-4 py-4 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-500 font-mono mb-4"
           />
 
+          {showFeedbackBox && (
+            <div className="mb-4 rounded-2xl border border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-950/20 p-4">
+              <label className="text-xs font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300">What should change?</label>
+              <textarea
+                value={feedbackText}
+                onChange={e => setFeedbackText(e.target.value)}
+                rows={3}
+                autoFocus
+                placeholder="e.g. Make the hook punchier, cut the third paragraph, sound less formal, add more about my eCommerce background..."
+                className="mt-2 w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 px-3.5 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-violet-500"
+              />
+              <p className="mt-1.5 text-xs text-zinc-400">This goes back through the full agent pipeline — Writer rewrites targeting your feedback, then it's re-verified, critiqued, and polished again.</p>
+              <div className="mt-3 flex gap-2">
+                <button onClick={() => { setShowFeedbackBox(false); setFeedbackText('') }}
+                  className="px-3.5 py-2 text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
+                  Cancel
+                </button>
+                <button onClick={() => {
+                  setStep(4)
+                  if (canUsePaidFeatures) {
+                    setPendingPaidGenerate(true)
+                    setShowPaidConfirm(true)
+                  } else {
+                    setPendingGenerate(true)
+                    setShowAdminGate(true)
+                  }
+                }} disabled={isGenerating || !feedbackText.trim()}
+                  className="px-4 py-2 text-xs font-bold bg-violet-600 hover:bg-violet-700 disabled:opacity-40 text-white rounded-lg transition-colors">
+                  ↻ Regenerate with this feedback
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-3">
+            <button onClick={() => setShowFeedbackBox(s => !s)} disabled={isGenerating}
+              className="px-4 py-2.5 text-sm font-medium border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 rounded-xl hover:bg-violet-50 dark:hover:bg-violet-950/30 transition-colors disabled:opacity-50">
+              💬 Give feedback & regenerate
+            </button>
             <button onClick={() => {
+              setFeedbackText('')
+              setShowFeedbackBox(false)
               setStep(4)
               if (canUsePaidFeatures) {
                 setPendingPaidGenerate(true)
@@ -1083,7 +1134,7 @@ function CreatePageInner() {
               }
             }} disabled={isGenerating}
               className="px-4 py-2.5 text-sm font-medium border border-zinc-200 rounded-xl hover:bg-zinc-50 transition-colors disabled:opacity-50">
-              ⟳ Regenerate
+              ⟳ Start over
             </button>
             <button onClick={() => handleCopy()}
               className="px-4 py-2.5 text-sm font-medium border border-zinc-200 rounded-xl hover:bg-zinc-50 transition-colors">

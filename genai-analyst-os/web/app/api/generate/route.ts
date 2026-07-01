@@ -19,7 +19,7 @@ export const maxDuration = 300
 const MAX_LOOPS = 3
 
 export async function POST(req: Request) {
-  const { brief, sources, format, pov, userId } = await req.json()
+  const { brief, sources, format, pov, userId, previousDraft, humanFeedback } = await req.json()
   if (!userId) {
     return Response.json({ error: 'userId is required' }, { status: 400 })
   }
@@ -48,8 +48,15 @@ export async function POST(req: Request) {
 
       try {
         // ── Step 1: Orchestrator ────────────────────────────────────────────
+        // When regenerating from human feedback, fold it into the brief so
+        // the whole plan (angle, hook, claims) can adapt — not just the
+        // Writer's rewrite, which only fixes surface-level phrasing.
+        const orchestratorInput = humanFeedback
+          ? `${brief}\n\n---\nThe human already saw a draft of this and asked for changes: ${humanFeedback}\nAdjust the plan to reflect this feedback.`
+          : brief
+
         send('agent_start', { agent: 'orchestrator' })
-        const orchestratorBrief = await runOrchestratorAgent(userId, brief, format, pov, sources)
+        const orchestratorBrief = await runOrchestratorAgent(userId, orchestratorInput, format, pov, sources)
         send('agent_complete', { agent: 'orchestrator', output: orchestratorBrief })
 
         let currentDraft = ''
@@ -66,10 +73,14 @@ export async function POST(req: Request) {
             send('loop_start', { loop, maxLoops: MAX_LOOPS, reason: writerInstructions })
           }
 
-          // Step 2: Writer
+          // Step 2: Writer — if the human rejected a previous final draft and
+          // left feedback, loop 1 targets that feedback directly instead of
+          // starting blind from the orchestrator plan alone.
           const writerContext = loop > 1
             ? `${orchestratorBrief}\n\n---\nPREVIOUS DRAFT FEEDBACK (loop ${loop - 1}):\n${writerInstructions}\nRewrite the content addressing ALL of these issues.`
-            : orchestratorBrief
+            : (humanFeedback && previousDraft)
+              ? `${orchestratorBrief}\n\n---\nPREVIOUS DRAFT (the human reviewed this and asked for changes):\n${previousDraft}\n\nHUMAN FEEDBACK — you MUST address this while keeping what already worked:\n${humanFeedback}\n\nRewrite the content now, targeting this feedback specifically.`
+              : orchestratorBrief
 
           send('agent_start', { agent: 'writer', loop })
           currentDraft = await runWriterAgent(userId, writerContext, format, sources, voiceFingerprint)
