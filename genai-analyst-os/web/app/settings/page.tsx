@@ -103,6 +103,14 @@ export default function SettingsPage() {
   })
   const [signalWeightsSaving, setSignalWeightsSaving] = useState(false)
   const [signalWeightsStatus, setSignalWeightsStatus] = useState<string | null>(null)
+
+  const [connectedPlatforms, setConnectedPlatforms] = useState<string[]>([])
+  const [mediumToken, setMediumToken] = useState('')
+  const [linkedinToken, setLinkedinToken] = useState('')
+  const [linkedinUrn, setLinkedinUrn] = useState('')
+  const [xToken, setXToken] = useState('')
+  const [connectionStatus, setConnectionStatus] = useState<string | null>(null)
+  const [connectionSaving, setConnectionSaving] = useState<string | null>(null)
   const [draftsInboxSaving, setDraftsInboxSaving] = useState(false)
   const [draftsInboxStatus, setDraftsInboxStatus] = useState<string | null>(null)
 
@@ -225,6 +233,18 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (!session?.access_token || !userId) return
+    fetch(`/api/data/platform-connections?userId=${encodeURIComponent(userId)}`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then(async response => {
+        const json = await response.json()
+        if (response.ok) setConnectedPlatforms(json.connected ?? [])
+      })
+      .catch(() => {})
+  }, [session?.access_token, userId])
+
+  useEffect(() => {
+    if (!session?.access_token || !userId) return
     setTracesLoading(true)
     fetch(`/api/data/llm-traces?userId=${encodeURIComponent(userId)}`, {
       headers: { Authorization: `Bearer ${session.access_token}` },
@@ -298,6 +318,48 @@ export default function SettingsPage() {
       setSignalWeightsStatus(err instanceof Error ? err.message : 'Could not save weights')
     } finally {
       setSignalWeightsSaving(false)
+    }
+  }
+
+  const connectPlatform = async (platform: 'medium' | 'linkedin' | 'x', accessToken: string, personUrn?: string) => {
+    if (!session?.access_token || !userId || !accessToken.trim()) return
+    setConnectionSaving(platform)
+    setConnectionStatus(null)
+    try {
+      const response = await fetch('/api/data/platform-connections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ userId, platform, accessToken: accessToken.trim(), personUrn }),
+      })
+      const json = await response.json()
+      if (!response.ok) throw new Error(json.error ?? 'Could not connect')
+      setConnectedPlatforms(prev => Array.from(new Set([...prev, platform])))
+      setConnectionStatus(`${platform} connected.`)
+      if (platform === 'medium') setMediumToken('')
+      if (platform === 'linkedin') { setLinkedinToken(''); setLinkedinUrn('') }
+      if (platform === 'x') setXToken('')
+    } catch (err) {
+      setConnectionStatus(err instanceof Error ? err.message : 'Could not connect')
+    } finally {
+      setConnectionSaving(null)
+    }
+  }
+
+  const disconnectPlatform = async (platform: 'medium' | 'linkedin' | 'x') => {
+    if (!session?.access_token || !userId) return
+    setConnectionSaving(platform)
+    try {
+      const response = await fetch('/api/data/platform-connections', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ userId, platform }),
+      })
+      if (!response.ok) throw new Error('Could not disconnect')
+      setConnectedPlatforms(prev => prev.filter(p => p !== platform))
+    } catch (err) {
+      setConnectionStatus(err instanceof Error ? err.message : 'Could not disconnect')
+    } finally {
+      setConnectionSaving(null)
     }
   }
 
@@ -839,6 +901,89 @@ export default function SettingsPage() {
           ))}
         </div>
         {signalWeightsStatus && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{signalWeightsStatus}</p>}
+      </section>
+
+      <section className="mt-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
+        <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Connections</h2>
+        <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+          Publish an approved draft directly instead of copy-pasting. Same bring-your-own-credential approach as your model API key — tokens are encrypted at rest and never shown again after saving.
+        </p>
+        {connectionStatus && <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">{connectionStatus}</p>}
+
+        <div className="mt-5 space-y-5">
+          {/* Medium */}
+          <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 p-4">
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">📗 Medium</p>
+              {connectedPlatforms.includes('medium') ? (
+                <span className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-green-700 dark:text-green-300">✓ Connected</span>
+                  <button onClick={() => disconnectPlatform('medium')} disabled={connectionSaving === 'medium'} className="text-xs text-zinc-400 hover:text-red-600">Disconnect</button>
+                </span>
+              ) : null}
+            </div>
+            <p className="text-xs text-zinc-400 mb-2">Self-service integration token from Medium → Settings → Integration tokens. No app approval needed. Publishes as a Medium draft for you to review there.</p>
+            {!connectedPlatforms.includes('medium') && (
+              <div className="flex gap-2">
+                <input value={mediumToken} onChange={e => setMediumToken(e.target.value)} placeholder="Integration token" type="password"
+                  className="flex-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 py-1.5 text-sm" />
+                <button onClick={() => connectPlatform('medium', mediumToken)} disabled={connectionSaving === 'medium' || !mediumToken.trim()}
+                  className="rounded-lg bg-violet-600 hover:bg-violet-700 disabled:opacity-50 px-3 py-1.5 text-xs font-bold text-white">Connect</button>
+              </div>
+            )}
+          </div>
+
+          {/* LinkedIn */}
+          <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 p-4">
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">💼 LinkedIn</p>
+              {connectedPlatforms.includes('linkedin') ? (
+                <span className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-green-700 dark:text-green-300">✓ Connected</span>
+                  <button onClick={() => disconnectPlatform('linkedin')} disabled={connectionSaving === 'linkedin'} className="text-xs text-zinc-400 hover:text-red-600">Disconnect</button>
+                </span>
+              ) : null}
+            </div>
+            <p className="text-xs text-zinc-400 mb-2">Requires a LinkedIn access token with the w_member_social scope, plus your person URN — these come from a LinkedIn developer app you register and get approved yourself. Tokens expire (~60 days); you'll need to reconnect periodically.</p>
+            {!connectedPlatforms.includes('linkedin') && (
+              <div className="space-y-2">
+                <input value={linkedinToken} onChange={e => setLinkedinToken(e.target.value)} placeholder="Access token" type="password"
+                  className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 py-1.5 text-sm" />
+                <input value={linkedinUrn} onChange={e => setLinkedinUrn(e.target.value)} placeholder="Person URN (e.g. urn:li:person:xxxxx)"
+                  className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 py-1.5 text-sm" />
+                <button onClick={() => connectPlatform('linkedin', linkedinToken, linkedinUrn)} disabled={connectionSaving === 'linkedin' || !linkedinToken.trim() || !linkedinUrn.trim()}
+                  className="rounded-lg bg-violet-600 hover:bg-violet-700 disabled:opacity-50 px-3 py-1.5 text-xs font-bold text-white">Connect</button>
+              </div>
+            )}
+          </div>
+
+          {/* X */}
+          <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 p-4">
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">𝕏 X (Twitter)</p>
+              {connectedPlatforms.includes('x') ? (
+                <span className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-green-700 dark:text-green-300">✓ Connected</span>
+                  <button onClick={() => disconnectPlatform('x')} disabled={connectionSaving === 'x'} className="text-xs text-zinc-400 hover:text-red-600">Disconnect</button>
+                </span>
+              ) : null}
+            </div>
+            <p className="text-xs text-zinc-400 mb-2">Requires a user-context OAuth 2.0 access token from your own X developer app (posting needs a paid API tier).</p>
+            {!connectedPlatforms.includes('x') && (
+              <div className="flex gap-2">
+                <input value={xToken} onChange={e => setXToken(e.target.value)} placeholder="Access token" type="password"
+                  className="flex-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 py-1.5 text-sm" />
+                <button onClick={() => connectPlatform('x', xToken)} disabled={connectionSaving === 'x' || !xToken.trim()}
+                  className="rounded-lg bg-violet-600 hover:bg-violet-700 disabled:opacity-50 px-3 py-1.5 text-xs font-bold text-white">Connect</button>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-dashed border-zinc-200 dark:border-zinc-700 p-4">
+            <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100 mb-1">📧 Email / Newsletter, ✍️ Substack, 🎥 YouTube</p>
+            <p className="text-xs text-zinc-400">Email export uses your digest email above — no connection needed. Substack has no public posting API, so it's copy/export only. YouTube isn't applicable here — Create writes video scripts, not rendered video files, so there's nothing to upload.</p>
+          </div>
+        </div>
       </section>
 
       <section className="mt-6 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">

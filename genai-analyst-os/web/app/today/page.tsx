@@ -1,9 +1,19 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { ActionConfirmModal, AdminGateModal } from '@/components/AdminGate'
 import { useAuthSession } from '@/lib/useAuthSession'
+
+interface StreakInfo {
+  currentStreak: number
+  longestStreak: number
+  last7Days: number
+  last30Days: number
+  todayComplete: boolean
+  nextMilestone: number | null
+  isMilestoneToday: boolean
+}
 
 interface QueueEntry {
   id: string
@@ -29,6 +39,7 @@ interface DraftItem {
   source_url: string | null
   status: 'pending' | 'approved' | 'dismissed'
   created_at: string
+  published_platforms?: string[]
 }
 
 const MINUTE_OPTIONS = [10, 15, 20, 30]
@@ -50,6 +61,20 @@ function draftPreview(content: string): { headline: string; teaser: string } {
   return { headline, teaser }
 }
 
+function SimpleModal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="w-full max-w-md rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-6 shadow-2xl">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">{title}</h3>
+          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 text-xl leading-none">×</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  )
+}
+
 // The two daily jobs — "what to read" and "what to review & publish" —
 // live on one landing page so a signed-in user needs zero navigation
 // decisions to do either. Everything else (Feed, News, Reading List,
@@ -67,6 +92,9 @@ export default function TodayPage() {
   const [queueLoading, setQueueLoading] = useState(true)
   const [queueError, setQueueError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [showRefreshConfirm, setShowRefreshConfirm] = useState(false)
+  const [showReadingInfo, setShowReadingInfo] = useState(false)
+  const [showPublishingInfo, setShowPublishingInfo] = useState(false)
   const [actioningId, setActioningId] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [savingMinutes, setSavingMinutes] = useState(false)
@@ -88,6 +116,7 @@ export default function TodayPage() {
   }
 
   const refreshQueue = async () => {
+    setShowRefreshConfirm(false)
     setRefreshing(true)
     setQueueError(null)
     try {
@@ -117,6 +146,7 @@ export default function TodayPage() {
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Could not update this item')
       setEntries(prev => prev.map(e => e.id === queueItemId ? { ...e, status } : e))
+      if (status === 'read') fetchStreaks()
     } catch (e) {
       setQueueError(e instanceof Error ? e.message : String(e))
     }
@@ -159,6 +189,7 @@ export default function TodayPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [draftFormatFilter, setDraftFormatFilter] = useState<string>('all')
   const [canUsePaidFeatures, setCanUsePaidFeatures] = useState(false)
+  const [streaks, setStreaks] = useState<{ reading: StreakInfo; publishing: StreakInfo } | null>(null)
   const [smartGenerating, setSmartGenerating] = useState(false)
   const [smartGenerateError, setSmartGenerateError] = useState<string | null>(null)
   const [smartGenerateNote, setSmartGenerateNote] = useState<string | null>(null)
@@ -169,6 +200,9 @@ export default function TodayPage() {
   const [feedbackDraftId, setFeedbackDraftId] = useState<string | null>(null)
   const [feedbackText, setFeedbackText] = useState('')
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false)
+  const [connectedPlatforms, setConnectedPlatforms] = useState<string[]>([])
+  const [publishingId, setPublishingId] = useState<string | null>(null)
+  const [publishNote, setPublishNote] = useState<string | null>(null)
 
   const fetchDrafts = async () => {
     if (!userId) return
@@ -196,6 +230,7 @@ export default function TodayPage() {
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Could not update this draft')
       setDrafts(prev => prev.map(item => item.id === itemId ? { ...item, status: json.status } : item))
+      if (action === 'approve') fetchStreaks()
     } catch (e) {
       setDraftsError(e instanceof Error ? e.message : String(e))
     }
@@ -217,8 +252,45 @@ export default function TodayPage() {
     } catch {}
   }
 
+  const fetchStreaks = async () => {
+    if (!userId) return
+    try {
+      const res = await fetch(`/api/today/streaks?userId=${encodeURIComponent(userId)}`, { headers: authHeaders() })
+      const json = await res.json()
+      if (res.ok) setStreaks(json)
+    } catch {}
+  }
+
+  const fetchConnections = async () => {
+    if (!userId) return
+    try {
+      const res = await fetch(`/api/data/platform-connections?userId=${encodeURIComponent(userId)}`, { headers: authHeaders() })
+      const json = await res.json()
+      if (res.ok) setConnectedPlatforms(json.connected ?? [])
+    } catch {}
+  }
+
+  const publishTo = async (draftId: string, platform: 'medium' | 'linkedin' | 'x' | 'email') => {
+    setPublishingId(draftId)
+    setPublishNote(null)
+    try {
+      const res = await fetch('/api/today/draft/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ userId, itemId: draftId, platform }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Publish failed')
+      setPublishNote(json.message)
+      if (json.ok) await fetchDrafts()
+    } catch (e) {
+      setPublishNote(e instanceof Error ? e.message : String(e))
+    }
+    setPublishingId(null)
+  }
+
   useEffect(() => {
-    if (!loading) { fetchQueue(); fetchDrafts(); fetchProfile() }
+    if (!loading) { fetchQueue(); fetchDrafts(); fetchProfile(); fetchStreaks(); fetchConnections() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, session?.access_token, userId])
 
@@ -298,18 +370,78 @@ export default function TodayPage() {
           onCancel={() => setShowGenerateConfirm(false)}
         />
       )}
+      {showRefreshConfirm && (
+        <SimpleModal title="Refresh your reading queue?" onClose={() => setShowRefreshConfirm(false)}>
+          <p className="text-sm text-zinc-600 dark:text-zinc-300 leading-relaxed">
+            You&apos;ll get a new set of about {Math.max(1, pendingEntries.length)} item{pendingEntries.length === 1 ? '' : 's'}, re-ranked from your Feed and Reading List. Anything you&apos;ve already marked read or skipped today stays untouched — only your remaining unread items get replaced.
+          </p>
+          <div className="mt-4 flex gap-2">
+            <button onClick={refreshQueue} className="rounded-xl bg-violet-600 hover:bg-violet-700 px-4 py-2 text-sm font-bold text-white transition-colors">Yes, refresh</button>
+            <button onClick={() => setShowRefreshConfirm(false)} className="rounded-xl border border-zinc-200 dark:border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-300">Cancel</button>
+          </div>
+        </SimpleModal>
+      )}
+      {showReadingInfo && (
+        <SimpleModal title="How Your Daily Reading is built" onClose={() => setShowReadingInfo(false)}>
+          <ul className="space-y-2 text-sm text-zinc-600 dark:text-zinc-300 leading-relaxed list-disc list-inside">
+            <li>Pulled from two places: your <strong>Feed</strong> (ranked by topic affinity, using the same scoring as the Feed tab) and your <strong>Reading List</strong> (ranked by topic affinity + how recently it was processed).</li>
+            <li>Items are merged and filled in, best first, until they add up to about your daily minute target — estimated from actual word count, not a flat guess.</li>
+            <li>Anything you&apos;ve already marked read stays out of the pool for 14 days, so the queue doesn&apos;t repeat itself.</li>
+            <li>Refreshing only replaces items you haven&apos;t acted on yet — read/skipped items from today are never touched.</li>
+          </ul>
+        </SimpleModal>
+      )}
+      {showPublishingInfo && (
+        <SimpleModal title="How Your Daily Publishing picks a topic" onClose={() => setShowPublishingInfo(false)}>
+          <ul className="space-y-2 text-sm text-zinc-600 dark:text-zinc-300 leading-relaxed list-disc list-inside">
+            <li>Blends five signals: explicit engagement (likes/pins), what you&apos;ve recently read, trending news relevant to your feed, and emerging/trending topics — each weighted, adjustable in <Link href="/settings" className="text-violet-600 dark:text-violet-400 hover:underline">Settings</Link>.</li>
+            <li>Your declared interest areas modulate every candidate&apos;s score rather than competing as their own signal.</li>
+            <li>A signal with nothing to go on some day (e.g. no emerging topics) drops out and its weight redistributes across the others automatically.</li>
+            <li>Type a custom topic to skip the picker entirely and write about exactly what you choose.</li>
+            <li>The primary draft is written for your configured platform, then cheaply adapted into one naturally paired platform (e.g. LinkedIn → Thread) — same idea, not a second full generation.</li>
+          </ul>
+        </SimpleModal>
+      )}
 
-      <div className="mb-8">
+      <div className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">👋 Today</h1>
         <p className="text-xs text-zinc-400 mt-0.5">Two jobs: read what matters, review what's ready to publish. Everything else is one click away below.</p>
       </div>
+
+      {streaks && (streaks.reading.currentStreak > 0 || streaks.publishing.currentStreak > 0 || streaks.reading.isMilestoneToday || streaks.publishing.isMilestoneToday) && (
+        <div className="mb-8 grid grid-cols-2 gap-4">
+          {([
+            { info: streaks.reading, label: 'Reading streak', icon: '📖' },
+            { info: streaks.publishing, label: 'Publishing streak', icon: '🗣️' },
+          ] as const).map(({ info, label, icon }) => (
+            <div key={label} className={`rounded-2xl border p-4 ${info.isMilestoneToday ? 'border-amber-300 dark:border-amber-700 bg-amber-50/60 dark:bg-amber-950/20' : 'border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900'}`}>
+              <div className="flex items-center gap-2">
+                <span className="text-xl">{info.currentStreak > 0 ? '🔥' : icon}</span>
+                <div>
+                  <p className="text-lg font-bold text-zinc-900 dark:text-zinc-100">{info.currentStreak} day{info.currentStreak === 1 ? '' : 's'}</p>
+                  <p className="text-[11px] text-zinc-400">{label} · {info.last7Days}/7 this week · {info.last30Days}/30 this month</p>
+                </div>
+              </div>
+              {info.isMilestoneToday && (
+                <p className="mt-2 text-xs font-semibold text-amber-700 dark:text-amber-300">🎉 {info.currentStreak}-day milestone — nice consistency!</p>
+              )}
+              {!info.isMilestoneToday && info.nextMilestone && (
+                <p className="mt-2 text-[11px] text-zinc-400">{info.nextMilestone - info.currentStreak} more day{info.nextMilestone - info.currentStreak === 1 ? '' : 's'} to a {info.nextMilestone}-day streak</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="grid gap-8 lg:grid-cols-2 mb-10">
       {/* ══ JOB 1: What to read ═══════════════════════════════════════════ */}
       <section>
         <div className="flex items-center justify-between gap-3 mb-2">
-          <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">📋 Your Daily Reading</h2>
-          <button onClick={refreshQueue} disabled={refreshing || queueLoading}
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">📋 Your Daily Reading</h2>
+            <button onClick={() => setShowReadingInfo(true)} className="text-zinc-400 hover:text-violet-600 dark:hover:text-violet-400 text-sm" title="How is this list built?">ⓘ</button>
+          </div>
+          <button onClick={() => setShowRefreshConfirm(true)} disabled={refreshing || queueLoading || entries.length === 0}
             className="text-xs text-violet-600 dark:text-violet-400 px-3 py-1.5 bg-violet-50 dark:bg-violet-950/30 rounded-lg border border-violet-200 dark:border-violet-800 hover:bg-violet-100 transition-colors font-medium disabled:opacity-50 shrink-0">
             {refreshing ? 'Refreshing…' : '↺ Refresh'}
           </button>
@@ -420,7 +552,10 @@ export default function TodayPage() {
       {/* ══ JOB 2: What to review & publish ═════════════════════════════ */}
       <section>
         <div className="flex items-center justify-between gap-3 mb-1">
-          <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">🗣️ Your Daily Publishing</h2>
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">🗣️ Your Daily Publishing</h2>
+            <button onClick={() => setShowPublishingInfo(true)} className="text-zinc-400 hover:text-violet-600 dark:hover:text-violet-400 text-sm" title="How is this picked?">ⓘ</button>
+          </div>
           <button onClick={handleSmartGenerateClick} disabled={smartGenerating}
             className="text-xs text-violet-600 dark:text-violet-400 px-3 py-1.5 bg-violet-50 dark:bg-violet-950/30 rounded-lg border border-violet-200 dark:border-violet-800 hover:bg-violet-100 transition-colors font-medium disabled:opacity-50 shrink-0">
             {smartGenerating ? 'Generating…' : '✨ Generate today\'s content'}
@@ -491,6 +626,24 @@ export default function TodayPage() {
                         <button onClick={() => { setFeedbackDraftId(prev => prev === draft.id ? null : draft.id); setFeedbackText('') }}
                           className="text-sm font-medium text-zinc-500 hover:text-violet-600 dark:hover:text-violet-400">✏️ Feedback</button>
                       </div>
+                      <div className="mt-2 flex items-center gap-2 flex-wrap">
+                        <span className="text-[11px] text-zinc-400">Publish:</span>
+                        {(['medium', 'linkedin', 'x'] as const).filter(p => connectedPlatforms.includes(p)).map(platform => (
+                          <button key={platform} onClick={() => publishTo(draft.id, platform)} disabled={publishingId === draft.id}
+                            className="text-xs font-medium px-2.5 py-1 rounded-full border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-violet-300 disabled:opacity-50">
+                            {draft.published_platforms?.includes(platform) ? '✓ ' : ''}{platform}
+                          </button>
+                        ))}
+                        <button onClick={() => publishTo(draft.id, 'email')} disabled={publishingId === draft.id}
+                          className="text-xs font-medium px-2.5 py-1 rounded-full border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-violet-300 disabled:opacity-50">
+                          {draft.published_platforms?.includes('email') ? '✓ ' : ''}email
+                        </button>
+                        {connectedPlatforms.length === 0 && (
+                          <Link href="/settings" className="text-[11px] text-violet-600 dark:text-violet-400 hover:underline">Connect more in Settings →</Link>
+                        )}
+                      </div>
+                      {publishingId === draft.id && <p className="mt-1 text-xs text-zinc-400">Publishing…</p>}
+                      {publishNote && publishingId === null && <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{publishNote}</p>}
                       {feedbackDraftId === draft.id && (
                         <div className="mt-3">
                           <textarea value={feedbackText} onChange={e => setFeedbackText(e.target.value)} rows={3}

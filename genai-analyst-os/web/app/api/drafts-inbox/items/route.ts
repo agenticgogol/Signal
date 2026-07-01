@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await createServiceClient()
     .from('draft_inbox_items')
-    .select('id, topic, format, final_content, source_title, source_url, status, created_at')
+    .select('id, topic, format, final_content, source_title, source_url, status, created_at, published_platforms')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(30)
