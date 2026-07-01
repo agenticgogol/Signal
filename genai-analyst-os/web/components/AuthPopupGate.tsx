@@ -73,7 +73,7 @@ export default function AuthPopupGate() {
     setError('')
     try {
       const supabase = getSupabase()
-      const emailRedirectTo = `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/auth/confirm?next=/feed`
+      const emailRedirectTo = `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/auth/confirm?next=/today`
       const result = mode === 'signin'
         ? await supabase.auth.signInWithPassword({ email, password })
         : await supabase.auth.signUp({ email, password, options: { emailRedirectTo } })

@@ -4,17 +4,20 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
+// "Today" (the landing page — daily reading + drafts review) is reached via
+// the sidebar logo/header, not a list item, so this list stays just the
+// "go deeper" surfaces per the redesign: focus on Today first, explore only
+// if there's time left.
 const CORE_ITEMS = [
-  { href: '/today',       label: 'Today',        icon: '📋' },
-  { href: '/drafts-inbox', label: 'Drafts Inbox', icon: '📥' },
   { href: '/feed',        label: 'Feed',         icon: '📰' },
+  { href: '/feed?tab=news', label: 'News',       icon: '🌐' },
+  { href: '/knowledge',   label: 'Reading List', icon: '📖' },
   { href: '/ideas',       label: 'Ideas',        icon: '💡' },
   { href: '/create',      label: 'Create',       icon: '✍️' },
-  { href: '/knowledge',   label: 'Reading List', icon: '📖' },
-  { href: '/sources',     label: 'Sources',      icon: '🔗' },
 ]
 
 const MORE_ITEMS = [
+  { href: '/sources',               label: 'Sources',          icon: '🔗' },
   { href: '/memory',                label: 'Memory Assistant', icon: '🧠' },
   { href: '/voice',                 label: 'My Voice',         icon: '🎙️' },
   { href: '/settings',              label: 'Settings',         icon: '⚙️' },

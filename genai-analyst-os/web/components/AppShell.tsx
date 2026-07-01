@@ -114,7 +114,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       )}
       <aside className="fixed inset-y-0 left-0 z-40 w-56 bg-white dark:bg-zinc-900 border-r border-zinc-200/80 dark:border-zinc-800/80 flex flex-col">
         <div className="px-5 pt-6 pb-4 border-b border-zinc-200/80 dark:border-zinc-800/80 flex-shrink-0">
-          <Link href="/" className="block hover:opacity-80 transition-opacity">
+          <Link href="/today" className="block hover:opacity-80 transition-opacity">
             <span className="bg-gradient-to-r from-violet-600 to-blue-500 bg-clip-text text-transparent font-black text-2xl tracking-tight">⚡ Signal</span>
             <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5 leading-tight">Your GenAI intelligence OS</p>
           </Link>

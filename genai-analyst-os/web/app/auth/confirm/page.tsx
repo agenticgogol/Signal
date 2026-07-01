@@ -14,7 +14,7 @@ function AuthConfirmInner() {
     const code = searchParams.get('code')
     const tokenHash = searchParams.get('token_hash')
     const type = searchParams.get('type')
-    const next = searchParams.get('next') || '/feed'
+    const next = searchParams.get('next') || '/today'
     const errorDescription = searchParams.get('error_description')
 
     async function run() {

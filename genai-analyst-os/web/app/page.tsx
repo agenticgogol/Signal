@@ -71,7 +71,7 @@ export default function LandingPage() {
             ⚡ Signal
           </span>
           <Link
-            href="/feed"
+            href="/today"
             className="px-4 py-1.5 text-sm font-semibold bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition-colors"
           >
             Open app →
@@ -117,10 +117,10 @@ export default function LandingPage() {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link
-              href="/feed"
+              href="/today"
               className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-3.5 bg-violet-600 hover:bg-violet-500 text-white font-semibold rounded-xl text-base transition-all shadow-lg shadow-violet-900/40 hover:shadow-violet-900/60"
             >
-              Open your feed →
+              Open Today →
             </Link>
             <a
               href="#how-it-works"
@@ -303,7 +303,7 @@ export default function LandingPage() {
             Pull today&apos;s feed, find the story that matters, and have a publish-ready draft in under 10 minutes.
           </p>
           <Link
-            href="/feed"
+            href="/today"
             className="inline-flex items-center gap-2 px-10 py-4 bg-violet-600 hover:bg-violet-500 text-white font-bold rounded-xl text-lg transition-all shadow-xl shadow-violet-900/50 hover:shadow-violet-900/70"
           >
             ⚡ Open Signal
