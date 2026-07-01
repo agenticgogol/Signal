@@ -129,6 +129,7 @@ export async function runOrchestratorAgent(
     ? `\nTarget platform: ${spec.name}\nWord/length target: ${spec.wordLimit}\nContent structure: ${spec.structure}\nTone: ${spec.tone}`
     : ''
 
+  const hasSources = sources.length > 0
   const sourceContext = formatSourceList(sources, 'SOURCE ARTICLES to ground this content')
 
   // Schema-validated JSON, not a regex fence-extraction — a malformed
@@ -136,10 +137,12 @@ export async function runOrchestratorAgent(
   const plan = await generateJsonForUser<OrchestratorPlan>({
     userId,
     maxTokens: 1500,
-    system: 'You are a content strategist for a senior GenAI practitioner. Every key claim you propose must be traceable to one of the supplied sources — if no source supports a good claim, leave source_url/source_title/source_domain as empty strings rather than inventing one.',
+    system: hasSources
+      ? 'You are a content strategist for a senior GenAI practitioner. Every key claim you propose must be traceable to one of the supplied sources — if no source supports a good claim, leave source_url/source_title/source_domain as empty strings rather than inventing one.'
+      : 'You are a content strategist for a senior GenAI practitioner. This piece has no external sources — it is a personal post, opinion, or announcement grounded entirely in the brief itself. Leave source_url/source_title/source_domain as empty strings for every key_claim; do not invent sources.',
     prompt: `Brief: ${brief}${platformContext}${pov ? `\nAuthor POV: ${pov}` : ''}${sourceContext}
 
-Produce the content plan. Ground every key_claim in a specific source's evidence above — do not propose a claim that isn't backed by an actual excerpt you were given.`,
+Produce the content plan.${hasSources ? ' Ground every key_claim in a specific source\'s evidence above — do not propose a claim that isn\'t backed by an actual excerpt you were given.' : ' There are no external sources for this piece — base key_claims directly on the brief (e.g. personal excitement, context, or intent the author stated), with empty source fields.'}`,
     schema: ORCHESTRATOR_SCHEMA,
   })
 
@@ -156,6 +159,11 @@ export async function runWriterAgent(
   const spec = PLATFORM_SPECS[format]
   const mustDos = spec?.mustDos.map(d => `• ${d}`).join('\n') ?? ''
   const avoid = spec?.avoid.map(d => `• ${d}`).join('\n') ?? ''
+  const hasSources = sources.length > 0
+
+  const groundingRule = hasSources
+    ? `${citationGuide(format)}\n\nGround every factual claim in the Evidence text given for that source — never state a number, quote, or specific finding that isn't present in the evidence. If you have an idea worth making but no evidence backs it, frame it as your own opinion instead of attributing it to a source.`
+    : `This is a personal post, opinion, or announcement with no external sources — do not invent citations, sources, or a "Sources:" section. Write it directly and confidently from the brief, as the author's own voice and experience.`
 
   const baseSystemPrompt = spec
     ? `You are a professional ghostwriter writing a ${spec.name} post for a GenAI practitioner.
@@ -171,12 +179,10 @@ ${mustDos}
 AVOID:
 ${avoid}
 
-${citationGuide(format)}
-
-Ground every factual claim in the Evidence text given for that source — never state a number, quote, or specific finding that isn't present in the evidence. If you have an idea worth making but no evidence backs it, frame it as your own opinion instead of attributing it to a source.
+${groundingRule}
 
 Write ONLY the final content — no meta-commentary, no "here is your post", no preamble.`
-    : `Write a ${format} post about the following topic. Be direct and substantive.\n\n${citationGuide(format)}`
+    : `Write a ${format} post about the following topic. Be direct and substantive.\n\n${groundingRule}`
   const systemPrompt = baseSystemPrompt + buildVoiceConstitution(voiceFingerprint)
 
   const sourceContext = formatSourceList(sources)
@@ -185,7 +191,7 @@ Write ONLY the final content — no meta-commentary, no "here is your post", no 
     userId,
     maxTokens: 2500,
     system: systemPrompt,
-    prompt: `Content plan:\n${orchestratorBrief}${sourceContext}\n\nWrite the ${spec?.name ?? format} content now. Every opinion and factual claim must be grounded in the evidence given for one of the sources above, with a citation in the format specified.`,
+    prompt: `Content plan:\n${orchestratorBrief}${sourceContext}\n\nWrite the ${spec?.name ?? format} content now.${hasSources ? ' Every opinion and factual claim must be grounded in the evidence given for one of the sources above, with a citation in the format specified.' : ' There are no external sources — write this directly from the content plan and brief, with no citations.'}`,
   })
 }
 
@@ -200,15 +206,11 @@ export async function runCriticAgent(
   const platformChecks = spec
     ? `Also check platform-specific issues for ${spec.name}: Does it meet "${spec.wordLimit}"? Does it follow "${spec.structure}"?`
     : ''
-
+  const hasSources = sources.length > 0
   const sourceList = formatSourceList(sources)
 
-  return generateTextForUser({
-    userId,
-    maxTokens: 1400,
-    system: `You are a fact-checker and content critic for a GenAI practitioner's content.
-
-Review for:
+  const reviewChecklist = hasSources
+    ? `Review for:
 1. CITATION GAPS — any factual claim, statistic, or opinion that is NOT cited to a source. List each uncited claim verbatim.
 2. CITATION ACCURACY — for each citation, check the source's Evidence text above. Does the evidence actually support the claim? Flag any claim that goes beyond, contradicts, or has no relation to its cited source's evidence — and flag any citation to a source not in the list.
 3. AI writing tells: em-dashes, "delve", "it's worth noting", "in conclusion", "I hope this helps", perfectly symmetrical lists
@@ -221,7 +223,24 @@ Output format:
 CITATION GAPS (list every uncited factual claim or opinion — these MUST be fixed)
 CITATION ACCURACY ISSUES (list every claim whose cited source's evidence doesn't actually support it)
 OTHER ISSUES (numbered list, be specific about what line/phrase needs fixing)
-TOP 3 REWRITES (exact suggestions: "Change [X] to [Y] because [reason]")`,
+TOP 3 REWRITES (exact suggestions: "Change [X] to [Y] because [reason]")`
+    : `This piece has no external sources — it is a personal post, opinion, or announcement. Do NOT flag missing citations or ask for sources; that does not apply here.
+
+Review for:
+1. AI writing tells: em-dashes, "delve", "it's worth noting", "in conclusion", "I hope this helps", perfectly symmetrical lists
+2. Weak or generic hook — does the opening actually grab attention?
+3. Passive voice overuse
+4. Vague or generic statements that would land harder with a specific detail (a number, a name, a concrete moment)
+${platformChecks}
+
+Output format:
+OTHER ISSUES (numbered list, be specific about what line/phrase needs fixing)
+TOP 3 REWRITES (exact suggestions: "Change [X] to [Y] because [reason]")`
+
+  return generateTextForUser({
+    userId,
+    maxTokens: 1400,
+    system: `You are a fact-checker and content critic for a GenAI practitioner's content.\n\n${reviewChecklist}`,
     prompt: `Content plan: ${orchestratorBrief}${sourceList}\n\nDraft:\n${draft}`,
   })
 }
@@ -236,8 +255,13 @@ export async function runHumanizerAgent(
 ): Promise<string> {
   const spec = PLATFORM_SPECS[format]
   const charNote = spec?.charLimit ? `\nCRITICAL: Final output must be under ${spec.charLimit} characters.` : ''
+  const hasSources = sources.length > 0
 
   const sourceContext = formatSourceList(sources, 'SOURCES available for any remaining uncited or inaccurate claims')
+
+  const citationStep = hasSources
+    ? `2. Fix every CITATION GAP and CITATION ACCURACY ISSUE flagged in the critique — add or correct citations using only the evidence given for each source below. If a claim's evidence doesn't support it, soften the claim or remove it rather than leaving a mismatched citation.\n3. PRESERVE all existing correct citations exactly — do NOT remove or alter any (via ...), [link](url), or [SOURCE: ...] references that the critique did not flag\n`
+    : ''
 
   return generateTextForUser({
     userId,
@@ -246,16 +270,14 @@ export async function runHumanizerAgent(
 
 Apply ALL of:
 1. Fix every issue in the critique — implement the specific rewrites suggested
-2. Fix every CITATION GAP and CITATION ACCURACY ISSUE flagged in the critique — add or correct citations using only the evidence given for each source below. If a claim's evidence doesn't support it, soften the claim or remove it rather than leaving a mismatched citation.
-3. PRESERVE all existing correct citations exactly — do NOT remove or alter any (via ...), [link](url), or [SOURCE: ...] references that the critique did not flag
-4. Remove ALL em-dashes (—) — replace with a comma or start a new sentence
+${citationStep}4. Remove ALL em-dashes (—) — replace with a comma or start a new sentence
 5. Remove: "delve", "it's worth noting", "in conclusion", "I hope this helps", "fascinating", "crucial"
 6. Vary sentence length — mix 3-word punches with longer flowing sentences
-7. Replace vague claims with specifics: add numbers, names, or concrete scenarios drawn from the evidence below
+7. Replace vague claims with specifics: add numbers, names, or concrete scenarios${hasSources ? ' drawn from the evidence below' : ' drawn from the author\'s own stated experience in the brief'}
 8. Make the opening line land — it must be specific and non-generic
 9. Ensure the voice sounds like an experienced practitioner, not a text generator${charNote}
 
-${citationGuide(format)}
+${hasSources ? citationGuide(format) : 'This is a personal post with no external sources — do not add citations, a "Sources:" section, or reference any source that was not given to you.'}
 
 Return ONLY the rewritten content. No meta-commentary, no "Here is the revised version:", just the content.${buildVoiceConstitution(voiceFingerprint)}`,
     prompt: `Draft:\n${draft}\n\nCritique:\n${critique}${sourceContext}\n\nFormat: ${spec?.name ?? format}`,
@@ -395,9 +417,14 @@ export async function runEvaluatorAgent(
   format: string,
   brief: string,
   loopNumber: number,
-  verifierReport?: string
+  verifierReport?: string,
+  hasSources: boolean = true
 ): Promise<EvaluatorResult> {
   const spec = PLATFORM_SPECS[format]
+
+  const citationCriterion = hasSources
+    ? `CITATION DENSITY (1-10): Are opinions and facts properly cited, and do those citations hold up against the independent claim-verification report given below? 7+ = all key claims have accurate sources. Below 7 = gaps or accuracy issues exist. If the verification report flags hallucinated or unsupported claims, this score must be below 7 regardless of how confident the prose sounds.`
+    : `CITATION DENSITY (1-10): This piece has no external sources — it is a personal post/opinion/announcement, so there is nothing to cite. Score this 10 automatically; do not penalize the piece for lacking citations it was never meant to have.`
 
   try {
     const parsed = await generateJsonForUser<{
@@ -411,7 +438,7 @@ export async function runEvaluatorAgent(
 
 1. HOOK STRENGTH (1-10): Does the opening line grab a practitioner immediately? 7+ = specific and compelling. Below 7 = generic or vague.
 2. CLAIM SPECIFICITY (1-10): Are claims backed by numbers, names, or concrete examples? 7+ = most claims have specifics. Below 7 = too many vague assertions.
-3. CITATION DENSITY (1-10): Are opinions and facts properly cited, and do those citations hold up against the independent claim-verification report given below? 7+ = all key claims have accurate sources. Below 7 = gaps or accuracy issues exist. If the verification report flags hallucinated or unsupported claims, this score must be below 7 regardless of how confident the prose sounds.
+3. ${citationCriterion}
 4. VOICE AUTHENTICITY (1-10): Does it sound like a human expert or like AI? 7+ = reads naturally. Below 7 = AI tells present (em-dashes, "delve", symmetrical lists).
 5. PLATFORM FIT (1-10): Does format/length match ${spec?.name ?? format} norms? 7+ = fits the platform. Below 7 = structure mismatch.
 
@@ -488,7 +515,11 @@ export async function runFinalPolishAgent(
 ): Promise<string> {
   const spec = PLATFORM_SPECS[format]
   const charNote = spec?.charLimit ? `\nCRITICAL: Final output must be under ${spec.charLimit} characters.` : ''
+  const hasSources = sources.length > 0
   const sourceContext = formatSourceList(sources, 'SOURCES if any claims still need citation')
+  const citationRule = hasSources
+    ? `3. Keep all existing citations — add any that are still missing, grounded only in the evidence given below${charNote}\n${sourceContext}`
+    : `3. This is a personal post with no external sources — do not add citations or a "Sources:" section${charNote}`
 
   return generateTextForUser({
     userId,
@@ -500,8 +531,7 @@ Three different reader personas just read this and gave feedback. Your job is to
 Rules:
 1. Address each objection by fixing the specific line — clarify jargon, add a concrete "so what", make the opening line's impact unmissable
 2. Do NOT add new sections or change the overall structure
-3. Keep all existing citations — add any that are still missing, grounded only in the evidence given below${charNote}
-${sourceContext}
+${citationRule}
 
 Return ONLY the revised content. No preamble.${buildVoiceConstitution(voiceFingerprint)}`,
     prompt: `Content:\n${content}\n\nAudience feedback to address:\n${audienceFeedback}`,

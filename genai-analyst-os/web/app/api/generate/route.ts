@@ -104,7 +104,7 @@ export async function POST(req: Request) {
           // Step 6: Evaluator — score the humanized output, weighing the
           // verifier's independent findings heavily on the citations score.
           send('agent_start', { agent: 'evaluator', loop })
-          const evalResult = await runEvaluatorAgent(userId, currentHumanized, format, brief, loop, claimReport)
+          const evalResult = await runEvaluatorAgent(userId, currentHumanized, format, brief, loop, claimReport, Array.isArray(sources) && sources.length > 0)
           loopScores = evalResult.scoresSummary
           send('agent_complete', {
             agent: 'evaluator',
