@@ -116,6 +116,32 @@ export default function TodayPage() {
     setQueueLoading(false)
   }
 
+  // Resets every collapsed/expanded/filtered bit of local view state back to
+  // how the page looks on a first visit, and pulls fresh data for
+  // everything — the reading queue, drafts, streaks, connections. Doesn't
+  // regenerate the queue itself (that's the separate, explicitly-confirmed
+  // "Refresh" action next to Your Daily Reading, which replaces content);
+  // this is the "just start over looking at what's already there" reset.
+  const resetTodayView = () => {
+    setShowAllReading(false)
+    setShowDoneToday(false)
+    setExpandedId(null)
+    setShowAllIdeas(false)
+    setShowDoneDrafts(false)
+    setDraftFormatFilter('all')
+    setExpandedDraftId(null)
+    setFeedbackDraftId(null)
+    setFeedbackText('')
+    setAskExternalQuestion(null)
+    setCustomTopic('')
+    setSmartGenerateNote(null)
+    setSmartGenerateError(null)
+    fetchQueue()
+    fetchDrafts()
+    fetchStreaks()
+    fetchConnections()
+  }
+
   const refreshQueue = async () => {
     setShowRefreshConfirm(false)
     setRefreshing(true)
@@ -202,6 +228,7 @@ export default function TodayPage() {
   const [showAllIdeas, setShowAllIdeas] = useState(false)
   const [showAllReading, setShowAllReading] = useState(false)
   const [showDoneToday, setShowDoneToday] = useState(false)
+  const [showDoneDrafts, setShowDoneDrafts] = useState(false)
   const [askExternalQuestion, setAskExternalQuestion] = useState<{ text: string; nonce: number } | null>(null)
 
   const askAbout = (title: string) => {
@@ -232,7 +259,7 @@ export default function TodayPage() {
     setDraftsLoading(false)
   }
 
-  const reviewDraft = async (itemId: string, action: 'approve' | 'dismiss') => {
+  const reviewDraft = async (itemId: string, action: 'approve' | 'dismiss' | 'undo') => {
     setDraftActioning(itemId)
     try {
       const res = await fetch('/api/drafts-inbox/review', {
@@ -407,6 +434,7 @@ export default function TodayPage() {
   const progressPct = entries.length > 0 ? Math.min(100, Math.round((doneEntries.length / entries.length) * 100)) : 0
   const allDone = entries.length > 0 && pendingEntries.length === 0
   const pendingDrafts = drafts.filter(d => d.status === 'pending')
+  const doneDrafts = drafts.filter(d => d.status !== 'pending')
   const draftFormats = Array.from(new Set(drafts.map(d => d.format)))
   const filteredPendingDrafts = draftFormatFilter === 'all' ? pendingDrafts : pendingDrafts.filter(d => d.format === draftFormatFilter)
   // Group by idea (topic) so "N ideas" surfaces as distinct clusters rather
@@ -510,9 +538,15 @@ export default function TodayPage() {
         </SimpleModal>
       )}
 
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">👋 Today</h1>
-        <p className="text-xs text-zinc-400 mt-0.5">Two jobs: read what matters, review what's ready to publish. Everything else is one click away below.</p>
+      <div className="mb-6 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">👋 Today</h1>
+          <p className="text-xs text-zinc-400 mt-0.5">Two jobs: read what matters, review what's ready to publish. Everything else is one click away below.</p>
+        </div>
+        <button onClick={resetTodayView} title="Collapse everything back to the default view and pull fresh data"
+          className="shrink-0 rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400 hover:border-violet-300 dark:hover:border-violet-700 hover:text-violet-600 dark:hover:text-violet-400 transition-colors">
+          🔄 Reset view
+        </button>
       </div>
 
       {streaks && (streaks.reading.currentStreak > 0 || streaks.publishing.currentStreak > 0 || streaks.reading.isMilestoneToday || streaks.publishing.isMilestoneToday) && (
@@ -530,16 +564,6 @@ export default function TodayPage() {
           ))}
         </div>
       )}
-
-      {/* ══ Ask Signal — right up top and inline, so it's impossible to
-          miss, no navigation away needed to use it ══════════════════════ */}
-      <section id="today-ask-signal" className="mb-6">
-        <div className="flex items-center gap-1.5 mb-1">
-          <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">💬 Ask Signal</h2>
-          <span className="text-xs text-zinc-400">— searches Feed, Reading List, and News together</span>
-        </div>
-        <AskSignalPanel variant="compact" externalQuestion={askExternalQuestion} crossLink={{ href: '/memory', label: 'Open full Memory Assistant →' }} />
-      </section>
 
       <div className="grid gap-8 lg:grid-cols-2 mb-10">
       {/* ══ JOB 1: What to read ═══════════════════════════════════════════ */}
@@ -733,7 +757,8 @@ export default function TodayPage() {
               const draftExpanded = expandedDraftId === draft.id
               return (
                 <div key={draft.id} className="rounded-2xl border border-violet-200 dark:border-violet-800 bg-violet-50/30 dark:bg-violet-950/10 overflow-hidden">
-                  <button onClick={() => setExpandedDraftId(prev => prev === draft.id ? null : draft.id)} className="w-full text-left p-4">
+                  <div className="flex items-start">
+                  <button onClick={() => setExpandedDraftId(prev => prev === draft.id ? null : draft.id)} className="flex-1 min-w-0 text-left p-4">
                     <p className="text-xs font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400">{draft.format} · {formatRelativeTime(draft.created_at)}</p>
                     <p className="mt-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">{headline}</p>
                     {teaser && <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400 line-clamp-1">{teaser}</p>}
@@ -743,6 +768,9 @@ export default function TodayPage() {
                       </p>
                     )}
                   </button>
+                  <button onClick={() => reviewDraft(draft.id, 'dismiss')} disabled={draftActioning === draft.id}
+                    className="shrink-0 m-4 mb-0 text-xs font-medium text-zinc-400 hover:text-red-600 dark:hover:text-red-400" title="Skip this draft">⏭️ Skip</button>
+                  </div>
                   {draftExpanded && (
                     <div className="px-4 pb-4">
                       <textarea readOnly value={draft.final_content} rows={8}
@@ -805,8 +833,40 @@ export default function TodayPage() {
             )}
           </div>
         )}
+
+        {doneDrafts.length > 0 && (
+          <div className="pt-4">
+            <button onClick={() => setShowDoneDrafts(v => !v)} className="text-xs font-bold uppercase tracking-wide text-zinc-400 mb-2 hover:text-violet-600 dark:hover:text-violet-400">
+              {showDoneDrafts ? '▲' : '▼'} Done ({doneDrafts.length})
+            </button>
+            {showDoneDrafts && (
+              <div className="space-y-1.5">
+                {doneDrafts.map(draft => (
+                  <div key={draft.id} className="flex items-center gap-3 rounded-xl border border-zinc-100 dark:border-zinc-800 px-4 py-2.5">
+                    <span className="shrink-0 text-sm">{draft.status === 'approved' ? '✅' : '🗑'}</span>
+                    <p className="flex-1 min-w-0 text-sm text-zinc-500 dark:text-zinc-400 truncate">{draft.format} · {draft.topic}</p>
+                    {draft.status === 'dismissed' && (
+                      <button onClick={() => reviewDraft(draft.id, 'undo')} disabled={draftActioning === draft.id}
+                        className="shrink-0 text-[11px] font-medium text-zinc-400 hover:text-violet-600 dark:hover:text-violet-400">↩ Undo</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </section>
       </div>
+
+      {/* ══ Ask Signal — below the two jobs, still inline (no navigation
+          away needed), but reading/publishing come first ═══════════════ */}
+      <section id="today-ask-signal" className="mb-10">
+        <div className="flex items-center gap-1.5 mb-1">
+          <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">💬 Ask Signal</h2>
+          <span className="text-xs text-zinc-400">— searches Feed, Reading List, and News together</span>
+        </div>
+        <AskSignalPanel variant="compact" externalQuestion={askExternalQuestion} crossLink={{ href: '/memory', label: 'Open full Memory Assistant →' }} />
+      </section>
 
       {/* ══ Explore more ═══════════════════════════════════════════════ */}
       <section>

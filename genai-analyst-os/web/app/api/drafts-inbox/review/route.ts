@@ -6,7 +6,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}))
   const userId = typeof body.userId === 'string' ? body.userId : ''
   const itemId = typeof body.itemId === 'string' ? body.itemId : ''
-  const action = body.action === 'approve' ? 'approved' : body.action === 'dismiss' ? 'dismissed' : null
+  const action = body.action === 'approve' ? 'approved' : body.action === 'dismiss' ? 'dismissed' : body.action === 'undo' ? 'pending' : null
   if (!userId || !itemId || !action) {
     return Response.json({ error: 'userId, itemId, and a valid action are required' }, { status: 400 })
   }

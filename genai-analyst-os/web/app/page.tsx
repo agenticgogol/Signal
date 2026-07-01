@@ -2,39 +2,71 @@ import Link from 'next/link'
 
 const VALUE_PROPS = [
   {
-    icon: '🧠',
-    title: 'Personalized AI intelligence, not a generic news feed',
-    body: 'Signal tracks the AI sources you trust, enriches every useful article, and ranks the feed around your interests and reactions. You open the app already knowing what mattered, why it mattered, and what is still noise.',
+    icon: '⏱️',
+    title: 'One page. 15 minutes. You are caught up and ahead.',
+    body: 'Today blends your Feed, Reading List, and breaking AI News into one ranked queue, sized to the time you actually have. No tab-hopping between a news reader, a notes app, and a drafting tool — one page tells you what to read and what to publish.',
     accent: 'from-violet-500 to-indigo-500',
   },
   {
     icon: '✍️',
-    title: 'From ranked evidence to publish-ready drafts',
-    body: 'Pick an article, idea, or outline, choose the platform, and let the agent workflow draft, verify, critique, humanize, and polish the piece in your voice. You stay in control of the final edit and the final publish button.',
+    title: 'From ranked evidence to publish-ready drafts, N ideas at a time',
+    body: 'Signal picks the topic — blending your engagement, reading behavior, and trending news — drafts it with an eight-agent pipeline in your voice, and can spin up 2-3 distinct ideas across every platform you publish to in one click.',
     accent: 'from-blue-500 to-cyan-500',
   },
   {
-    icon: '📈',
-    title: 'Bring your own model spend, keep product value separate',
-    body: 'Signal charges for the intelligence workflow and product layer. You choose your own provider, model, and API key for premium generation, so execution cost stays transparent and under your control.',
+    icon: '🔥',
+    title: 'Built to make the habit stick, not just the tool useful',
+    body: 'Reading and publishing streaks track your consistency week over week. Ask Signal remembers everything you have read so a follow-up question is one click away, not a re-search. The more you use it, the sharper it gets at picking what matters to you.',
     accent: 'from-emerald-500 to-teal-500',
   },
 ]
 
 const HOW_IT_WORKS = [
-  { step: '01', label: 'Curated Feed', desc: 'Signal pulls from your sources daily. Every article gets TL;DR bullets, topic tags, and a depth score.' },
-  { step: '02', label: 'Ranked for You', desc: 'A blend score surfaces the articles that match your interests and reaction history at the top.' },
-  { step: '03', label: 'Digest + Ideas', desc: 'Signal turns ranked evidence into a daily story and suggests content angles from the strongest articles — opinionated takes ready to build on.' },
-  { step: '04', label: 'Agentic Creation', desc: 'The eight-agent loop drafts, checks claims, critiques, humanizes, scores, stress-tests, and polishes using your own provider, model, and API key. You review, refine, and publish.' },
+  { step: '01', label: 'One ranked queue', desc: 'Feed, Reading List, and News are merged into a single daily queue, sized to your target minutes — not three separate tabs to triage.' },
+  { step: '02', label: 'Read, skip, or undo', desc: 'Mark items read as you go; changed your mind or need to revisit something for a draft? Undo brings it right back.' },
+  { step: '03', label: 'Generate on demand', desc: 'One click drafts publish-ready content from what you engaged with most — pick the platforms, pick how many distinct ideas, review before anything goes out.' },
+  { step: '04', label: 'Ask, don\'t re-search', desc: 'Ask Signal sits inline on the same page, with full recall of everything in your Feed, Reading List, and News — no retyping context, no separate app.' },
 ]
 
 const CAPABILITIES = [
-  { label: 'Sources monitored', value: '50+' },
+  { label: 'Minutes a day', value: '15' },
   { label: 'Content formats', value: '6' },
   { label: 'Agent pipeline stages', value: '8' },
-  { label: 'LLM providers supported', value: '4' },
-  { label: 'Digest cadences', value: '2' },
-  { label: 'Topics tracked', value: '7' },
+  { label: 'Ideas per click', value: '1-3' },
+  { label: 'Direct-publish platforms', value: '4+' },
+  { label: 'Sources monitored', value: '50+' },
+]
+
+const PRICING = [
+  {
+    name: 'Free',
+    tagline: 'Stay informed, on your own time',
+    price: 'Free',
+    features: [
+      'Personalized Feed, Reading List, and AI News',
+      'Daily Today queue, ranked and time-boxed',
+      'Reading and publishing streaks',
+      'Organize, tag, and archive what you read',
+    ],
+    cta: { label: 'Start free →', href: '/today' },
+    highlight: false,
+  },
+  {
+    name: 'Pro',
+    tagline: 'Turn reading into published output',
+    price: 'One plan, your own model key',
+    features: [
+      'Everything in Free, plus:',
+      'Generate today\'s content — N ideas × N platforms, one click',
+      'Ask Signal — LLM-powered recall across everything you\'ve read',
+      'Full 8-agent Create studio for any topic or platform',
+      'Daily/weekly narrative digests and idea generation',
+      'Direct publishing to LinkedIn, X, Medium, and email',
+      'Bring your own provider and API key — execution cost stays yours',
+    ],
+    cta: { label: 'Upgrade in Settings →', href: '/settings' },
+    highlight: true,
+  },
 ]
 
 const FORMATS = [
@@ -89,29 +121,30 @@ export default function LandingPage() {
         <div className="max-w-4xl mx-auto text-center relative">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-violet-950/60 border border-violet-800/60 text-violet-300 text-xs font-medium mb-8">
             <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
-            Personalized AI intelligence + writing operating system
+            15 minutes a day. Know what happened in AI. Say something about it.
           </div>
 
           <h1 className="text-5xl sm:text-6xl md:text-7xl font-black tracking-tight leading-[1.05] mb-6">
             <span className="bg-gradient-to-br from-white via-white to-zinc-400 bg-clip-text text-transparent">
-              Your personalized
+              Remove the noise.
             </span>
             <br />
             <span className="bg-gradient-to-r from-violet-400 via-blue-400 to-cyan-400 bg-clip-text text-transparent">
-              AI intelligence + writing OS
+              Read, think, publish — one page.
             </span>
           </h1>
 
           <p className="text-lg sm:text-xl text-zinc-400 max-w-2xl mx-auto leading-relaxed mb-10">
-            Track the AI sources you trust, get daily and weekly narrative briefings, discover timely ideas,
-            and generate publish-ready drafts in your own voice — using your own model provider and API key.
+            No more RSS readers, News tabs, and copy-paste prompting stitched together by hand. Signal blends
+            your Feed, Reading List, and breaking AI News into one ranked daily queue — and turns what you engaged
+            with most into a publish-ready draft, in your own voice, across every platform you use.
           </p>
 
           <div className="mb-10 flex flex-wrap items-center justify-center gap-2 text-xs font-semibold text-zinc-300">
-            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">Personalized source-based feed</span>
-            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">Daily + weekly briefings</span>
-            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">Topic ideas + outlines</span>
-            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">Multi-agent drafting in your voice</span>
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">One daily reading + publishing queue</span>
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">Reading &amp; publishing streaks</span>
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">N ideas × N platforms, one click</span>
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">Ask Signal — inline recall</span>
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">Bring your own provider + key</span>
           </div>
 
@@ -120,13 +153,13 @@ export default function LandingPage() {
               href="/today"
               className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-3.5 bg-violet-600 hover:bg-violet-500 text-white font-semibold rounded-xl text-base transition-all shadow-lg shadow-violet-900/40 hover:shadow-violet-900/60"
             >
-              Open Today →
+              Start free — open Today →
             </Link>
             <a
-              href="#how-it-works"
+              href="#pricing"
               className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-3.5 bg-white/5 hover:bg-white/10 text-zinc-300 font-medium rounded-xl text-base transition-colors border border-white/10"
             >
-              See how it works ↓
+              See pricing ↓
             </a>
           </div>
         </div>
@@ -290,6 +323,44 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Pricing */}
+      <section id="pricing" className="py-24 px-6">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-14">
+            <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">Start free. Upgrade when reading turns into publishing.</h2>
+            <p className="text-zinc-400 text-lg max-w-2xl mx-auto">One plan, no confusing tiers. Free covers the daily reading habit; Pro unlocks everything that turns it into published work.</p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            {PRICING.map(({ name, tagline, price, features, cta, highlight }) => (
+              <div key={name} className={`rounded-3xl p-8 border ${highlight ? 'border-violet-600/60 bg-gradient-to-b from-violet-950/40 to-zinc-950' : 'border-white/5 bg-zinc-900'}`}>
+                {highlight && (
+                  <span className="inline-block mb-4 rounded-full bg-violet-600 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white">Most popular</span>
+                )}
+                <h3 className="text-2xl font-black text-white">{name}</h3>
+                <p className="mt-1 text-sm text-zinc-400">{tagline}</p>
+                <p className="mt-4 text-xl font-bold text-violet-300">{price}</p>
+                <div className="mt-6 space-y-2.5">
+                  {features.map(feature => (
+                    <div key={feature} className="flex gap-2.5 text-sm leading-6 text-zinc-300">
+                      <span className={`mt-1 ${highlight ? 'text-violet-400' : 'text-zinc-500'}`}>✓</span>
+                      <span>{feature}</span>
+                    </div>
+                  ))}
+                </div>
+                <Link
+                  href={cta.href}
+                  className={`mt-8 block text-center rounded-xl px-5 py-3 text-sm font-bold transition-all ${highlight ? 'bg-violet-600 hover:bg-violet-500 text-white shadow-lg shadow-violet-900/40' : 'bg-white/5 hover:bg-white/10 text-zinc-200 border border-white/10'}`}
+                >
+                  {cta.label}
+                </Link>
+              </div>
+            ))}
+          </div>
+          <p className="mt-6 text-center text-xs text-zinc-600">Pro requires your own LLM provider API key (OpenAI, Anthropic, or others) — Signal's subscription covers the product and workflow, not model tokens.</p>
+        </div>
+      </section>
+
       {/* CTA */}
       <section className="py-28 px-6 relative overflow-hidden">
         <div className="absolute inset-0 pointer-events-none">
@@ -297,10 +368,10 @@ export default function LandingPage() {
         </div>
         <div className="max-w-2xl mx-auto text-center relative">
           <h2 className="text-4xl sm:text-5xl font-black text-white mb-4 leading-tight">
-            Your edge in the GenAI era<br />starts here.
+            Your 15 minutes a day<br />starts here.
           </h2>
           <p className="text-zinc-400 text-lg mb-10">
-            Pull today&apos;s feed, find the story that matters, and have a publish-ready draft in under 10 minutes.
+            Open Today, read what matters, and have a publish-ready draft — free to start, no card required.
           </p>
           <Link
             href="/today"
