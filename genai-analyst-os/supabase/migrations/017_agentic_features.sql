@@ -31,8 +31,21 @@ create index if not exists draft_inbox_items_user_status_idx
   on public.draft_inbox_items (user_id, status, created_at desc);
 
 -- One draft per user per day — the daily job checks this before generating.
+-- timestamptz::date depends on the session TimeZone setting, so Postgres
+-- refuses it directly in an index expression (must be IMMUTABLE, not just
+-- STABLE). Pinning the conversion to a fixed 'UTC' offset inside a small
+-- wrapper function makes the result deterministic regardless of session
+-- settings, which is the standard way around this restriction.
+create or replace function public.draft_inbox_day(ts timestamptz)
+returns date
+language sql
+immutable
+as $$
+  select (ts at time zone 'utc')::date
+$$;
+
 create unique index if not exists draft_inbox_items_user_day_idx
-  on public.draft_inbox_items (user_id, (created_at::date));
+  on public.draft_inbox_items (user_id, public.draft_inbox_day(created_at));
 
 alter table public.draft_inbox_items enable row level security;
 
