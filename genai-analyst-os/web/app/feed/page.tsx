@@ -1019,6 +1019,7 @@ export default function FeedPage() {
   const [pipelineStarted, setPipelineStarted] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const [triggerError, setTriggerError] = useState<string | null>(null)
+  const [lastRunStatus, setLastRunStatus] = useState<{ status: string; errorLog: Array<{ node?: string; message?: string }> } | null>(null)
   const [pipelineResult, setPipelineResult] = useState<string | null>(null)
   const [showAdminGate, setShowAdminGate] = useState(false)
   const [showPaidConfirm, setShowPaidConfirm] = useState(false)
@@ -1551,6 +1552,7 @@ export default function FeedPage() {
         const r = await fetch(statusUrl)
         const d = await r.json()
         if (!r.ok) throw new Error(d.error ?? 'Could not read pipeline status')
+        if (d.run?.status) setLastRunStatus({ status: d.run.status, errorLog: Array.isArray(d.run.error_log) ? d.run.error_log : [] })
         if (d.state === 'finished') {
           if (pollRef.current) clearInterval(pollRef.current)
           localStorage.removeItem(PIPELINE_KEY)
@@ -1563,15 +1565,21 @@ export default function FeedPage() {
           await fetchFeed(range, true)
           setLastRefreshed(new Date().toISOString())
           const articleCount = Number(d.run?.articles_new ?? 0)
+          const errorNotes = (Array.isArray(d.run?.error_log) ? d.run.error_log : [])
+            .map((e: { node?: string; message?: string }) => `${e.node ?? 'unknown'}: ${e.message ?? ''}`)
+            .join(' · ')
           setPipelineResult(articleCount > 0
-            ? `Pipeline completed: ${articleCount} article${articleCount === 1 ? '' : 's'} processed.`
-            : 'Pipeline completed, but no eligible articles were found. Try a larger lookback or check your source feeds.')
+            ? `Pipeline completed: ${articleCount} article${articleCount === 1 ? '' : 's'} processed.${errorNotes ? ` (Notes: ${errorNotes})` : ''}`
+            : `Pipeline completed, but no eligible articles were found.${errorNotes ? ` Details: ${errorNotes}` : ' Try a larger lookback or check your source feeds.'}`)
         } else if (attempts >= 40) {
           if (pollRef.current) clearInterval(pollRef.current)
           localStorage.removeItem(PIPELINE_KEY)
           setPipelineStarted(false)
           stopElapsedTimer()
-          setTriggerError('The pipeline did not finish within 10 minutes. Check the GitHub Actions run for details.')
+          const runDetail = d.run
+            ? ` Last known status: "${d.run.status}"${Array.isArray(d.run.error_log) && d.run.error_log.length > 0 ? ` — ${d.run.error_log.map((e: { node?: string; message?: string }) => `${e.node ?? 'unknown'}: ${e.message ?? ''}`).join(' · ')}` : ' with no recorded errors — this usually means the run itself finished on GitHub\'s side but never marked its crawl_runs row complete.'}`
+            : ' No crawl_runs row was found for this run at all — check that GITHUB_PAT/dispatch actually reached the workflow.'
+          setTriggerError(`The pipeline did not finish within 10 minutes.${runDetail} Check the GitHub Actions run for the full log.`)
         }
       } catch (err) {
         if (attempts >= 40) {
@@ -1592,6 +1600,7 @@ export default function FeedPage() {
     setPipelineStarted(false)
     setTriggerError(null)
     setPipelineResult(null)
+    setLastRunStatus(null)
     try {
       // Compare against the full recent catalogue, not only the currently
       // selected UI range, so older cards are not incorrectly labelled fresh.
@@ -2011,6 +2020,12 @@ export default function FeedPage() {
           <div className="h-1 bg-violet-100 dark:bg-violet-900/40">
             <div className="h-full bg-violet-500 transition-all duration-1000 rounded-r-full" style={{ width: `${progressPct}%` }} />
           </div>
+          {lastRunStatus && (
+            <div className="px-4 py-2 text-xs text-violet-500 dark:text-violet-400 border-t border-violet-200/60 dark:border-violet-800/60">
+              Last checked: status = &quot;{lastRunStatus.status}&quot;
+              {lastRunStatus.errorLog.length > 0 && ` — ${lastRunStatus.errorLog.map(e => `${e.node ?? 'unknown'}: ${e.message ?? ''}`).join(' · ')}`}
+            </div>
+          )}
         </div>
       )}
 

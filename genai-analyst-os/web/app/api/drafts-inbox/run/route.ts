@@ -1,4 +1,5 @@
 import { runDailyDraftsInboxJob } from '@/lib/draftsInbox'
+import { getErrorMessage } from '@/lib/errors'
 
 export const maxDuration = 300
 
@@ -17,6 +18,6 @@ export async function POST(req: Request) {
     const result = await runDailyDraftsInboxJob()
     return Response.json(result)
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 })
+    return Response.json({ error: getErrorMessage(error) }, { status: 500 })
   }
 }

@@ -97,6 +97,7 @@ export default function SettingsPage() {
   const [runningNow, setRunningNow] = useState(false)
 
   const [draftsInboxEnabled, setDraftsInboxEnabled] = useState(false)
+  const [draftsInboxFormat, setDraftsInboxFormat] = useState('linkedin')
   const [draftsInboxSaving, setDraftsInboxSaving] = useState(false)
   const [draftsInboxStatus, setDraftsInboxStatus] = useState<string | null>(null)
 
@@ -200,6 +201,7 @@ export default function SettingsPage() {
         const json = await response.json()
         if (!response.ok) throw new Error(json.error ?? 'Could not load Drafts Inbox setting')
         setDraftsInboxEnabled(Boolean(json.enabled))
+        setDraftsInboxFormat(json.format || 'linkedin')
       })
       .catch(() => {})
   }, [session?.access_token, userId])
@@ -238,6 +240,25 @@ export default function SettingsPage() {
         : 'Off — no automatic drafts will be generated.')
     } catch (err) {
       setDraftsInboxStatus(err instanceof Error ? err.message : 'Could not save Drafts Inbox setting')
+    } finally {
+      setDraftsInboxSaving(false)
+    }
+  }
+
+  const changeDraftsInboxFormat = async (format: string) => {
+    if (!session?.access_token || !userId) return
+    setDraftsInboxSaving(true)
+    try {
+      const response = await fetch('/api/data/drafts-inbox-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ userId, format }),
+      })
+      const json = await response.json()
+      if (!response.ok) throw new Error(json.error ?? 'Could not save target platform')
+      setDraftsInboxFormat(format)
+    } catch (err) {
+      setDraftsInboxStatus(err instanceof Error ? err.message : 'Could not save target platform')
     } finally {
       setDraftsInboxSaving(false)
     }
@@ -735,7 +756,20 @@ export default function SettingsPage() {
                 onChange={event => toggleDraftsInbox(event.target.checked)} />
               Draft one post a day from what I engaged with most
             </label>
-            <p className="mt-2 text-xs text-zinc-400">Capped at one draft per account per day. Review pending drafts in Create → Drafts Inbox.</p>
+            <div className="mt-3 flex items-center gap-2">
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">Target platform:</span>
+              <select value={draftsInboxFormat} disabled={draftsInboxSaving || !draftsInboxEnabled}
+                onChange={event => changeDraftsInboxFormat(event.target.value)}
+                className="text-xs rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 px-2 py-1 disabled:opacity-50">
+                <option value="linkedin">LinkedIn</option>
+                <option value="substack">Substack</option>
+                <option value="thread">Twitter/X Thread</option>
+                <option value="blog">Blog Post</option>
+                <option value="youtube_long">YouTube Long Script</option>
+                <option value="youtube_short">YouTube Short Script</option>
+              </select>
+            </div>
+            <p className="mt-2 text-xs text-zinc-400">Capped at one draft per account per day. Review pending drafts on the Today page.</p>
             {draftsInboxStatus && <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-300">{draftsInboxStatus}</p>}
           </>
         )}

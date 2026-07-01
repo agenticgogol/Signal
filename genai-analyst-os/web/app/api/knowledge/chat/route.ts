@@ -3,6 +3,7 @@ import { requirePaidFeature } from '@/lib/featureAccess'
 import { resolveSignedInOrAdmin } from '@/lib/serverAuth'
 import { answerNotebookQuestion } from '@/lib/knowledge'
 import { logChatEvent, logKnowledgeEvent } from '@/lib/memory'
+import { getErrorMessage } from '@/lib/errors'
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}))
@@ -40,6 +41,6 @@ export async function POST(req: NextRequest) {
     })
     return Response.json(result)
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 })
+    return Response.json({ error: getErrorMessage(error) }, { status: 500 })
   }
 }

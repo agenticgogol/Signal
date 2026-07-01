@@ -140,6 +140,7 @@ export default function TodayPage() {
   const [draftsError, setDraftsError] = useState<string | null>(null)
   const [draftActioning, setDraftActioning] = useState<string | null>(null)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [draftFormatFilter, setDraftFormatFilter] = useState<string>('all')
 
   const fetchDrafts = async () => {
     if (!userId) return
@@ -191,16 +192,19 @@ export default function TodayPage() {
   const progressPct = minutesTotal > 0 ? Math.min(100, Math.round((minutesDone / minutesTotal) * 100)) : 0
   const allDone = entries.length > 0 && pendingEntries.length === 0
   const pendingDrafts = drafts.filter(d => d.status === 'pending')
+  const draftFormats = Array.from(new Set(drafts.map(d => d.format)))
+  const filteredPendingDrafts = draftFormatFilter === 'all' ? pendingDrafts : pendingDrafts.filter(d => d.format === draftFormatFilter)
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8 pb-24">
+    <div className="mx-auto max-w-6xl px-6 py-8 pb-24">
       <div className="mb-8">
         <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">👋 Today</h1>
         <p className="text-xs text-zinc-400 mt-0.5">Two jobs: read what matters, review what's ready to publish. Everything else is one click away below.</p>
       </div>
 
+      <div className="grid gap-8 lg:grid-cols-2 mb-10">
       {/* ══ JOB 1: What to read ═══════════════════════════════════════════ */}
-      <section className="mb-10">
+      <section>
         <div className="flex items-center justify-between gap-3 mb-2">
           <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">📋 What to read today</h2>
           <button onClick={refreshQueue} disabled={refreshing || queueLoading}
@@ -280,21 +284,36 @@ export default function TodayPage() {
       </section>
 
       {/* ══ JOB 2: What to review & publish ═════════════════════════════ */}
-      <section className="mb-10">
+      <section>
         <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">🗣️ Share your voice</h2>
-        <p className="text-xs text-zinc-400 mb-3">Auto-drafted from what you've been reading. Nothing publishes without your approval. Opt in or out in <Link href="/settings" className="text-violet-600 dark:text-violet-400 hover:underline">Settings</Link>.</p>
+        <p className="text-xs text-zinc-400 mb-3">Auto-drafted from what you've been reading. Nothing publishes without your approval. Opt in or out, and choose the target platform, in <Link href="/settings" className="text-violet-600 dark:text-violet-400 hover:underline">Settings</Link>.</p>
+
+        {draftFormats.length > 1 && (
+          <div className="flex items-center gap-2 flex-wrap mb-3">
+            <button onClick={() => setDraftFormatFilter('all')}
+              className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${draftFormatFilter === 'all' ? 'bg-violet-600 text-white border-violet-600' : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800'}`}>
+              All
+            </button>
+            {draftFormats.map(format => (
+              <button key={format} onClick={() => setDraftFormatFilter(format)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${draftFormatFilter === format ? 'bg-violet-600 text-white border-violet-600' : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800'}`}>
+                {format}
+              </button>
+            ))}
+          </div>
+        )}
 
         {draftsError && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{draftsError}</p>}
 
         {draftsLoading ? (
           <div className="h-32 rounded-2xl bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
-        ) : pendingDrafts.length === 0 ? (
+        ) : filteredPendingDrafts.length === 0 ? (
           <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 text-center">
             <p className="text-sm text-zinc-500 dark:text-zinc-400">No pending drafts. If Drafts Inbox is on in Settings, check back tomorrow — it drafts at most one post a day from what you engaged with most.</p>
           </div>
         ) : (
           <div className="space-y-4">
-            {pendingDrafts.map(draft => (
+            {filteredPendingDrafts.map(draft => (
               <div key={draft.id} className="rounded-2xl border border-violet-200 dark:border-violet-800 bg-violet-50/30 dark:bg-violet-950/10 p-5">
                 <div className="flex items-center justify-between gap-3 mb-2">
                   <div>
@@ -324,6 +343,7 @@ export default function TodayPage() {
           </div>
         )}
       </section>
+      </div>
 
       {/* ══ Explore more ═══════════════════════════════════════════════ */}
       <section>

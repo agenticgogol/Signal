@@ -3,6 +3,7 @@ import { requirePaidFeature } from '@/lib/featureAccess'
 import { resolveSignedInOrAdmin } from '@/lib/serverAuth'
 import { ingestKnowledgeItem, getOrCreateDefaultNotebook } from '@/lib/knowledge'
 import { logKnowledgeEvent } from '@/lib/memory'
+import { getErrorMessage } from '@/lib/errors'
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}))
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest) {
     try {
       notebookId = await getOrCreateDefaultNotebook(access.userId)
     } catch (error) {
-      return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 })
+      return Response.json({ error: getErrorMessage(error) }, { status: 500 })
     }
   }
 
@@ -58,6 +59,6 @@ export async function POST(req: NextRequest) {
     })
     return Response.json({ item, notebookId })
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 })
+    return Response.json({ error: getErrorMessage(error) }, { status: 500 })
   }
 }

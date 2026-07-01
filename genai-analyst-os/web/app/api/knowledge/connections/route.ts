@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { requirePaidFeature } from '@/lib/featureAccess'
 import { resolveSignedInOrAdmin } from '@/lib/serverAuth'
 import { findKnowledgeConnections } from '@/lib/knowledge'
+import { getErrorMessage } from '@/lib/errors'
 
 // Button-triggered only — never called on a schedule. The heuristic pass
 // inside findKnowledgeConnections is free; this route's only real cost is
@@ -21,6 +22,6 @@ export async function POST(req: NextRequest) {
     const result = await findKnowledgeConnections(access.userId)
     return Response.json(result)
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 })
+    return Response.json({ error: getErrorMessage(error) }, { status: 500 })
   }
 }

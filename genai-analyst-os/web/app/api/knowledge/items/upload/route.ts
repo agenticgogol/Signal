@@ -4,6 +4,7 @@ import { resolveSignedInOrAdmin } from '@/lib/serverAuth'
 import { ingestKnowledgeItem, getOrCreateDefaultNotebook } from '@/lib/knowledge'
 import { extractUploadText } from '@/lib/knowledgeFiles'
 import { logKnowledgeEvent } from '@/lib/memory'
+import { getErrorMessage } from '@/lib/errors'
 
 export async function POST(req: NextRequest) {
   const form = await req.formData().catch(() => null)
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
     try {
       notebookId = await getOrCreateDefaultNotebook(access.userId)
     } catch (error) {
-      return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 })
+      return Response.json({ error: getErrorMessage(error) }, { status: 500 })
     }
   }
 
@@ -55,6 +56,6 @@ export async function POST(req: NextRequest) {
 
     return Response.json({ item })
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 })
+    return Response.json({ error: getErrorMessage(error) }, { status: 500 })
   }
 }

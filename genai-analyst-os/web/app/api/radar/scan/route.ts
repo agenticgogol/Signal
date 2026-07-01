@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { resolveSignedInOrAdmin } from '@/lib/serverAuth'
 import { scanNoveltyRadar } from '@/lib/radar'
+import { getErrorMessage } from '@/lib/errors'
 
 // Free — pure heuristic term-velocity scan, no LLM call. Not paid-gated.
 export async function GET(req: NextRequest) {
@@ -14,6 +15,6 @@ export async function GET(req: NextRequest) {
     const result = await scanNoveltyRadar(access.userId)
     return Response.json(result)
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 })
+    return Response.json({ error: getErrorMessage(error) }, { status: 500 })
   }
 }

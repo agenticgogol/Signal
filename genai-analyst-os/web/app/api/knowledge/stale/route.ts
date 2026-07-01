@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { resolveSignedInOrAdmin } from '@/lib/serverAuth'
 import { findStaleKnowledgeItems } from '@/lib/knowledge'
+import { getErrorMessage } from '@/lib/errors'
 
 // Free — pure heuristics, no LLM call. Not paid-gated for that reason,
 // same as any other read-only scan.
@@ -15,6 +16,6 @@ export async function GET(req: NextRequest) {
     const items = await findStaleKnowledgeItems(access.userId)
     return Response.json({ items })
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 })
+    return Response.json({ error: getErrorMessage(error) }, { status: 500 })
   }
 }

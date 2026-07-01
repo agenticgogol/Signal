@@ -3,6 +3,7 @@ import { requirePaidFeature } from '@/lib/featureAccess'
 import { resolveSignedInOrAdmin } from '@/lib/serverAuth'
 import { answerKnowledgeBaseQuestion } from '@/lib/knowledge'
 import { logChatEvent } from '@/lib/memory'
+import { getErrorMessage } from '@/lib/errors'
 
 // Knowledge-only Q&A for the unified Knowledge workspace search bar —
 // deliberately separate from /api/knowledge/recall, which also blends in
@@ -38,6 +39,6 @@ export async function POST(req: NextRequest) {
     })
     return Response.json(result)
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 })
+    return Response.json({ error: getErrorMessage(error) }, { status: 500 })
   }
 }

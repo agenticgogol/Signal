@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { getErrorMessage } from '@/lib/errors'
 import { requireSignedInUser } from '@/lib/serverAuth'
 import { regenerateTodayQueue } from '@/lib/todayQueue'
 
@@ -14,6 +15,6 @@ export async function POST(req: NextRequest) {
     const result = await regenerateTodayQueue(userId)
     return Response.json(result)
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 })
+    return Response.json({ error: getErrorMessage(error) }, { status: 500 })
   }
 }

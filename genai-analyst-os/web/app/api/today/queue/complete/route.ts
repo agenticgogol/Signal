@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { getErrorMessage } from '@/lib/errors'
 import { requireSignedInUser } from '@/lib/serverAuth'
 import { markQueueItemStatus } from '@/lib/todayQueue'
 
@@ -18,6 +19,6 @@ export async function POST(req: NextRequest) {
     await markQueueItemStatus(userId, queueItemId, status)
     return Response.json({ ok: true })
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 })
+    return Response.json({ error: getErrorMessage(error) }, { status: 500 })
   }
 }

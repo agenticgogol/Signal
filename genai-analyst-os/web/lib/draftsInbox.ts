@@ -61,7 +61,7 @@ export async function generateDailyDraftForUser(userId: string): Promise<DraftIn
   if (!article) return { status: 'skipped_no_engagement' }
 
   const [{ data: profile }] = await Promise.all([
-    db.from('user_profiles').select('voice_fingerprint, onboarding_target_audience').eq('id', userId).maybeSingle(),
+    db.from('user_profiles').select('voice_fingerprint, onboarding_target_audience, drafts_inbox_format').eq('id', userId).maybeSingle(),
   ])
   const voiceFingerprint = (profile?.voice_fingerprint as VoiceFingerprint | null) ?? null
 
@@ -71,7 +71,7 @@ export async function generateDailyDraftForUser(userId: string): Promise<DraftIn
   const sourceUrl = String(article.url || '')
 
   const brief = `Write a post reacting to and building on this article, from the practitioner's own perspective: "${title}". ${whyItMatters}`
-  const format = 'linkedin'
+  const format = String(profile?.drafts_inbox_format || 'linkedin')
   const sources: SourceArticle[] = [{
     title,
     url: sourceUrl,
