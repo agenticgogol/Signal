@@ -29,7 +29,7 @@ export interface QuickNavGroup {
 // instead of scrolling through fifteen sections to find the right one.
 export function QuickNav({ groups }: { groups: QuickNavGroup[] }) {
   return (
-    <nav className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
+    <nav className="sticky top-4 z-30 rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md p-6 shadow-sm">
       <p className="text-xs font-bold uppercase tracking-[0.18em] text-violet-600 dark:text-violet-400">Quick navigation</p>
       <div className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
         {groups.map(group => (
@@ -55,7 +55,7 @@ export function GuideSection({ id, eyebrow, title, description, children }: {
   id: string; eyebrow?: string; title: string; description?: string; children: ReactNode
 }) {
   return (
-    <section id={id} className="scroll-mt-8 pt-12">
+    <section id={id} className="scroll-mt-24 pt-12">
       {eyebrow && <p className="text-xs font-bold uppercase tracking-[0.18em] text-violet-600 dark:text-violet-400">{eyebrow}</p>}
       <h2 className="mt-1 text-2xl font-bold tracking-tight text-zinc-950 dark:text-white">{title}</h2>
       {description && <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">{description}</p>}

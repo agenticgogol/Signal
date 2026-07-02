@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={inter.variable} suppressHydrationWarning>
+    <html lang="en" className={`${inter.variable} scroll-smooth`} suppressHydrationWarning>
       <head>
         <style>{`* { font-feature-settings: 'cv02', 'cv03'; }`}</style>
         {/* Apply saved theme class before first paint — prevents flash of wrong theme */}
