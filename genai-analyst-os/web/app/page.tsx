@@ -4,28 +4,28 @@ const VALUE_PROPS = [
   {
     icon: '🕵️',
     title: 'We do the hard work. You get the 15 minutes.',
-    body: 'Signal scrapes the sources that matter for your career, compiles everything, ranks it by relevance to you, and hands you exactly what to read — not a raw firehose you have to triage yourself. No more juggling RSS readers, five open tabs, and a notes app just to stay current.',
+    body: 'Signal.ai scrapes the sources that matter for your career, compiles everything, ranks it by relevance to you, and hands you exactly what to read — not a raw firehose you have to triage yourself. No more juggling RSS readers, five open tabs, and a notes app just to stay current.',
     accent: 'from-violet-500 to-indigo-500',
   },
   {
     icon: '🧭',
     title: 'The more you read, the sharper it gets',
-    body: 'Every open, like, pin, and skip teaches Signal what actually matters to you — so the ranking, and eventually the content ideas it suggests, get more accurate the more you use it. This isn\'t a static feed; it\'s a system that learns your beat.',
+    body: 'Every open, like, pin, and skip teaches Signal.ai what actually matters to you — so the ranking, and eventually the content ideas it suggests, get more accurate the more you use it. This isn\'t a static feed; it\'s a system that learns your beat.',
     accent: 'from-blue-500 to-cyan-500',
   },
   {
     icon: '✍️',
     title: 'From "I read this" to "I published this" — same page',
-    body: 'As you read, Signal starts surfacing writing and content ideas from what you engaged with most, then drafts them — verified, critiqued, humanized to your voice — across every platform you publish to, in one click. Reading turns directly into your next post.',
+    body: 'As you read, Signal.ai starts surfacing writing and content ideas from what you engaged with most, then drafts them — verified, critiqued, humanized to your voice — across every platform you publish to, in one click. Reading turns directly into your next post.',
     accent: 'from-emerald-500 to-teal-500',
   },
 ]
 
 const HOW_IT_WORKS = [
-  { step: '01', label: 'We scrape & compile', desc: 'Signal continuously pulls from the AI sources that matter for your career — Feed, Your Library, and breaking News — so you never have to go source-hunting yourself.' },
+  { step: '01', label: 'We scrape & compile', desc: 'Signal.ai continuously pulls from the AI sources that matter for your career — Feed, Your Library, and breaking News — so you never have to go source-hunting yourself.' },
   { step: '02', label: 'We rank by relevance', desc: 'Everything is scored against your interests and how you\'ve reacted before, then merged into one queue sized to the time you actually have — 15 minutes, by default.' },
   { step: '03', label: 'You read, we learn', desc: 'Open, skip, like, pin — every reaction sharpens what gets surfaced next. Undo anything; nothing is ever a dead end.' },
-  { step: '04', label: 'We suggest what to write', desc: 'Based on what you engaged with most, Signal proposes content ideas and drafts them — evidence-grounded, voice-matched, ready to review — across every platform, one click.' },
+  { step: '04', label: 'We suggest what to write', desc: 'Based on what you engaged with most, Signal.ai proposes content ideas and drafts them — evidence-grounded, voice-matched, ready to review — across every platform, one click.' },
 ]
 
 const CAPABILITIES = [
@@ -115,7 +115,7 @@ export default function LandingPage() {
           <span className="flex items-center gap-2.5">
             <span className="text-4xl leading-none">⚡</span>
             <span className="bg-gradient-to-r from-violet-400 via-blue-400 to-cyan-300 bg-clip-text text-transparent font-black text-3xl sm:text-4xl tracking-tight">
-              Signal
+              Signal.ai
             </span>
           </span>
           <Link
@@ -138,7 +138,7 @@ export default function LandingPage() {
           <div className="mb-6 flex items-center justify-center gap-3">
             <span className="text-6xl sm:text-7xl leading-none">⚡</span>
             <span className="bg-gradient-to-r from-violet-400 via-blue-400 to-cyan-300 bg-clip-text text-transparent font-black text-6xl sm:text-7xl tracking-tight">
-              Signal
+              Signal.ai
             </span>
           </div>
 
@@ -208,7 +208,7 @@ export default function LandingPage() {
               Built for the practitioners who shape what GenAI becomes
             </h2>
             <p className="text-zinc-400 text-lg max-w-2xl mx-auto">
-              Not a news aggregator. Not a generic writing tool. Signal is the product layer between raw AI information and work you can actually act on or publish.
+              Not a news aggregator. Not a generic writing tool. Signal.ai is the product layer between raw AI information and work you can actually act on or publish.
             </p>
           </div>
 
@@ -230,7 +230,7 @@ export default function LandingPage() {
       <section className="py-24 px-6 bg-zinc-900/40">
         <div className="max-w-6xl mx-auto grid gap-6 lg:grid-cols-2">
           <div className="rounded-3xl border border-white/5 bg-zinc-950 p-8">
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-400">Why Signal is worth paying for</p>
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-400">Why Signal.ai is worth paying for</p>
             <h2 className="mt-3 text-3xl font-black text-white">You are paying for workflow leverage, not just model access</h2>
             <div className="mt-6 space-y-3">
               {WHY_PAY.map(item => (
@@ -240,7 +240,7 @@ export default function LandingPage() {
                 </div>
               ))}
             </div>
-            <p className="mt-6 text-sm text-zinc-500">Signal subscription covers the product experience. Your own provider key covers premium model execution.</p>
+            <p className="mt-6 text-sm text-zinc-500">Signal.ai subscription covers the product experience. Your own provider key covers premium model execution.</p>
           </div>
           <div className="rounded-3xl border border-white/5 bg-zinc-950 p-8">
             <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-400">Who it is for</p>
@@ -261,7 +261,7 @@ export default function LandingPage() {
       <section id="how-it-works" className="py-24 px-6 bg-zinc-900/40">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">How Signal works</h2>
+            <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">How Signal.ai works</h2>
             <p className="text-zinc-400 text-lg">From raw signal to published content — four stages, fully automated.</p>
           </div>
 
@@ -385,7 +385,7 @@ export default function LandingPage() {
               </div>
             ))}
           </div>
-          <p className="mt-6 text-center text-xs text-zinc-600">Pro requires your own LLM provider API key (OpenAI, Anthropic, or others) — Signal's subscription covers the product and workflow, not model tokens.</p>
+          <p className="mt-6 text-center text-xs text-zinc-600">Pro requires your own LLM provider API key (OpenAI, Anthropic, or others) — Signal.ai's subscription covers the product and workflow, not model tokens.</p>
         </div>
       </section>
 
@@ -405,7 +405,7 @@ export default function LandingPage() {
             href="/today"
             className="inline-flex items-center gap-2 px-10 py-4 bg-violet-600 hover:bg-violet-500 text-white font-bold rounded-xl text-lg transition-all shadow-xl shadow-violet-900/50 hover:shadow-violet-900/70"
           >
-            ⚡ Open Signal
+            ⚡ Open Signal.ai
           </Link>
         </div>
       </section>
@@ -413,7 +413,7 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="border-t border-white/5 py-8 px-6">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-zinc-600">
-          <span className="flex items-center gap-1.5 font-black text-xl bg-gradient-to-r from-violet-500 to-blue-500 bg-clip-text text-transparent"><span className="text-2xl">⚡</span> Signal</span>
+          <span className="flex items-center gap-1.5 font-black text-xl bg-gradient-to-r from-violet-500 to-blue-500 bg-clip-text text-transparent"><span className="text-2xl">⚡</span> Signal.ai</span>
           <div className="flex items-center gap-6">
             <Link href="/feed" className="hover:text-zinc-400 transition-colors">Feed</Link>
             <Link href="/ideas" className="hover:text-zinc-400 transition-colors">Ideas</Link>

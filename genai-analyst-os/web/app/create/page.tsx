@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { ActionConfirmModal, AdminGateModal } from '@/components/AdminGate'
+import AgentPipelineProgress from '@/components/AgentPipelineProgress'
 import { PLATFORM_SPECS } from '@/lib/platformSpecs'
 import { useAuthSession } from '@/lib/useAuthSession'
 
@@ -1153,34 +1154,7 @@ function CreatePageInner() {
           <p className="text-sm text-zinc-500 mb-5">8-agent pipeline: plan → draft → verify → critique → humanize → evaluate → audience test → polish</p>
 
           <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-100 dark:border-zinc-800 p-6">
-            <div className="space-y-5">
-              {agentSteps.map(s => (
-                <div key={s.id}>
-                  <div className="flex items-center gap-3">
-                    <div className="w-6 h-6 flex items-center justify-center flex-shrink-0">
-                      {s.status === 'running' && <div className="w-4 h-4 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />}
-                      {s.status === 'complete' && <span className="text-green-500 text-sm">✓</span>}
-                      {s.status === 'error' && <span className="text-red-500 text-sm">✗</span>}
-                      {s.status === 'pending' && <div className="w-3 h-3 rounded-full border border-zinc-300 dark:border-zinc-600" />}
-                    </div>
-                    <span className={`text-sm font-medium ${
-                      s.status === 'running' ? 'text-violet-600' :
-                      s.status === 'complete' ? 'text-zinc-700 dark:text-zinc-300' : 'text-zinc-400'
-                    }`}>
-                      {s.icon} {s.label}
-                    </span>
-                  </div>
-                  {s.status === 'complete' && s.output && (
-                    <details className="ml-9 mt-1.5">
-                      <summary className="text-xs text-zinc-400 cursor-pointer hover:text-zinc-600">View output</summary>
-                      <div className="mt-1 bg-zinc-50 dark:bg-zinc-800 rounded-xl p-3 text-xs text-zinc-600 dark:text-zinc-400 max-h-32 overflow-y-auto whitespace-pre-wrap">
-                        {s.output.length > 400 ? s.output.slice(0, 400) + '…' : s.output}
-                      </div>
-                    </details>
-                  )}
-                </div>
-              ))}
-            </div>
+            <AgentPipelineProgress steps={agentSteps} />
           </div>
 
           {!isGenerating && agentSteps.some(s => s.status === 'error') && (

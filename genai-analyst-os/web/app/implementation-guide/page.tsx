@@ -164,7 +164,7 @@ const ragZones: PipelineZone[] = [
 export default function ImplementationGuidePage() {
   return (
     <div className="mx-auto max-w-6xl p-6 md:p-8 pb-24">
-      <GuideHero eyebrow="Engineering Field Guide" title="How Signal turns a noisy web into an auditable intelligence workflow"
+      <GuideHero eyebrow="Engineering Field Guide" title="How Signal.ai turns a noisy web into an auditable intelligence workflow"
         description="This guide maps the runtime architecture, agent graph, data model, model tiers, API boundaries, reliability decisions, and deployment controls. It is written for maintainers who need to understand not only what runs, but why the system is shaped this way."
         chips={['Next.js + Python', 'Supabase + pgvector', 'Per-user LLM routing', 'GitHub Actions', 'Human-in-the-loop']} />
 

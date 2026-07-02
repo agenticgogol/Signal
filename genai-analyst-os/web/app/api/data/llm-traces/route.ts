@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
   const db = createServiceClient()
   const { data, error } = await db
     .from('llm_traces')
-    .select('id, agent, provider, model, prompt_chars, completion_chars, duration_ms, status, error_message, created_at')
+    .select('id, agent, provider, model, prompt_chars, completion_chars, input_tokens, output_tokens, estimated_cost_usd, duration_ms, status, error_message, created_at')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(25)

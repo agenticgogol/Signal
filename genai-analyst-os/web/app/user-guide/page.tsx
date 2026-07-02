@@ -4,7 +4,7 @@ import { Arrow, Callout, FeatureCard, FlowNode, GuideHero, GuideSection, QuickNa
 export default function UserGuidePage() {
   return (
     <div className="mx-auto max-w-6xl p-6 md:p-8 pb-24">
-      <GuideHero eyebrow="Signal Handbook" title="15 minutes a day: read what matters, publish what you think"
+      <GuideHero eyebrow="Signal.ai Handbook" title="15 minutes a day: read what matters, publish what you think"
         description="Today is where you land and where most days end — one page blending your Feed, Your Library, and News into a ranked reading queue, plus a publishing panel that drafts from what you engaged with most. Everything else — Feed, AI Tutor, Ask Signal, Create — is one click deeper for whoever has time to go further."
         chips={['15-minute daily loop', 'Personalized ranking', 'AI Tutor for any term', 'Human-controlled publishing', 'Bring your own model']} />
 

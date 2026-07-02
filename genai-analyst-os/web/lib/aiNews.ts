@@ -51,7 +51,7 @@ function getAttr(content: string, tag: string, attr: string) {
 async function fetchSource(source: (typeof SOURCES)[number]): Promise<AiNewsItem[]> {
   try {
     const response = await fetch(source.url, {
-      headers: { 'User-Agent': 'Signal-GenAI-Reader/1.0' },
+      headers: { 'User-Agent': 'SignalAI-GenAI-Reader/1.0' },
       signal: AbortSignal.timeout(8000),
       cache: 'no-store',
     })

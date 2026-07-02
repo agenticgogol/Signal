@@ -14,6 +14,9 @@ export interface LlmTraceSpan {
   model?: string | null
   promptChars: number
   completionChars: number
+  inputTokens?: number | null
+  outputTokens?: number | null
+  estimatedCostUsd?: number | null
   durationMs: number
   status: 'success' | 'error'
   errorMessage?: string | null
@@ -47,6 +50,12 @@ async function forwardToArize(span: LlmTraceSpan) {
             { key: 'llm.model', value: { stringValue: span.model ?? 'unknown' } },
             { key: 'llm.prompt_chars', value: { intValue: String(span.promptChars) } },
             { key: 'llm.completion_chars', value: { intValue: String(span.completionChars) } },
+            // OpenInference-standard token-count keys so Arize's own cost/
+            // token dashboards pick these up natively, not just as custom attrs.
+            { key: 'llm.token_count.prompt', value: { intValue: String(span.inputTokens ?? 0) } },
+            { key: 'llm.token_count.completion', value: { intValue: String(span.outputTokens ?? 0) } },
+            { key: 'llm.token_count.total', value: { intValue: String((span.inputTokens ?? 0) + (span.outputTokens ?? 0)) } },
+            { key: 'llm.cost.total_usd', value: { doubleValue: span.estimatedCostUsd ?? 0 } },
             { key: 'openinference.span.kind', value: { stringValue: 'LLM' } },
           ],
           status: { code: span.status === 'error' ? 2 : 1, message: span.errorMessage ?? '' },
@@ -79,6 +88,9 @@ export async function recordLlmTrace(span: LlmTraceSpan) {
       model: span.model ?? null,
       prompt_chars: span.promptChars,
       completion_chars: span.completionChars,
+      input_tokens: span.inputTokens ?? null,
+      output_tokens: span.outputTokens ?? null,
+      estimated_cost_usd: span.estimatedCostUsd ?? null,
       duration_ms: span.durationMs,
       status: span.status,
       error_message: span.errorMessage ?? null,

@@ -2,6 +2,13 @@ import { createServiceClient } from '@/lib/supabase'
 import { DEFAULT_PROVIDER, defaultModelFor, normalizeProvider, type SupportedProvider, type UserLlmSettings } from '@/lib/llmConfig'
 import { decryptSecretIfNeeded } from '@/lib/secrets'
 import { recordLlmTrace } from '@/lib/observability'
+import { estimateCostUsd } from '@/lib/llmPricing'
+
+interface LlmCallResult {
+  text: string
+  inputTokens: number | null
+  outputTokens: number | null
+}
 
 function providerApiKey(provider: SupportedProvider) {
   switch (provider) {
@@ -99,7 +106,11 @@ async function callAnthropic(settings: UserLlmSettings, params: {
     ? json.content.find((item: { type?: string }) => item.type === 'text')?.text
     : ''
 
-  return String(content || '')
+  return {
+    text: String(content || ''),
+    inputTokens: typeof json?.usage?.input_tokens === 'number' ? json.usage.input_tokens : null,
+    outputTokens: typeof json?.usage?.output_tokens === 'number' ? json.usage.output_tokens : null,
+  }
 }
 
 function openAiCompatibleBaseUrl(provider: SupportedProvider) {
@@ -126,7 +137,7 @@ async function callOpenAiCompatible(settings: UserLlmSettings, params: {
   }
   if (settings.provider === 'openrouter') {
     headers['HTTP-Referer'] = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'http://localhost:3000'
-    headers['X-Title'] = 'Signal'
+    headers['X-Title'] = 'Signal.ai'
   }
 
   const response = await fetch(`${openAiCompatibleBaseUrl(settings.provider)}/chat/completions`, {
@@ -148,7 +159,11 @@ async function callOpenAiCompatible(settings: UserLlmSettings, params: {
     throw new Error(json?.error?.message ?? `${settings.provider} request failed`)
   }
 
-  return String(json?.choices?.[0]?.message?.content || '')
+  return {
+    text: String(json?.choices?.[0]?.message?.content || ''),
+    inputTokens: typeof json?.usage?.prompt_tokens === 'number' ? json.usage.prompt_tokens : null,
+    outputTokens: typeof json?.usage?.completion_tokens === 'number' ? json.usage.completion_tokens : null,
+  }
 }
 
 export async function generateTextForUser(params: {
@@ -181,11 +196,14 @@ export async function generateTextForUser(params: {
       provider: settings.provider,
       model: settings.model,
       promptChars: (params.system?.length ?? 0) + params.prompt.length,
-      completionChars: result.length,
+      completionChars: result.text.length,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      estimatedCostUsd: estimateCostUsd(settings.model, result.inputTokens, result.outputTokens),
       durationMs: Date.now() - startedAt,
       status: 'success',
     })
-    return result
+    return result.text
   } catch (error) {
     void recordLlmTrace({
       userId: params.userId,

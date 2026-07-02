@@ -130,6 +130,7 @@ export default function SettingsPage() {
   const [traces, setTraces] = useState<Array<{
     id: string; agent: string; provider: string | null; model: string | null
     prompt_chars: number; completion_chars: number; duration_ms: number
+    input_tokens: number | null; output_tokens: number | null; estimated_cost_usd: number | null
     status: 'success' | 'error'; error_message: string | null; created_at: string
   }>>([])
   const [arizeConfigured, setArizeConfigured] = useState(false)
@@ -286,7 +287,7 @@ export default function SettingsPage() {
       if (!response.ok) throw new Error(json.error ?? 'Could not save Drafts Inbox setting')
       setDraftsInboxEnabled(next)
       setDraftsInboxStatus(next
-        ? 'On — once a day, Signal will draft one post from what you engaged with most and leave it in your Drafts Inbox for review.'
+        ? 'On — once a day, Signal.ai will draft one post from what you engaged with most and leave it in your Drafts Inbox for review.'
         : 'Off — no automatic drafts will be generated.')
     } catch (err) {
       setDraftsInboxStatus(err instanceof Error ? err.message : 'Could not save Drafts Inbox setting')
@@ -1068,6 +1069,8 @@ export default function SettingsPage() {
                 <tr className="text-left text-zinc-400 border-b border-zinc-100 dark:border-zinc-800">
                   <th className="pb-2 pr-4 font-medium">Agent</th>
                   <th className="pb-2 pr-4 font-medium">Model</th>
+                  <th className="pb-2 pr-4 font-medium">Tokens (in/out)</th>
+                  <th className="pb-2 pr-4 font-medium">Cost</th>
                   <th className="pb-2 pr-4 font-medium">Duration</th>
                   <th className="pb-2 pr-4 font-medium">Status</th>
                   <th className="pb-2 font-medium">When</th>
@@ -1078,6 +1081,8 @@ export default function SettingsPage() {
                   <tr key={t.id} className="border-b border-zinc-50 dark:border-zinc-900">
                     <td className="py-2 pr-4 font-semibold text-zinc-700 dark:text-zinc-300">{t.agent}</td>
                     <td className="py-2 pr-4 text-zinc-500">{t.provider ? `${t.provider} · ${t.model}` : '—'}</td>
+                    <td className="py-2 pr-4 text-zinc-500">{t.input_tokens != null && t.output_tokens != null ? `${t.input_tokens.toLocaleString()} / ${t.output_tokens.toLocaleString()}` : '—'}</td>
+                    <td className="py-2 pr-4 font-semibold text-violet-600 dark:text-violet-400">{t.estimated_cost_usd != null ? `$${t.estimated_cost_usd < 0.01 ? t.estimated_cost_usd.toFixed(4) : t.estimated_cost_usd.toFixed(3)}` : '—'}</td>
                     <td className="py-2 pr-4 text-zinc-500">{(t.duration_ms / 1000).toFixed(1)}s</td>
                     <td className="py-2 pr-4">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${t.status === 'success' ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'}`}>
@@ -1089,6 +1094,7 @@ export default function SettingsPage() {
                 ))}
               </tbody>
             </table>
+            <p className="mt-3 text-[11px] text-zinc-400">Cost is a best-effort estimate from public per-token pricing, not billing-accurate — provider prices change and this table isn't refreshed automatically. Shows "—" for models not in the pricing table.</p>
           </div>
         )}
         {!arizeConfigured && (

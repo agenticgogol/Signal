@@ -7,8 +7,8 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 
 export const metadata: Metadata = {
-  title: 'Signal — GenAI Intelligence OS',
-  description: 'Stop drowning in AI noise. Signal curates the GenAI articles that matter to you and turns insights into publish-ready content in minutes.',
+  title: 'Signal.ai — GenAI Intelligence OS',
+  description: 'Stop drowning in AI noise. Signal.ai curates the GenAI articles that matter to you and turns insights into publish-ready content in minutes.',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

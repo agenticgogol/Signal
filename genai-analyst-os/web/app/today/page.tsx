@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ActionConfirmModal, AdminGateModal, getAdminToken } from '@/components/AdminGate'
 import AskSignalPanel from '@/components/AskSignalPanel'
 import ConceptHighlighter from '@/components/ConceptHighlighter'
+import GeneratingTicker from '@/components/GeneratingTicker'
 import LearningRecapWidget from '@/components/LearningRecapWidget'
 import { openTutor } from '@/lib/openTutor'
 import { useAuthSession } from '@/lib/useAuthSession'
@@ -793,7 +794,11 @@ export default function TodayPage() {
           className="w-full mb-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-violet-500" />
 
         {smartGenerateError && <p className="mb-3 text-sm text-red-600 dark:text-red-400">{smartGenerateError}</p>}
-        {smartGenerateNote && <p className="mb-3 text-sm text-emerald-600 dark:text-emerald-400">{smartGenerateNote}</p>}
+        {smartGenerating ? (
+          <div className="mb-3"><GeneratingTicker /></div>
+        ) : (
+          smartGenerateNote && <p className="mb-3 text-sm text-emerald-600 dark:text-emerald-400">{smartGenerateNote}</p>
+        )}
 
         {draftFormats.length > 1 && (
           <div className="flex items-center gap-2 flex-wrap mb-3">
