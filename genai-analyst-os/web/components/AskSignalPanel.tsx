@@ -66,7 +66,7 @@ export default function AskSignalPanel({
   // repeated question) since effects only re-fire on a changed dependency.
   externalQuestion?: { text: string; nonce: number } | null
 }) {
-  const { session, user } = useAuthSession()
+  const { session, user, loading: authLoading } = useAuthSession()
   const userId = user?.id ?? process.env.NEXT_PUBLIC_USER_ID ?? ''
 
   const [question, setQuestion] = useState('')
@@ -132,6 +132,12 @@ export default function AskSignalPanel({
   const requestAsk = (nextQuestion?: string) => {
     if (session?.access_token || getAdminToken()) {
       ask(nextQuestion)
+      return
+    }
+    if (authLoading) {
+      // Session hasn't finished hydrating yet — wait rather than assume
+      // signed-out and show the admin gate prematurely.
+      setTimeout(() => requestAsk(nextQuestion), 150)
       return
     }
     setQuestion(nextQuestion ?? question)

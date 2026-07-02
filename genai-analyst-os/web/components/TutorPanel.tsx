@@ -52,7 +52,7 @@ export default function TutorPanel({
   sourceRef?: { articleId?: string; knowledgeItemId?: string }
   onClose?: () => void
 }) {
-  const { session, user } = useAuthSession()
+  const { session, user, loading: authLoading } = useAuthSession()
   const userId = user?.id ?? process.env.NEXT_PUBLIC_USER_ID ?? ''
 
   const [term, setTerm] = useState(initialTerm ?? '')
@@ -118,14 +118,25 @@ export default function TutorPanel({
       lookup(nextTerm)
       return
     }
+    if (authLoading) {
+      // Session hasn't finished hydrating yet — wait rather than assume
+      // signed-out and show the admin gate prematurely.
+      setTimeout(() => requestLookup(nextTerm), 150)
+      return
+    }
     setTerm(nextTerm ?? term)
     setShowAdminGate(true)
   }
 
   useEffect(() => {
-    if (initialTerm) requestLookup(initialTerm)
+    // Wait for the auth session to finish hydrating before deciding whether
+    // an admin gate is needed — without this, a genuinely signed-in user
+    // opening the inline slide-over could get prompted for admin
+    // credentials just because Supabase's session hadn't loaded yet on
+    // this freshly-mounted component.
+    if (initialTerm && !authLoading) requestLookup(initialTerm)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialTerm])
+  }, [initialTerm, authLoading])
 
   const compact = variant === 'compact'
 
