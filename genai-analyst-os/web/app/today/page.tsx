@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ActionConfirmModal, AdminGateModal, getAdminToken } from '@/components/AdminGate'
 import AskSignalPanel from '@/components/AskSignalPanel'
 import ConceptHighlighter from '@/components/ConceptHighlighter'
+import LearningRecapWidget from '@/components/LearningRecapWidget'
 import { openTutor } from '@/lib/openTutor'
 import { useAuthSession } from '@/lib/useAuthSession'
 
@@ -590,15 +591,18 @@ export default function TodayPage() {
         </SimpleModal>
       )}
 
-      <div className="mb-6 flex items-start justify-between gap-3">
+      <div className="mb-6 flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">👋 Today</h1>
           <p className="text-xs text-zinc-400 mt-0.5">Two jobs: read what matters, review what's ready to publish. Everything else is one click away below.</p>
         </div>
-        <button onClick={resetTodayView} title="Collapse everything back to the default view and pull fresh data"
-          className="shrink-0 rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400 hover:border-violet-300 dark:hover:border-violet-700 hover:text-violet-600 dark:hover:text-violet-400 transition-colors">
-          🔄 Reset view
-        </button>
+        <div className="flex items-start gap-2 flex-wrap">
+          <LearningRecapWidget userId={userId} onUseTopic={topic => { setCustomTopic(topic); setShowPlatformPicker(true) }} />
+          <button onClick={resetTodayView} title="Collapse everything back to the default view and pull fresh data"
+            className="shrink-0 rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400 hover:border-violet-300 dark:hover:border-violet-700 hover:text-violet-600 dark:hover:text-violet-400 transition-colors">
+            🔄 Reset view
+          </button>
+        </div>
       </div>
 
       {isGuest && (
