@@ -80,29 +80,38 @@ export default function SidebarNav() {
           </ul>
         )}
       </li>
-
-      <li className="mt-3 rounded-xl bg-gradient-to-br from-violet-50 to-blue-50 dark:from-violet-950/30 dark:to-blue-950/20 border border-violet-200/70 dark:border-violet-800/50 p-2.5">
-        <p className="px-1 mb-1.5 text-[10px] font-bold uppercase tracking-wider text-violet-500 dark:text-violet-400">📖 New here?</p>
-        <ul className="space-y-0.5">
-          {GUIDE_ITEMS.map(({ href, label, icon, desc }) => (
-            <li key={href}>
-              <Link
-                href={href}
-                className={`flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  pathname === href
-                    ? 'bg-white dark:bg-zinc-900 text-violet-700 dark:text-violet-300 shadow-sm'
-                    : 'text-violet-700 dark:text-violet-300 hover:bg-white/70 dark:hover:bg-zinc-900/70'}`}
-              >
-                <span className="text-sm leading-none">{icon}</span>
-                <span>
-                  <span className="block">{label}</span>
-                  <span className="block text-[10px] font-normal text-violet-500/80 dark:text-violet-400/70">{desc}</span>
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </li>
     </ul>
+  )
+}
+
+// Rendered separately in AppShell's fixed (non-scrolling) footer area, not
+// inside SidebarNav's own scrollable list — when "More" was expanded there,
+// this card got pushed below the visible viewport with no scroll indicator,
+// making the guides easy to miss entirely. Always visible now, same as the
+// account panel below it.
+export function SidebarGuides() {
+  const pathname = usePathname()
+  return (
+    <div className="rounded-xl bg-gradient-to-br from-violet-50 to-blue-50 dark:from-violet-950/30 dark:to-blue-950/20 border border-violet-200/70 dark:border-violet-800/50 px-2.5 py-2">
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-violet-500 dark:text-violet-400 shrink-0">📖 Guides:</span>
+        <div className="flex items-center gap-1.5 min-w-0">
+          {GUIDE_ITEMS.map(({ href, label, icon }) => (
+            <Link
+              key={href}
+              href={href}
+              title={label}
+              className={`flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-semibold transition-all truncate ${
+                pathname === href
+                  ? 'bg-white dark:bg-zinc-900 text-violet-700 dark:text-violet-300 shadow-sm'
+                  : 'text-violet-700 dark:text-violet-300 hover:bg-white/70 dark:hover:bg-zinc-900/70'}`}
+            >
+              <span className="text-xs leading-none">{icon}</span>
+              <span className="truncate">{label}</span>
+            </Link>
+          ))}
+        </div>
+      </div>
+    </div>
   )
 }

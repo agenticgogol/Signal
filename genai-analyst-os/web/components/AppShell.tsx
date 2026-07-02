@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import SidebarNav from './SidebarNav'
+import SidebarNav, { SidebarGuides } from './SidebarNav'
 import ThemeToggle from './ThemeToggle'
 import OnboardingWizard, { type OnboardingPrefs } from './OnboardingWizard'
 import TutorSlideOver, { type TutorTarget } from './TutorSlideOver'
@@ -139,6 +139,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <SidebarNav />
         </nav>
         <div className="px-3 py-3 border-t border-zinc-200/80 dark:border-zinc-800/80 space-y-3">
+          <SidebarGuides />
           <div className="rounded-xl border border-zinc-200/80 dark:border-zinc-800/80 bg-zinc-50 dark:bg-zinc-950 p-3">
             {!session ? (
               <div className="space-y-2">
