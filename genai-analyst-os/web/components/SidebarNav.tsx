@@ -26,8 +26,8 @@ const MORE_ITEMS = [
 ]
 
 const GUIDE_ITEMS = [
-  { href: '/user-guide',            label: 'User Guide',  icon: '🧭' },
-  { href: '/implementation-guide',  label: 'Impl. Guide', icon: '🛠️' },
+  { href: '/user-guide',            label: 'User Guide',           icon: '🧭' },
+  { href: '/implementation-guide',  label: 'Implementation Guide', icon: '🛠️' },
 ]
 
 function NavLink({ href, label, icon, active }: { href: string; label: string; icon: string; active: boolean }) {
@@ -92,21 +92,20 @@ export default function SidebarNav() {
 export function SidebarGuides() {
   const pathname = usePathname()
   return (
-    <div className="rounded-xl bg-gradient-to-br from-violet-50 to-blue-50 dark:from-violet-950/30 dark:to-blue-950/20 border border-violet-200/70 dark:border-violet-800/50 px-2.5 py-2">
-      <p className="text-[10px] font-bold uppercase tracking-wider text-violet-500 dark:text-violet-400 mb-1.5">📖 Guides</p>
-      <div className="grid grid-cols-2 gap-1.5">
+    <div className="rounded-xl bg-gradient-to-br from-violet-50 to-blue-50 dark:from-violet-950/30 dark:to-blue-950/20 border border-violet-200/70 dark:border-violet-800/50 p-2">
+      <p className="px-1 text-[10px] font-bold uppercase tracking-wider text-violet-500 dark:text-violet-400 mb-1">📖 Guides</p>
+      <div className="space-y-0.5">
         {GUIDE_ITEMS.map(({ href, label, icon }) => (
           <Link
             key={href}
             href={href}
-            title={label}
-            className={`flex items-center gap-1 px-1.5 py-1 rounded-lg text-[11px] font-semibold transition-all min-w-0 ${
+            className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
               pathname === href
                 ? 'bg-white dark:bg-zinc-900 text-violet-700 dark:text-violet-300 shadow-sm'
                 : 'text-violet-700 dark:text-violet-300 hover:bg-white/70 dark:hover:bg-zinc-900/70'}`}
           >
-            <span className="text-xs leading-none shrink-0">{icon}</span>
-            <span className="truncate">{label}</span>
+            <span className="text-sm leading-none shrink-0">{icon}</span>
+            <span>{label}</span>
           </Link>
         ))}
       </div>
