@@ -30,7 +30,7 @@ export default function LearningRecapWidget({ userId, onUseTopic }: { userId: st
       .finally(() => setLoading(false))
   }, [userId])
 
-  if (loading || !recap || recap.topConcepts.length === 0) return null
+  if (loading || !recap || (recap.topConcepts.length === 0 && recap.revisitCandidates.length === 0)) return null
 
   return (
     <div className="rounded-xl border border-violet-200 dark:border-violet-800 bg-gradient-to-br from-violet-50 to-blue-50 dark:from-violet-950/30 dark:to-blue-950/20 px-4 py-3 max-w-md">
@@ -38,6 +38,7 @@ export default function LearningRecapWidget({ userId, onUseTopic }: { userId: st
         <p className="text-xs font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400">🧠 Your week</p>
         <span className="text-[11px] text-violet-500/80 dark:text-violet-400/70">{recap.itemsEngaged} engaged · {recap.questionsAsked} asked</span>
       </div>
+      {recap.topConcepts.length > 0 && (
       <div className="flex flex-wrap gap-1.5 mb-2">
         {recap.topConcepts.slice(0, 3).map(c => (
           <button
@@ -50,6 +51,7 @@ export default function LearningRecapWidget({ userId, onUseTopic }: { userId: st
           </button>
         ))}
       </div>
+      )}
       {recap.revisitCandidates.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-violet-200/60 dark:border-violet-800/50">
           <span className="text-[11px] text-zinc-500 dark:text-zinc-400">Still fuzzy on:</span>
