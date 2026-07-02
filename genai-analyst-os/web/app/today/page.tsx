@@ -561,9 +561,11 @@ export default function TodayPage() {
             <li><strong>📰 Feed</strong> — scored by topic affinity, the same blend score used on the Feed tab (your declared interests + how you&apos;ve reacted to similar articles before).</li>
             <li><strong>📖 Your Library</strong> — scored by topic affinity blended with recency (0.6 topic + 0.4 how recently it was processed), so freshly-added items get a boost without fully burying older relevant ones.</li>
             <li><strong>🌐 News</strong> — scored by how many independent sources are covering the same story; a story 3 outlets picked up outranks one only 1 outlet has.</li>
-            <li>All three pools are normalized to a 0-1 scale independently, then merged and filled in best-first until the total reading time adds up to about your daily minute target — estimated from actual word count, not a flat guess per item.</li>
+            <li>All three pools are normalized to a 0-1 scale independently, then merged and sorted best-first. Ties (common — most News stories share the same source count) are broken randomly rather than always favoring one pool, so News isn&apos;t systematically squeezed out by Feed.</li>
+            <li>The sorted list is filled in top-down until the total estimated reading time reaches your daily minute target — estimated from actual word count, not a flat guess per item.</li>
             <li>Anything you&apos;ve marked read stays out of the pool for 14 days, so the queue doesn&apos;t repeat itself day to day.</li>
             <li>Refreshing only replaces items you haven&apos;t acted on yet — read/skipped items from today are never touched, and undoing a read/skip puts it right back in the mix.</li>
+            <li>This is pure ranking arithmetic, not an LLM call — instant, free, and the same reasoning every time, which is also why it&apos;s explainable like this.</li>
           </ul>
         </SimpleModal>
       )}

@@ -310,6 +310,24 @@ export default function ImplementationGuidePage() {
         </div>
       </GuideSection>
 
+      <GuideSection id="today-ranking" eyebrow="Ranking, not generation" title="Today's queue and topic picker are deterministic scoring, not an LLM call" description="Both the reading queue (lib/todayQueue.ts) and the 'Generate today's content' topic picker (lib/contentSignals.ts) are pure rule-based ranking — instant, free, and reproducible. Deliberately not agentic: this is a sort problem, and heuristics make the 'why did this rank here' answer explainable in a UI tooltip. An LLM layer would only earn its cost for a qualitative gap like semantic dedup, not for the ranking arithmetic itself.">
+        <div className="grid gap-4 md:grid-cols-3">
+          <FlowNode icon="📰" title="Feed pool" subtitle="blend_score — topic affinity + reaction history" tone="blue" />
+          <FlowNode icon="📖" title="Library pool" subtitle="0.6 × topic affinity + 0.4 × recency" tone="amber" />
+          <FlowNode icon="🌐" title="News pool" subtitle="independent-source coverage count" tone="green" />
+        </div>
+        <div className="my-3 text-center text-zinc-300 dark:text-zinc-700">↓ normalize each pool to 0–1 by its own max, independently ↓</div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <FlowNode icon="🔀" title="Merge & sort" subtitle="descending by normalized score" />
+          <FlowNode icon="🎲" title="Tiebreak" subtitle="random — not array position" tone="amber" />
+          <FlowNode icon="✂️" title="Fill to budget" subtitle="top-down until minute target reached" tone="green" />
+        </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <Callout title="The bug this replaced" tone="amber">Array.sort is stable, and candidates were built as [...feed, ...reading_list, ...news]. With no tiebreaker, every tied score (extremely common for News, where most stories share the same source count) resolved in favor of whichever pool was concatenated first — News was systematically squeezed out regardless of how many fresh candidates existed. Fixed by adding a random tiebreaker computed once per candidate before sorting.</Callout>
+          <Callout title="Same pattern, two call sites" tone="green">lib/contentSignals.ts's pickWeightedCandidates (behind &quot;Generate today&apos;s content&quot;) blends five signals — engagement, recently read, trending news, recent trend, emerging topic — the same way, and had the identical tie-bias against its own News candidates. Same fix applied there.</Callout>
+        </div>
+      </GuideSection>
+
       <GuideSection id="data" eyebrow="Persistence" title="Core data relationships" description="Global article enrichment is reused. Personal ranking, feedback, ideas, and digests remain user-scoped.">
         <div className="overflow-x-auto rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
           <div className="min-w-[760px] grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center gap-3 text-center">
