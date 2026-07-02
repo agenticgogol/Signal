@@ -1,13 +1,12 @@
 import { NextRequest } from 'next/server'
 import { createServiceClient } from '@/lib/supabase'
-import { requireSignedInUser } from '@/lib/serverAuth'
 
+// Public read, same cold-start rationale as /api/today/queue — a signed-out
+// visitor sees the admin/demo account's pending drafts on Today instead of
+// an empty Publishing section.
 export async function GET(req: NextRequest) {
   const userId = new URL(req.url).searchParams.get('userId') || ''
   if (!userId) return Response.json({ error: 'userId is required' }, { status: 400 })
-
-  const signedIn = await requireSignedInUser(req, userId)
-  if (signedIn instanceof Response) return signedIn
 
   const { data, error } = await createServiceClient()
     .from('draft_inbox_items')

@@ -5,12 +5,11 @@ import { getErrorMessage } from '@/lib/errors'
 
 const VALID_PLATFORMS: Platform[] = ['medium', 'linkedin', 'x']
 
+// Public read — only exposes which platform names are connected, no
+// secrets, so a signed-out Today visitor can still see "Publish to" state.
 export async function GET(req: NextRequest) {
   const userId = new URL(req.url).searchParams.get('userId') || ''
   if (!userId) return Response.json({ error: 'userId is required' }, { status: 400 })
-
-  const signedIn = await requireSignedInUser(req, userId)
-  if (signedIn instanceof Response) return signedIn
 
   try {
     const connected = await listConnections(userId)

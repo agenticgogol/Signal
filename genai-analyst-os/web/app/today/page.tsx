@@ -1,8 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState, type ReactNode } from 'react'
-import { ActionConfirmModal, AdminGateModal } from '@/components/AdminGate'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { ActionConfirmModal, AdminGateModal, getAdminToken } from '@/components/AdminGate'
 import AskSignalPanel from '@/components/AskSignalPanel'
 import { useAuthSession } from '@/lib/useAuthSession'
 
@@ -82,10 +82,31 @@ function SimpleModal({ title, onClose, children }: { title: string; onClose: () 
 // Ideas, Create) is one click away below, for whoever has time to go deeper.
 export default function TodayPage() {
   const { session, user, loading } = useAuthSession()
-  const userId = user?.id ?? ''
+  // Same cold-start pattern as Feed: a signed-out visitor sees the admin/demo
+  // account's reading queue and drafts instead of a blank page. Writes
+  // (mark read, refresh, generate) still require a real session or an
+  // unlocked admin token — see runGuarded below.
+  const userId = user?.id ?? process.env.NEXT_PUBLIC_USER_ID ?? ''
+  const isGuest = !session?.access_token
 
-  const authHeaders = (): Record<string, string> =>
-    session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}
+  const authHeaders = (): Record<string, string> => {
+    if (session?.access_token) return { Authorization: `Bearer ${session.access_token}` }
+    const token = getAdminToken()
+    return token ? { 'x-admin-token': token } : {}
+  }
+
+  const [showActionAdminGate, setShowActionAdminGate] = useState(false)
+  const pendingAction = useRef<(() => void) | null>(null)
+
+  // Wrap any write action (mark read/skip, refresh queue, change target
+  // minutes) so a signed-out guest gets prompted for admin credentials
+  // instead of the request silently failing — same admin-gate pattern used
+  // for the costly Generate action already.
+  const runGuarded = (fn: () => void) => {
+    if (session?.access_token || getAdminToken()) { fn(); return }
+    pendingAction.current = fn
+    setShowActionAdminGate(true)
+  }
 
   // ── Reading queue ────────────────────────────────────────────────────
   const [entries, setEntries] = useState<QueueEntry[]>([])
@@ -163,6 +184,11 @@ export default function TodayPage() {
   }
 
   const setQueueStatus = async (queueItemId: string, status: 'read' | 'skipped' | 'unread') => {
+    if (!session?.access_token && !getAdminToken()) {
+      pendingAction.current = () => setQueueStatus(queueItemId, status)
+      setShowActionAdminGate(true)
+      return
+    }
     setActioningId(queueItemId)
     try {
       const res = await fetch('/api/today/queue/complete', {
@@ -182,6 +208,11 @@ export default function TodayPage() {
 
   const changeTargetMinutes = async (minutes: number) => {
     if (minutes === targetMinutes) return
+    if (!session?.access_token && !getAdminToken()) {
+      pendingAction.current = () => changeTargetMinutes(minutes)
+      setShowActionAdminGate(true)
+      return
+    }
     setSavingMinutes(true)
     try {
       const res = await fetch('/api/data/reading-minutes', {
@@ -450,6 +481,13 @@ export default function TodayPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-8 pb-24">
+      {showActionAdminGate && (
+        <AdminGateModal
+          action="use this on Today"
+          onSuccess={() => { setShowActionAdminGate(false); const run = pendingAction.current; pendingAction.current = null; if (run) run() }}
+          onCancel={() => { setShowActionAdminGate(false); pendingAction.current = null }}
+        />
+      )}
       {showGenerateAdminGate && (
         <AdminGateModal
           persistSession={false}
@@ -552,6 +590,18 @@ export default function TodayPage() {
         </button>
       </div>
 
+      {isGuest && (
+        <div className="mb-6 flex items-center justify-between gap-3 rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/60 dark:bg-violet-950/20 px-4 py-2.5">
+          <p className="text-xs text-violet-700 dark:text-violet-300">
+            👀 You&apos;re viewing a sample Today — reading queue and drafts from our demo account, so you can see how it works. Sign in to make this yours, or unlock admin to refresh it and try Ask Signal.
+          </p>
+          <button onClick={() => window.dispatchEvent(new Event('signal-auth-popup:open'))}
+            className="shrink-0 rounded-lg bg-violet-600 hover:bg-violet-700 px-3 py-1.5 text-xs font-bold text-white transition-colors">
+            Sign in
+          </button>
+        </div>
+      )}
+
       {streaks && (streaks.reading.currentStreak > 0 || streaks.publishing.currentStreak > 0 || streaks.reading.isMilestoneToday || streaks.publishing.isMilestoneToday) && (
         <div className="mb-6 flex items-center gap-4 flex-wrap rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-2 text-xs">
           {([
@@ -576,7 +626,7 @@ export default function TodayPage() {
             <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">📋 Your Daily Reading</h2>
             <button onClick={() => setShowReadingInfo(true)} className="text-zinc-400 hover:text-violet-600 dark:hover:text-violet-400 text-sm" title="How is this list built?">ⓘ</button>
           </div>
-          <button onClick={() => setShowRefreshConfirm(true)} disabled={refreshing || queueLoading || entries.length === 0}
+          <button onClick={() => runGuarded(() => setShowRefreshConfirm(true))} disabled={refreshing || queueLoading || entries.length === 0}
             className="text-xs text-violet-600 dark:text-violet-400 px-2.5 py-1 bg-violet-50 dark:bg-violet-950/30 rounded-lg border border-violet-200 dark:border-violet-800 hover:bg-violet-100 transition-colors font-medium disabled:opacity-50 shrink-0">
             {refreshing ? 'Refreshing…' : '↺ Refresh'}
           </button>

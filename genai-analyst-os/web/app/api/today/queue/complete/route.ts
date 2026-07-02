@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { getErrorMessage } from '@/lib/errors'
-import { requireSignedInUser } from '@/lib/serverAuth'
+import { resolveSignedInOrAdmin } from '@/lib/serverAuth'
 import { markQueueItemStatus } from '@/lib/todayQueue'
 
 export async function POST(req: NextRequest) {
@@ -12,11 +12,11 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'userId, queueItemId, and a valid status are required' }, { status: 400 })
   }
 
-  const signedIn = await requireSignedInUser(req, userId)
-  if (signedIn instanceof Response) return signedIn
+  const access = await resolveSignedInOrAdmin(req, userId)
+  if (access instanceof Response) return access
 
   try {
-    await markQueueItemStatus(userId, queueItemId, status)
+    await markQueueItemStatus(access.userId, queueItemId, status)
     return Response.json({ ok: true })
   } catch (error) {
     return Response.json({ error: getErrorMessage(error) }, { status: 500 })
