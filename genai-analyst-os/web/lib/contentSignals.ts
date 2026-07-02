@@ -282,6 +282,10 @@ export async function pickWeightedCandidates(userId: string, count: number): Pro
     candidate.score = blended * interestMultiplier
   }
 
-  const ranked = Array.from(candidates.values()).sort((a, b) => b.score - a.score)
+  // Same stable-sort tiebreaker issue as todayQueue.ts's merge: candidates
+  // are inserted feed-first, then reading_list, then news, so any tie in
+  // score would otherwise always resolve in favor of whichever pool was
+  // inserted first rather than fairly.
+  const ranked = Array.from(candidates.values()).sort((a, b) => b.score - a.score || Math.random() - 0.5)
   return ranked.slice(0, count)
 }

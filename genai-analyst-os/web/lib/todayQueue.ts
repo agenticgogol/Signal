@@ -156,9 +156,17 @@ async function generateCandidates(userId: string): Promise<Array<{
 function normalizeAndMerge(candidates: Awaited<ReturnType<typeof generateCandidates>>) {
   const maxByType: Record<string, number> = {}
   for (const c of candidates) maxByType[c.itemType] = Math.max(maxByType[c.itemType] ?? 0, c.rawScore)
+  // Array.sort is stable, and candidates are built as
+  // [...feed, ...reading_list, ...news] — with no tiebreaker, every tie
+  // (extremely common for News, where most stories share the same
+  // sources_count and normalize to an identical value) resolves in favor
+  // of whichever pool was concatenated first, i.e. News always loses to
+  // Feed/Reading List regardless of how many fresh News candidates exist.
+  // A random tiebreaker, computed once per candidate here (not per compare),
+  // makes ties resolve fairly across pools instead of by array position.
   return candidates
-    .map(c => ({ ...c, score: maxByType[c.itemType] > 0 ? c.rawScore / maxByType[c.itemType] : 0 }))
-    .sort((a, b) => b.score - a.score)
+    .map(c => ({ ...c, score: maxByType[c.itemType] > 0 ? c.rawScore / maxByType[c.itemType] : 0, tiebreak: Math.random() }))
+    .sort((a, b) => b.score - a.score || b.tiebreak - a.tiebreak)
 }
 
 async function buildAndPersistQueue(userId: string, targetMinutes: number): Promise<void> {
