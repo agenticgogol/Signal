@@ -25,6 +25,7 @@ function recencyDecay(processedAt: string | null | undefined, halfLifeDays = 14)
 
 export interface QueueEntry {
   id: string
+  refId: string | null
   itemType: 'feed' | 'reading_list' | 'news'
   title: string
   url: string | null
@@ -36,6 +37,7 @@ export interface QueueEntry {
   summary: string | null
   whyItMatters: string | null
   takeaways: string[]
+  conceptTerms: string[]
 }
 
 async function generateCandidates(userId: string): Promise<Array<{
@@ -220,8 +222,8 @@ async function fetchTodayQueue(userId: string): Promise<QueueEntry[]> {
   const newsIds = rows.filter(r => r.news_article_id).map(r => r.news_article_id)
 
   const [{ data: articles }, { data: items }, { data: newsItems }] = await Promise.all([
-    articleIds.length ? db.from('articles').select('id, title, url, why_it_matters, tldr_bullets, key_takeaways').in('id', articleIds) : Promise.resolve({ data: [] as Record<string, unknown>[] }),
-    knowledgeIds.length ? db.from('knowledge_items').select('id, title, source_url, summary, why_it_matters').in('id', knowledgeIds) : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    articleIds.length ? db.from('articles').select('id, title, url, why_it_matters, tldr_bullets, key_takeaways, concept_terms').in('id', articleIds) : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    knowledgeIds.length ? db.from('knowledge_items').select('id, title, source_url, summary, why_it_matters, concept_terms').in('id', knowledgeIds) : Promise.resolve({ data: [] as Record<string, unknown>[] }),
     newsIds.length ? db.from('news_articles').select('id, title, url, description, sources, sources_count').in('id', newsIds) : Promise.resolve({ data: [] as Record<string, unknown>[] }),
   ])
 
@@ -245,6 +247,7 @@ async function fetchTodayQueue(userId: string): Promise<QueueEntry[]> {
       : (ref?.why_it_matters ? String(ref.why_it_matters) : null)
     return {
       id: String(row.id),
+      refId: isFeed ? (row.article_id ? String(row.article_id) : null) : isNews ? null : (row.knowledge_item_id ? String(row.knowledge_item_id) : null),
       itemType: row.item_type as 'feed' | 'reading_list' | 'news',
       title: String(ref?.title || 'Untitled'),
       url: (ref?.url || ref?.source_url) ? String(ref.url || ref.source_url) : null,
@@ -256,6 +259,7 @@ async function fetchTodayQueue(userId: string): Promise<QueueEntry[]> {
       summary: !isFeed && !isNews ? (ref?.summary ? String(ref.summary) : null) : (isNews ? (ref?.description ? String(ref.description) : null) : null),
       whyItMatters,
       takeaways: Array.from(new Set(takeaways)).slice(0, 6),
+      conceptTerms: Array.isArray(ref?.concept_terms) ? ref.concept_terms.map(String) : [],
     }
   })
 }

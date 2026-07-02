@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ActionConfirmModal, AdminGateModal, getAdminToken } from '@/components/AdminGate'
 import AskSignalPanel from '@/components/AskSignalPanel'
+import ConceptHighlighter from '@/components/ConceptHighlighter'
+import { openTutor } from '@/lib/openTutor'
 import { useAuthSession } from '@/lib/useAuthSession'
 
 interface StreakInfo {
@@ -18,6 +20,7 @@ interface StreakInfo {
 
 interface QueueEntry {
   id: string
+  refId?: string | null
   itemType: 'feed' | 'reading_list' | 'news'
   title: string
   url: string | null
@@ -29,6 +32,7 @@ interface QueueEntry {
   summary: string | null
   whyItMatters: string | null
   takeaways: string[]
+  conceptTerms?: string[]
 }
 
 interface DraftItem {
@@ -44,6 +48,11 @@ interface DraftItem {
 }
 
 const MINUTE_OPTIONS = [10, 15, 20, 30]
+
+function itemSourceRef(entry: QueueEntry): { articleId?: string; knowledgeItemId?: string } {
+  if (!entry.refId) return {}
+  return entry.itemType === 'feed' ? { articleId: entry.refId } : entry.itemType === 'reading_list' ? { knowledgeItemId: entry.refId } : {}
+}
 
 function formatRelativeTime(iso: string): string {
   try {
@@ -682,6 +691,9 @@ export default function TodayPage() {
                           {entry.itemType === 'feed' ? '📰' : entry.itemType === 'news' ? '🌐' : '📖'} {entry.sourceLabel}
                         </span>
                         <span className="text-xs text-zinc-400 shrink-0">~{entry.estMinutes.toFixed(0)} min</span>
+                        {(entry.conceptTerms?.length ?? 0) > 0 && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300 shrink-0" title="Has explainable terms — expand to see them highlighted">🎓 {entry.conceptTerms!.length}</span>
+                        )}
                       </div>
                       <p className="mt-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">{entry.title}</p>
                       {!expanded && previewText && <p className="mt-0.5 text-xs text-zinc-400 line-clamp-1">{previewText}</p>}
@@ -692,12 +704,16 @@ export default function TodayPage() {
                   {expanded && (
                     <div className="px-4 pb-4 pl-[3.25rem]">
                       {entry.summary && (
-                        <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed mb-2">{entry.summary}</p>
+                        <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed mb-2">
+                          <ConceptHighlighter text={entry.summary} terms={entry.conceptTerms ?? []} onTermClick={term => openTutor(term, itemSourceRef(entry))} />
+                        </p>
                       )}
                       {entry.whyItMatters && (
                         <div className="rounded-xl border border-violet-100 dark:border-violet-900 bg-violet-50/50 dark:bg-violet-950/20 p-3 mb-2">
                           <p className="text-[11px] font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400 mb-1">Why it matters</p>
-                          <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed">{entry.whyItMatters}</p>
+                          <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed">
+                            <ConceptHighlighter text={entry.whyItMatters} terms={entry.conceptTerms ?? []} onTermClick={term => openTutor(term, itemSourceRef(entry))} />
+                          </p>
                         </div>
                       )}
                       {entry.takeaways.length > 0 && (
@@ -705,7 +721,7 @@ export default function TodayPage() {
                           {entry.takeaways.map((t, i) => (
                             <li key={i} className="flex items-start gap-2 text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
                               <span className="flex-shrink-0 w-4 h-4 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-400 flex items-center justify-center text-[10px] font-semibold mt-0.5">{i + 1}</span>
-                              {t}
+                              <span><ConceptHighlighter text={t} terms={entry.conceptTerms ?? []} onTermClick={term => openTutor(term, itemSourceRef(entry))} /></span>
                             </li>
                           ))}
                         </ul>

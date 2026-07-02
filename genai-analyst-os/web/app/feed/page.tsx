@@ -512,6 +512,9 @@ function ArticleCard({ item, reaction, onReact, selected, onSelect, onOpen, isFr
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${priority.cls}`}>{priority.label}</span>
           {tags.slice(0, 2).map(tag => <TagPill key={tag} tag={tag} />)}
+          {(article.concept_terms?.length ?? 0) > 0 && (
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300" title="Has explainable terms — open Signal notes to see them highlighted">🎓 {article.concept_terms!.length}</span>
+          )}
         </div>
 
         <a href={article.url} target="_blank" rel="noopener noreferrer"
@@ -575,7 +578,9 @@ function ArticleCard({ item, reaction, onReact, selected, onSelect, onOpen, isFr
                   </div>
                 )}
                 {!why && takeaways.length === 0 && bullets.length > 0 && (
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">{bullets[0]}</p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                    <ConceptHighlighter text={bullets[0]} terms={article.concept_terms ?? []} onTermClick={term => openTutor(term, { articleId: article.id })} />
+                  </p>
                 )}
               </div>
             )}

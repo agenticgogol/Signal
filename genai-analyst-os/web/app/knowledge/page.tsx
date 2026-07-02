@@ -680,7 +680,12 @@ export default function KnowledgePage() {
                             <span className="mr-1">{item.source_type === 'youtube' ? '▶️' : item.source_type === 'note' ? '📋' : '🔗'}</span>
                             {item.title}
                           </p>
-                          {idx === 0 && <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">Top pick</span>}
+                          <div className="shrink-0 flex items-center gap-1">
+                            {(item.concept_terms?.length ?? 0) > 0 && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300" title="Has explainable terms — open to see them highlighted">🎓 {item.concept_terms!.length}</span>
+                            )}
+                            {idx === 0 && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">Top pick</span>}
+                          </div>
                         </div>
                         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2">{item.why_it_matters || item.summary || ''}</p>
                         <p className="mt-1.5 text-[10px] text-zinc-400">{item.notebook_title} · match {Math.round(item.blend_score * 100)}</p>
