@@ -13,6 +13,7 @@ const CORE_ITEMS = [
   { href: '/feed',        label: 'Feed',         icon: '📰' },
   { href: '/feed?tab=news', label: 'News',       icon: '🌐' },
   { href: '/knowledge',   label: 'Your Library', icon: '📚' },
+  { href: '/tutor',       label: 'AI Tutor',     icon: '🎓' },
   { href: '/ideas',       label: 'Ideas',        icon: '💡' },
   { href: '/create',      label: 'Create',       icon: '✍️' },
 ]

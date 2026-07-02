@@ -23,6 +23,7 @@ class SummaryResult(TypedDict):
     depth_score: int          # 1–5
     why_it_matters: str       # ≤20 words, practitioner implication
     key_takeaways: list[str]  # exactly 3 actionable bullets
+    concept_terms: list[str]  # 0–6 AI/technical terms worth an inline explanation (AI Tutor)
 
 
 # ---------------------------------------------------------------------------
@@ -45,6 +46,7 @@ def summarise_article(article_text: str, title: str) -> SummaryResult | None:
             depth_score=3,
             why_it_matters="This changes how practitioners build agentic pipelines.",
             key_takeaways=["Core fact: mock article describes a new technique.", "Impact: reduces latency by an order of magnitude.", "Action: evaluate this approach for your next RAG build."],
+            concept_terms=["RAG", "agentic pipeline"],
         )
 
     from src.llm.provider import call_llm
@@ -57,6 +59,7 @@ def summarise_article(article_text: str, title: str) -> SummaryResult | None:
         "  depth_score: integer 1-5\n"
         "  why_it_matters: single string ≤20 words — the practitioner implication (e.g. 'This changes how you architect RAG pipelines going forward')\n"
         "  key_takeaways: list of exactly 3 strings — bullet 1: core fact/development, bullet 2: specific impact or mechanism, bullet 3: what a practitioner should do or watch\n"
+        "  concept_terms: list of 0-6 strings — AI/technical terms or concepts used in this article that a reader might not know and would benefit from a standalone explanation (e.g. 'RAG', 'LoRA fine-tuning', 'attention mechanism'). Only include genuine technical terminology, not generic words. Empty list if none apply.\n"
         "Taxonomy (use ONLY these 7 slugs): infra (GenAI Infrastructure), llm (LLM Advancements), finetune (Fine-tuning), rag (RAG & Agentic RAG), agentic (Agentic Systems & Usecases), llmops (LLMOps & Deployment), eval (AI Evaluation). "
         "Return ONLY the JSON object — no markdown fences, no commentary."
     )
@@ -76,6 +79,7 @@ def summarise_article(article_text: str, title: str) -> SummaryResult | None:
             depth = max(1, min(5, int(data.get("depth_score", 3))))
             why = str(data.get("why_it_matters", ""))[:200]
             takeaways = [str(t) for t in data.get("key_takeaways", [])][:3]
+            concept_terms = [str(t).strip() for t in data.get("concept_terms", []) if str(t).strip()][:6]
             # Accept 1+ bullets and 1+ tags (relaxed from 2-4 / 1-4)
             if bullets and tags:
                 return SummaryResult(
@@ -84,6 +88,7 @@ def summarise_article(article_text: str, title: str) -> SummaryResult | None:
                     depth_score=depth,
                     why_it_matters=why,
                     key_takeaways=takeaways,
+                    concept_terms=concept_terms,
                 )
         except (json.JSONDecodeError, KeyError, ValueError):
             if attempt == 0:

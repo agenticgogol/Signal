@@ -223,6 +223,7 @@ def summarise(state: PipelineState) -> dict:
                 "depth_score":     result["depth_score"],
                 "why_it_matters":  result.get("why_it_matters") or None,
                 "key_takeaways":   result.get("key_takeaways") or None,
+                "concept_terms":   result.get("concept_terms") or [],
                 "og_image_url":    article.get("og_image_url") or None,
                 "embedding":       vec_str,
                 "published_at":    article.get("published_at") or None,

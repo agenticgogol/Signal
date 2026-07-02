@@ -24,6 +24,7 @@ export interface KnowledgeItem {
   summary: string | null
   why_it_matters: string | null
   topic_tags: string[]
+  concept_terms: string[]
   status: 'pending' | 'processing' | 'ready' | 'failed'
   processing_error: string | null
   created_at: string
@@ -55,6 +56,11 @@ const KNOWLEDGE_SCHEMA = {
         type: 'string',
         enum: ['infra', 'llm', 'finetune', 'rag', 'agentic', 'llmops', 'eval'],
       },
+    },
+    concept_terms: {
+      type: 'array',
+      items: { type: 'string' },
+      description: '0-6 AI/technical terms used in this item worth a standalone explanation (AI Tutor)',
     },
   },
   required: ['title', 'summary', 'why_it_matters', 'topic_tags'],
@@ -169,7 +175,7 @@ export function chunkText(text: string, chunkSize = 1400, overlap = 220) {
   return chunks
 }
 
-function overlapScore(query: string, content: string) {
+export function overlapScore(query: string, content: string) {
   const q = words(query)
   const c = new Set(words(content))
   let score = 0
@@ -228,13 +234,15 @@ Return:
 - a precise title
 - a concise summary
 - why it matters to an AI practitioner
-- 1 to 3 topic tags from the allowed taxonomy`
+- 1 to 3 topic tags from the allowed taxonomy
+- 0 to 6 AI/technical concept_terms used in the text that a reader might not know and would benefit from a standalone explanation (e.g. "RAG", "LoRA fine-tuning") — only genuine technical terminology, empty list if none apply`
 
   const result = await generateJsonForUser<{
     title: string
     summary: string
     why_it_matters: string
     topic_tags: string[]
+    concept_terms: string[]
   }>({
     userId: params.userId,
     agent: 'knowledge_summarize',
@@ -249,6 +257,7 @@ Return:
     summary: normalizeText(result.summary || ''),
     why_it_matters: normalizeText(result.why_it_matters || ''),
     topic_tags: Array.isArray(result.topic_tags) ? result.topic_tags.slice(0, 3) : [],
+    concept_terms: Array.isArray(result.concept_terms) ? result.concept_terms.map(String).slice(0, 6) : [],
   }
 }
 
@@ -353,6 +362,7 @@ export async function ingestKnowledgeItem(params: {
       summary: analyzed.summary,
       why_it_matters: analyzed.why_it_matters,
       topic_tags: analyzed.topic_tags,
+      concept_terms: analyzed.concept_terms,
       status: 'ready',
       processing_error: null,
       processed_at: new Date().toISOString(),
