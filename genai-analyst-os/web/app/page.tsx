@@ -85,6 +85,19 @@ const WHO_ITS_FOR = [
   'Internal AI teams that need a reusable intelligence workflow',
 ]
 
+const PIPELINE_STAGES = [
+  { icon: '📚', label: 'Your evidence', desc: 'Ranked reading + sources', kind: 'io' as const },
+  { icon: '🎯', label: 'Orchestrator', desc: 'Builds the brief — angle, audience, structure', kind: 'agent' as const },
+  { icon: '✍️', label: 'Writer', desc: 'Drafts the full piece in the target format', kind: 'agent' as const },
+  { icon: '🔬', label: 'Verifier', desc: 'Checks claims, citations, source grounding', kind: 'agent' as const },
+  { icon: '🔍', label: 'Critic', desc: 'Sharpens arguments, cuts weak lines', kind: 'agent' as const },
+  { icon: '✨', label: 'Humanizer', desc: 'Applies your voice and style', kind: 'agent' as const },
+  { icon: '📊', label: 'Evaluator', desc: 'Scores hook, specificity, voice, fit', kind: 'agent' as const },
+  { icon: '👥', label: 'Audience Sim', desc: 'Stress-tests against skeptical readers', kind: 'agent' as const },
+  { icon: '💎', label: 'Final Polish', desc: 'Resolves objections, finishes the piece', kind: 'agent' as const },
+  { icon: '🚀', label: 'Publish-ready draft', desc: 'Yours to review, edit, and ship', kind: 'io' as const },
+]
+
 const WHY_PAY = [
   'It replaces scattered RSS readers, AI news tabs, and copy-paste prompting.',
   'It turns reading, ranking, synthesis, and drafting into one repeatable workflow.',
@@ -98,13 +111,16 @@ export default function LandingPage() {
 
       {/* Nav */}
       <header className="fixed top-0 inset-x-0 z-50 border-b border-white/5 bg-zinc-950/80 backdrop-blur-md">
-        <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-          <span className="bg-gradient-to-r from-violet-400 to-blue-400 bg-clip-text text-transparent font-black text-xl tracking-tight">
-            ⚡ Signal
+        <div className="max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
+          <span className="flex items-center gap-2.5">
+            <span className="text-4xl leading-none">⚡</span>
+            <span className="bg-gradient-to-r from-violet-400 via-blue-400 to-cyan-300 bg-clip-text text-transparent font-black text-3xl sm:text-4xl tracking-tight">
+              Signal
+            </span>
           </span>
           <Link
             href="/today"
-            className="px-4 py-1.5 text-sm font-semibold bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition-colors"
+            className="px-5 py-2.5 text-sm font-bold bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition-colors shadow-lg shadow-violet-900/30"
           >
             Open app →
           </Link>
@@ -112,19 +128,26 @@ export default function LandingPage() {
       </header>
 
       {/* Hero */}
-      <section className="pt-32 pb-24 px-6 relative">
+      <section className="pt-40 pb-24 px-6 relative">
         {/* background glow */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-violet-600/10 rounded-full blur-3xl" />
         </div>
 
         <div className="max-w-4xl mx-auto text-center relative">
+          <div className="mb-6 flex items-center justify-center gap-3">
+            <span className="text-6xl sm:text-7xl leading-none">⚡</span>
+            <span className="bg-gradient-to-r from-violet-400 via-blue-400 to-cyan-300 bg-clip-text text-transparent font-black text-6xl sm:text-7xl tracking-tight">
+              Signal
+            </span>
+          </div>
+
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-violet-950/60 border border-violet-800/60 text-violet-300 text-xs font-medium mb-8">
             <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
             15 minutes a day for your career in AI
           </div>
 
-          <h1 className="text-5xl sm:text-6xl md:text-7xl font-black tracking-tight leading-[1.05] mb-6">
+          <h1 className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight leading-[1.05] mb-6">
             <span className="bg-gradient-to-br from-white via-white to-zinc-400 bg-clip-text text-transparent">
               We do the hard work.
             </span>
@@ -289,37 +312,42 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Agent pipeline visual */}
-      <section className="py-24 px-6 bg-zinc-900/40">
-        <div className="max-w-4xl mx-auto text-center">
+      {/* Agent pipeline diagram — the actual agentic flow, blocks + arrows */}
+      <section className="py-24 px-6 bg-zinc-900/40 overflow-hidden">
+        <div className="max-w-6xl mx-auto text-center">
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-400 mb-3">Under the hood</p>
           <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">
-            Eight agents. One coordinated draft system.
+            This is what &quot;agentic&quot; actually means here
           </h2>
           <p className="text-zinc-400 text-lg mb-14 max-w-2xl mx-auto">
-            Signal&apos;s content pipeline isn&apos;t a single prompt. The orchestrator sets the brief, Writer drafts, Verifier and Critic catch claim errors, Humanizer applies voice, Evaluator scores quality, Audience Sim stress-tests the piece, and Final Polish resolves objections. When quality slips, the loop runs again.
+            Not one prompt pretending to be a product. Your evidence flows through nine coordinated stages —
+            eight independent agents, each with one job — before a draft ever reaches you.
           </p>
 
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {[
-              { icon: '🎯', label: 'Orchestrator', desc: 'Builds the content brief — angle, audience, structure' },
-              { icon: '✍️', label: 'Writer', desc: 'Drafts the full piece in the target format' },
-              { icon: '🔬', label: 'Verifier', desc: 'Checks claims, citations, and source grounding' },
-              { icon: '🔍', label: 'Critic', desc: 'Sharpens arguments and removes weak or fluffy lines' },
-              { icon: '✨', label: 'Humanizer', desc: 'Applies your voice, style, and personality' },
-              { icon: '📊', label: 'Evaluator', desc: 'Scores hook, specificity, citations, voice, and fit' },
-              { icon: '👥', label: 'Audience Sim', desc: 'Tests the draft against skeptical reader personas' },
-              { icon: '💎', label: 'Final Polish', desc: 'Resolves objections and finishes the piece for export' },
-            ].map(({ icon, label, desc }) => (
-              <div key={label} className="bg-zinc-950 border border-white/5 p-5 text-left hover:border-violet-800/40 transition-colors rounded-2xl">
-                <div className="text-2xl mb-3">{icon}</div>
-                <div className="text-xs font-bold text-violet-400 uppercase tracking-widest mb-1">{label}</div>
-                <div className="text-xs text-zinc-500 leading-relaxed">{desc}</div>
+          <div className="flex flex-wrap items-stretch justify-center gap-x-2 gap-y-6">
+            {PIPELINE_STAGES.map((stage, i) => (
+              <div key={stage.label} className="flex items-stretch">
+                <div
+                  className={`w-40 sm:w-44 rounded-2xl p-4 text-left flex flex-col justify-center ${
+                    stage.kind === 'io'
+                      ? 'bg-gradient-to-br from-violet-600/20 to-blue-600/10 border-2 border-violet-500/40'
+                      : 'bg-zinc-950 border border-white/10'}`}
+                >
+                  <div className="text-2xl mb-2">{stage.icon}</div>
+                  <div className={`text-xs font-bold uppercase tracking-wide mb-1 ${stage.kind === 'io' ? 'text-violet-300' : 'text-zinc-100'}`}>{stage.label}</div>
+                  <div className="text-[11px] text-zinc-500 leading-snug">{stage.desc}</div>
+                </div>
+                {i < PIPELINE_STAGES.length - 1 && (
+                  <div className="flex items-center px-1.5 text-violet-500/60 text-xl select-none">→</div>
+                )}
               </div>
             ))}
           </div>
-          <p className="mt-6 text-sm text-zinc-500 max-w-2xl mx-auto">
-            The agents coordinate through a deterministic loop: quality checks can send the draft back to Writer, Verifier, Critic, Humanizer, and Evaluator until the piece clears the threshold.
-          </p>
+
+          <div className="mt-8 inline-flex items-center gap-2.5 rounded-full border border-amber-500/30 bg-amber-500/5 px-4 py-2 text-xs text-amber-200/90">
+            <span className="text-base">↻</span>
+            <span>Quality loop: if Evaluator&apos;s score falls short, it routes straight back to Writer — Verifier, Critic, Humanizer, and Evaluator all run again, up to a capped number of passes, until the piece clears the bar.</span>
+          </div>
         </div>
       </section>
 
@@ -385,7 +413,7 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="border-t border-white/5 py-8 px-6">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-zinc-600">
-          <span className="font-bold bg-gradient-to-r from-violet-500 to-blue-500 bg-clip-text text-transparent">⚡ Signal</span>
+          <span className="flex items-center gap-1.5 font-black text-xl bg-gradient-to-r from-violet-500 to-blue-500 bg-clip-text text-transparent"><span className="text-2xl">⚡</span> Signal</span>
           <div className="flex items-center gap-6">
             <Link href="/feed" className="hover:text-zinc-400 transition-colors">Feed</Link>
             <Link href="/ideas" className="hover:text-zinc-400 transition-colors">Ideas</Link>
