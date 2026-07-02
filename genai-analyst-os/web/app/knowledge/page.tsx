@@ -3,6 +3,8 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ActionConfirmModal, AdminGateModal, getAdminToken } from '@/components/AdminGate'
+import ConceptHighlighter from '@/components/ConceptHighlighter'
+import { openTutor } from '@/lib/openTutor'
 import { TAG_COLORS, TAG_LABELS } from '@/lib/tagColors'
 import { useAuthSession } from '@/lib/useAuthSession'
 
@@ -46,6 +48,7 @@ interface RankedItem {
   recency_score: number
   detail_score: number
   is_fresh: boolean
+  concept_terms?: string[]
 }
 
 type SourceMode = 'url' | 'youtube' | 'github' | 'note' | 'file' | 'image'
@@ -802,7 +805,9 @@ export default function KnowledgePage() {
           {selectedItem.why_it_matters && (
             <div className="mt-4 rounded-xl border border-violet-200 dark:border-violet-800 bg-white dark:bg-zinc-900 p-4">
               <p className="text-[11px] font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400 mb-1">Why this matters</p>
-              <p className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">{selectedItem.why_it_matters}</p>
+              <p className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">
+                <ConceptHighlighter text={selectedItem.why_it_matters} terms={selectedItem.concept_terms ?? []} onTermClick={term => openTutor(term, { knowledgeItemId: selectedItem.id })} />
+              </p>
             </div>
           )}
           <div className="mt-4 flex items-center gap-3">

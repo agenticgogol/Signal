@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
     const [{ data: profile, error: profileError }, { data: items, error: itemsError }, { data: notebooks, error: notebooksError }] = await Promise.all([
       db.from('user_profiles').select('topic_weights').eq('id', access.userId).maybeSingle(),
       db.from('knowledge_items')
-        .select('id, notebook_id, title, source_type, source_url, summary, why_it_matters, topic_tags, cleaned_text, processed_at, created_at')
+        .select('id, notebook_id, title, source_type, source_url, summary, why_it_matters, topic_tags, cleaned_text, processed_at, created_at, concept_terms')
         .eq('user_id', access.userId)
         .eq('status', 'ready')
         .is('archived_at', null)
@@ -86,6 +86,7 @@ export async function GET(req: NextRequest) {
           summary: typeof item.summary === 'string' ? item.summary : null,
           why_it_matters: typeof item.why_it_matters === 'string' ? item.why_it_matters : null,
           topic_tags: tags,
+          concept_terms: Array.isArray(item.concept_terms) ? item.concept_terms.map(String) : [],
           processed_at: typeof item.processed_at === 'string' ? item.processed_at : null,
           created_at: typeof item.created_at === 'string' ? item.created_at : null,
           blend_score: Number(blend.toFixed(4)),

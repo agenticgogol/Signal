@@ -6,6 +6,7 @@ import Link from 'next/link'
 import SidebarNav from './SidebarNav'
 import ThemeToggle from './ThemeToggle'
 import OnboardingWizard, { type OnboardingPrefs } from './OnboardingWizard'
+import TutorSlideOver, { type TutorTarget } from './TutorSlideOver'
 import { getSupabase } from '@/lib/supabase'
 import { useAuthSession } from '@/lib/useAuthSession'
 
@@ -24,6 +25,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [canUsePaidFeatures, setCanUsePaidFeatures] = useState(false)
   const [setupStatus, setSetupStatus] = useState<SetupStatusPayload | null>(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const [tutorTarget, setTutorTarget] = useState<TutorTarget | null>(null)
+
+  // Global entry point for "click a term while reading" — any page can open
+  // the AI Tutor slide-over by dispatching this event, without needing its
+  // own state/wiring. Same pattern as signal-auth-popup:open.
+  useEffect(() => {
+    const handler = (e: Event) => setTutorTarget((e as CustomEvent<TutorTarget>).detail)
+    window.addEventListener('signal-tutor:open', handler)
+    return () => window.removeEventListener('signal-tutor:open', handler)
+  }, [])
 
   useEffect(() => {
     if (!user?.id || !session?.access_token) return
@@ -106,6 +117,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
+      {tutorTarget && (
+        <TutorSlideOver key={tutorTarget.term + (tutorTarget.articleId ?? '') + (tutorTarget.knowledgeItemId ?? '')} target={tutorTarget} onClose={() => setTutorTarget(null)} />
+      )}
       {showOnboarding && user?.id && session?.access_token && (
         <OnboardingWizard
           userId={user.id}

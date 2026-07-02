@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     const db = createServiceClient()
     let query = db
       .from('user_feed_items')
-      .select('blend_score, feed_date, articles(id, url, title, tldr_bullets, topic_tags, depth_score, why_it_matters, key_takeaways, og_image_url, published_at, source_id)')
+      .select('blend_score, feed_date, articles(id, url, title, tldr_bullets, topic_tags, depth_score, why_it_matters, key_takeaways, og_image_url, published_at, source_id, concept_terms)')
       .eq('user_id', userId)
       .order('blend_score', { ascending: false })
       .limit(120)

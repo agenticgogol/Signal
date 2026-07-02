@@ -5,6 +5,8 @@ import { TAG_COLORS, TAG_LABELS } from '@/lib/tagColors'
 import { ActionConfirmModal, AdminGateModal, getAdminToken } from '@/components/AdminGate'
 import OnboardingChecklist, { type SetupStatus } from '@/components/OnboardingChecklist'
 import AskSignalPanel from '@/components/AskSignalPanel'
+import ConceptHighlighter from '@/components/ConceptHighlighter'
+import { openTutor } from '@/lib/openTutor'
 import { useAuthSession } from '@/lib/useAuthSession'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -114,6 +116,7 @@ interface Article {
   why_it_matters?: string; key_takeaways?: string[]
   og_image_url?: string
   depth_score: number; published_at: string; source_id: string
+  concept_terms?: string[]
 }
 interface FeedItem { blend_score: number; feed_date: string; memory_boost?: number; articles: Article | Article[] | null }
 interface WeeklyItem {
@@ -545,7 +548,9 @@ function ArticleCard({ item, reaction, onReact, selected, onSelect, onOpen, isFr
                 {why && (
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400 mb-1">Why this matters</p>
-                    <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed">{why}</p>
+                    <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed">
+                      <ConceptHighlighter text={why} terms={article.concept_terms ?? []} onTermClick={term => openTutor(term, { articleId: article.id })} />
+                    </p>
                   </div>
                 )}
                 <div>
@@ -563,7 +568,7 @@ function ArticleCard({ item, reaction, onReact, selected, onSelect, onOpen, isFr
                       {takeaways.map((t, i) => (
                         <li key={i} className="flex items-start gap-1.5 text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed">
                           <span className="flex-shrink-0 w-4 h-4 rounded-full bg-white dark:bg-zinc-900 text-zinc-400 flex items-center justify-center text-[10px] font-semibold mt-0.5">{i+1}</span>
-                          {t}
+                          <span><ConceptHighlighter text={t} terms={article.concept_terms ?? []} onTermClick={term => openTutor(term, { articleId: article.id })} /></span>
                         </li>
                       ))}
                     </ul>
