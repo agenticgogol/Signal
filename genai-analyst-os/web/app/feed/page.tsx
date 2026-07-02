@@ -981,7 +981,7 @@ export default function FeedPage() {
   const [digestScope, setDigestScope] = useState<DigestScope>('today')
 
   // Deep-link into a specific tab, e.g. /feed?tab=library from the "Explore
-  // Full Library" button on the Reading List page — read directly off the
+  // Full Library" button on the Your Library page — read directly off the
   // URL rather than useSearchParams so this client component doesn't need a
   // Suspense boundary just for one optional query param.
   useEffect(() => {
@@ -2061,7 +2061,7 @@ export default function FeedPage() {
           { id: 'feed'    as Tab, label: `Your Feed${articles.length ? ` (${articles.length})` : ''}` },
           { id: 'digest'  as Tab, label: '✦ Digest' },
           { id: 'news'    as Tab, label: '🌐 Live News' },
-          { id: 'library' as Tab, label: `📖 Reading List${knowledgeItems.length ? ` (${knowledgeItems.length})` : ''}` },
+          { id: 'library' as Tab, label: `📖 Your Library${knowledgeItems.length ? ` (${knowledgeItems.length})` : ''}` },
           { id: 'chat'    as Tab, label: '💬 Ask Signal' },
         ]).map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
@@ -2469,8 +2469,8 @@ export default function FeedPage() {
             <div className="text-center py-16 text-zinc-400">
               <div className="text-5xl mb-4">📝</div>
               <p className="font-medium text-zinc-600 dark:text-zinc-400">No notebook knowledge yet</p>
-              <p className="text-sm mt-2">Save a few links, videos, or notes in Reading List first. Signal will extract summaries, why-it-matters notes, and topic tags and then rank them here.</p>
-              <a href="/knowledge" className="inline-flex mt-4 px-4 py-2 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700">Open Reading List</a>
+              <p className="text-sm mt-2">Save a few links, videos, or notes in Your Library first. Signal will extract summaries, why-it-matters notes, and topic tags and then rank them here.</p>
+              <a href="/knowledge" className="inline-flex mt-4 px-4 py-2 rounded-xl bg-violet-600 text-white text-sm font-medium hover:bg-violet-700">Open Your Library</a>
             </div>
           ) : (
             <div className="space-y-8">

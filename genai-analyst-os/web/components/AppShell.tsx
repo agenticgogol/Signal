@@ -106,8 +106,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
-      {showOnboarding && user?.id && (
+      {showOnboarding && user?.id && session?.access_token && (
         <OnboardingWizard
+          userId={user.id}
+          accessToken={session.access_token}
           onComplete={prefs => saveOnboarding(prefs, true)}
           onSkip={() => saveOnboarding({ role: null, interestAreas: [], readingGoal: null, readingFrequency: null }, true)}
         />

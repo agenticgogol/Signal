@@ -445,7 +445,7 @@ export default function KnowledgePage() {
           />
         )}
         <div className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-8">
-          <h1 className="text-3xl font-black tracking-tight text-zinc-950 dark:text-white">Reading List</h1>
+          <h1 className="text-3xl font-black tracking-tight text-zinc-950 dark:text-white">Your Library</h1>
           <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-300">Sign in to use your private knowledge workspace, or unlock the admin workspace to ingest links, files, and notes without signing in.</p>
           <div className="mt-5 flex items-center gap-3">
             <button onClick={() => setShowAdminGate(true)} className="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-violet-700">Unlock admin workspace</button>
@@ -479,8 +479,8 @@ export default function KnowledgePage() {
 
       <div className="flex items-center justify-between gap-3 mb-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">Reading List</h1>
-          <p className="text-xs text-zinc-400 mt-0.5">Ask questions, add sources, and see what each topic in your library talks about — all in one place.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">📚 Your Library</h1>
+          <p className="text-xs text-zinc-400 mt-0.5">Your permanent collection — every link, file, and note you save, kept and organized here for good. Today only shows a slice of it; add to this any time and it never expires.</p>
         </div>
         <div className="flex items-center gap-2">
           <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold ${plan === 'pro' ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300' : 'border-zinc-200 bg-white text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400'}`}>

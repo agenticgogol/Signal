@@ -78,7 +78,7 @@ function SimpleModal({ title, onClose, children }: { title: string; onClose: () 
 
 // The two daily jobs — "what to read" and "what to review & publish" —
 // live on one landing page so a signed-in user needs zero navigation
-// decisions to do either. Everything else (Feed, News, Reading List,
+// decisions to do either. Everything else (Feed, News, Your Library,
 // Ideas, Create) is one click away below, for whoever has time to go deeper.
 export default function TodayPage() {
   const { session, user, loading } = useAuthSession()
@@ -508,7 +508,7 @@ export default function TodayPage() {
       {showRefreshConfirm && (
         <SimpleModal title="Refresh your reading queue?" onClose={() => setShowRefreshConfirm(false)}>
           <p className="text-sm text-zinc-600 dark:text-zinc-300 leading-relaxed">
-            You&apos;ll get a new set of about {Math.max(1, pendingEntries.length)} item{pendingEntries.length === 1 ? '' : 's'}, re-ranked from your Feed and Reading List. Anything you&apos;ve already marked read or skipped today stays untouched — only your remaining unread items get replaced.
+            You&apos;ll get a new set of about {Math.max(1, pendingEntries.length)} item{pendingEntries.length === 1 ? '' : 's'}, re-ranked from your Feed and Library. Anything you&apos;ve already marked read or skipped today stays untouched — only your remaining unread items get replaced.
           </p>
           <div className="mt-4 flex gap-2">
             <button onClick={refreshQueue} className="rounded-xl bg-violet-600 hover:bg-violet-700 px-4 py-2 text-sm font-bold text-white transition-colors">Yes, refresh</button>
@@ -521,7 +521,7 @@ export default function TodayPage() {
           <p className="text-sm text-zinc-600 dark:text-zinc-300 leading-relaxed mb-3">Three pools are candidates, each scored on its own scale so one source can&apos;t dominate just because its numbers run bigger, then merged into one ranked list:</p>
           <ul className="space-y-2 text-sm text-zinc-600 dark:text-zinc-300 leading-relaxed list-disc list-inside">
             <li><strong>📰 Feed</strong> — scored by topic affinity, the same blend score used on the Feed tab (your declared interests + how you&apos;ve reacted to similar articles before).</li>
-            <li><strong>📖 Reading List</strong> — scored by topic affinity blended with recency (0.6 topic + 0.4 how recently it was processed), so freshly-added items get a boost without fully burying older relevant ones.</li>
+            <li><strong>📖 Your Library</strong> — scored by topic affinity blended with recency (0.6 topic + 0.4 how recently it was processed), so freshly-added items get a boost without fully burying older relevant ones.</li>
             <li><strong>🌐 News</strong> — scored by how many independent sources are covering the same story; a story 3 outlets picked up outranks one only 1 outlet has.</li>
             <li>All three pools are normalized to a 0-1 scale independently, then merged and filled in best-first until the total reading time adds up to about your daily minute target — estimated from actual word count, not a flat guess per item.</li>
             <li>Anything you&apos;ve marked read stays out of the pool for 14 days, so the queue doesn&apos;t repeat itself day to day.</li>
@@ -581,7 +581,7 @@ export default function TodayPage() {
             {refreshing ? 'Refreshing…' : '↺ Refresh'}
           </button>
         </div>
-        <p className="text-xs text-zinc-400 mb-2">Blended from Feed, Reading List &amp; News — about {targetMinutes} minutes.</p>
+        <p className="text-xs text-zinc-400 mb-2">Blended from Feed, Your Library &amp; News — about {targetMinutes} minutes.</p>
 
         <div className="flex items-center gap-2 mb-3">
           <span className="text-xs text-zinc-400">Daily target:</span>
@@ -612,7 +612,7 @@ export default function TodayPage() {
           <div className="space-y-2">{[0, 1, 2].map(i => <div key={i} className="h-16 rounded-xl bg-zinc-100 dark:bg-zinc-800 animate-pulse" />)}</div>
         ) : entries.length === 0 ? (
           <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 text-center">
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">Nothing queued yet — add sources to your <Link href="/feed" className="text-violet-600 dark:text-violet-400 hover:underline">Feed</Link> or <Link href="/knowledge" className="text-violet-600 dark:text-violet-400 hover:underline">Reading List</Link>, then refresh.</p>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">Nothing queued yet — add sources to your <Link href="/feed" className="text-violet-600 dark:text-violet-400 hover:underline">Feed</Link> or <Link href="/knowledge" className="text-violet-600 dark:text-violet-400 hover:underline">Your Library</Link>, then refresh.</p>
           </div>
         ) : (
           <div className="space-y-1.5">
@@ -840,7 +840,7 @@ export default function TodayPage() {
         {doneDrafts.length > 0 && (
           <div className="pt-4">
             <button onClick={() => setShowDoneDrafts(v => !v)} className="text-xs font-bold uppercase tracking-wide text-zinc-400 mb-2 hover:text-violet-600 dark:hover:text-violet-400">
-              {showDoneDrafts ? '▲' : '▼'} Done ({doneDrafts.length})
+              {showDoneDrafts ? '▲' : '▼'} Done for today ({doneDrafts.length})
             </button>
             {showDoneDrafts && (
               <div className="space-y-1.5">
@@ -866,7 +866,7 @@ export default function TodayPage() {
       <section id="today-ask-signal" className="mb-10">
         <div className="flex items-center gap-1.5 mb-1">
           <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">💬 Ask Signal</h2>
-          <span className="text-xs text-zinc-400">— searches Feed, Reading List, and News together</span>
+          <span className="text-xs text-zinc-400">— searches Feed, Your Library, and News together</span>
         </div>
         <AskSignalPanel variant="compact" externalQuestion={askExternalQuestion} crossLink={{ href: '/memory', label: 'Open full Memory Assistant →' }} />
       </section>
@@ -877,7 +877,7 @@ export default function TodayPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <Link href="/feed" className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-3 text-center text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:border-violet-300 dark:hover:border-violet-700 transition-colors">📰 Feed</Link>
           <Link href="/feed?tab=news" className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-3 text-center text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:border-violet-300 dark:hover:border-violet-700 transition-colors">🌐 News</Link>
-          <Link href="/knowledge" className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-3 text-center text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:border-violet-300 dark:hover:border-violet-700 transition-colors">📖 Reading List</Link>
+          <Link href="/knowledge" className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-3 text-center text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:border-violet-300 dark:hover:border-violet-700 transition-colors">📖 Your Library</Link>
           <Link href="/ideas" className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 py-3 text-center text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:border-violet-300 dark:hover:border-violet-700 transition-colors">💡 Ideas</Link>
         </div>
       </section>

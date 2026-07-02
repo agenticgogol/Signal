@@ -22,7 +22,7 @@ const VALUE_PROPS = [
 ]
 
 const HOW_IT_WORKS = [
-  { step: '01', label: 'We scrape & compile', desc: 'Signal continuously pulls from the AI sources that matter for your career — Feed, Reading List, and breaking News — so you never have to go source-hunting yourself.' },
+  { step: '01', label: 'We scrape & compile', desc: 'Signal continuously pulls from the AI sources that matter for your career — Feed, Your Library, and breaking News — so you never have to go source-hunting yourself.' },
   { step: '02', label: 'We rank by relevance', desc: 'Everything is scored against your interests and how you\'ve reacted before, then merged into one queue sized to the time you actually have — 15 minutes, by default.' },
   { step: '03', label: 'You read, we learn', desc: 'Open, skip, like, pin — every reaction sharpens what gets surfaced next. Undo anything; nothing is ever a dead end.' },
   { step: '04', label: 'We suggest what to write', desc: 'Based on what you engaged with most, Signal proposes content ideas and drafts them — evidence-grounded, voice-matched, ready to review — across every platform, one click.' },
@@ -43,7 +43,7 @@ const PRICING = [
     tagline: 'Stay informed, on your own time',
     price: 'Free',
     features: [
-      'Personalized Feed, Reading List, and AI News',
+      'Personalized Feed, Your Library, and AI News',
       'Daily Today queue, ranked and time-boxed',
       'Reading and publishing streaks',
       'Organize, tag, and archive what you read',
@@ -390,7 +390,7 @@ export default function LandingPage() {
             <Link href="/feed" className="hover:text-zinc-400 transition-colors">Feed</Link>
             <Link href="/ideas" className="hover:text-zinc-400 transition-colors">Ideas</Link>
             <Link href="/create" className="hover:text-zinc-400 transition-colors">Create</Link>
-            <Link href="/knowledge" className="hover:text-zinc-400 transition-colors">Reading List</Link>
+            <Link href="/knowledge" className="hover:text-zinc-400 transition-colors">Your Library</Link>
             <Link href="/sources" className="hover:text-zinc-400 transition-colors">Sources</Link>
           </div>
           <span>GenAI Intelligence OS</span>

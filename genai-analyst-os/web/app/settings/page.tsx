@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useAuthSession } from '@/lib/useAuthSession'
 import { defaultModelFor, normalizeProvider, type ProviderOption, type SupportedProvider } from '@/lib/llmConfig'
+import SourcesManager from '@/components/SourcesManager'
 
 const ROLES = [
   { id: 'ml_engineer',     label: 'ML / AI Engineer',  icon: '🛠️' },
@@ -36,6 +37,7 @@ const FREQUENCIES = [
 ]
 
 const TABS = [
+  { id: 'sources',     label: 'Source Feeds',         icon: '📡' },
   { id: 'model',       label: 'Model Settings',      icon: '🔑' },
   { id: 'feed_sched',  label: 'Feed Schedule',        icon: '📰' },
   { id: 'content_gen', label: 'Content Generation',   icon: '🗣️' },
@@ -74,7 +76,7 @@ interface SettingsPayload {
 export default function SettingsPage() {
   const { session, user, loading } = useAuthSession()
   const userId = user?.id ?? ''
-  const [activeTab, setActiveTab] = useState<TabId>('model')
+  const [activeTab, setActiveTab] = useState<TabId>('sources')
   const [plan, setPlan] = useState<'free' | 'pro'>('free')
   const [canUsePaidFeatures, setCanUsePaidFeatures] = useState(false)
 
@@ -573,6 +575,16 @@ export default function SettingsPage() {
           </button>
         ))}
       </div>
+
+      {activeTab === 'sources' && (
+      <section className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
+        <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">📡 Source Feeds</h2>
+        <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">The specific URLs and RSS feeds Signal watches on your behalf — this is where your Feed's raw material comes from. Add anything you want tracked; remove anything you don't. New articles from these sources get crawled on every pipeline run.</p>
+        <div className="mt-5">
+          <SourcesManager />
+        </div>
+      </section>
+      )}
 
       {activeTab === 'model' && (
       <>

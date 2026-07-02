@@ -980,7 +980,7 @@ function CreatePageInner() {
                 <div className="text-center py-4">
                   <p className="text-sm text-zinc-500 mb-2">No notebooks yet.</p>
                   <a href="/knowledge" className="text-sm text-violet-600 hover:underline font-medium">
-                    → Go to Reading List to create one
+                    → Go to Your Library to create one
                   </a>
                 </div>
               ) : (
@@ -999,7 +999,7 @@ function CreatePageInner() {
                   {!selectedNotebookId ? (
                     <p className="text-xs text-zinc-400">Choose a notebook to load its processed items.</p>
                   ) : notebookItems.length === 0 ? (
-                    <p className="text-xs text-zinc-400">No processed notebook items yet. Add links, videos, or notes in Reading List first.</p>
+                    <p className="text-xs text-zinc-400">No processed notebook items yet. Add links, videos, or notes in Your Library first.</p>
                   ) : (
                     <div>
                       <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-3">Select 1–3 notebook items as source context</p>
