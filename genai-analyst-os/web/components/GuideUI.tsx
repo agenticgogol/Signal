@@ -19,6 +19,38 @@ export function GuideHero({ eyebrow, title, description, chips }: {
   )
 }
 
+export interface QuickNavGroup {
+  label: string
+  items: { id: string; label: string; icon: string }[]
+}
+
+// A jump-to-section grid, grouped the same way the sections themselves are
+// grouped, so a reader can find "Publishing" or "Ask Signal" in one glance
+// instead of scrolling through fifteen sections to find the right one.
+export function QuickNav({ groups }: { groups: QuickNavGroup[] }) {
+  return (
+    <nav className="rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
+      <p className="text-xs font-bold uppercase tracking-[0.18em] text-violet-600 dark:text-violet-400">Quick navigation</p>
+      <div className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        {groups.map(group => (
+          <div key={group.label}>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-2">{group.label}</p>
+            <ul className="space-y-1">
+              {group.items.map(item => (
+                <li key={item.id}>
+                  <a href={`#${item.id}`} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-600 dark:text-zinc-300 hover:bg-violet-50 dark:hover:bg-violet-950/30 hover:text-violet-700 dark:hover:text-violet-300 transition-colors">
+                    <span className="text-base leading-none">{item.icon}</span>{item.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </nav>
+  )
+}
+
 export function GuideSection({ id, eyebrow, title, description, children }: {
   id: string; eyebrow?: string; title: string; description?: string; children: ReactNode
 }) {
